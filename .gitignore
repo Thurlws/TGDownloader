@@ -1,0 +1,47 @@
+# ── Telegram credentials & session data (NEVER commit these) ──────────────
+tg_audio_config.json
+tg_audio_session.session
+tg_audio_session.session-journal
+*.session
+*.session-journal
+
+# ── Runtime data (generated locally, not needed in repo) ──────────────────
+hash_cache.json
+album_id_cache.json
+tg_sessions.json
+bot_initialized.flag
+tgdownloader_debug.log
+pause.flag
+
+# ── Temp download directories ─────────────────────────────────────────────
+tg_tmp_downloads/
+
+# ── Python ────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+venv/
+env/
+.venv/
+
+# ── PyInstaller bundle output ─────────────────────────────────────────────
+*.spec
+dist/
+build/
+
+# ── OS junk ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editor ────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo

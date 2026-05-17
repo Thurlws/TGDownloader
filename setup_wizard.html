@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TGDownloader — First-Run Setup</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0c0c0c;
+    --bg2:      #111111;
+    --bg3:      #181818;
+    --bg4:      #202020;
+    --border:   #262626;
+    --border2:  #303030;
+    --accent:   #b8f542;
+    --accent-d: #8ab830;
+    --fg:       #e2e2e2;
+    --fg2:      #888888;
+    --fg3:      #444444;
+    --red:      #e05555;
+    --yellow:   #e0b855;
+    --blue:     #5599e0;
+    --mono:     'IBM Plex Mono', monospace;
+    --sans:     'IBM Plex Sans', sans-serif;
+    --r:        3px;
+  }
+
+  html, body {
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ── Outer shell ── */
+  #wizard {
+    width: 560px;
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.7);
+    animation: wizIn 0.3s cubic-bezier(0.22,1,0.36,1) both;
+  }
+  @keyframes wizIn {
+    from { opacity: 0; transform: translateY(16px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0)   scale(1); }
+  }
+
+  /* ── Header bar ── */
+  #wiz-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 20px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+  .wiz-logo {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+    flex: 1;
+  }
+  .wiz-step-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--fg3);
+  }
+
+  /* ── Step dots ── */
+  .wiz-dots {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+  }
+  .wiz-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--fg3);
+    transition: background 0.2s, transform 0.2s;
+  }
+  .wiz-dot.active {
+    background: var(--accent);
+    transform: scale(1.4);
+  }
+  .wiz-dot.done {
+    background: var(--accent-d);
+  }
+
+  /* ── Body ── */
+  #wiz-body { padding: 28px 28px 24px; }
+
+  /* ── Step panes ── */
+  .step { display: none; }
+  .step.active {
+    display: block;
+    animation: stepIn 0.22s cubic-bezier(0.22,1,0.36,1) both;
+  }
+  @keyframes stepIn {
+    from { opacity: 0; transform: translateX(12px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+
+  /* ── Typography inside steps ── */
+  .step h1 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--fg);
+    margin-bottom: 6px;
+    letter-spacing: -0.01em;
+  }
+  .step .subtitle {
+    font-size: 12px;
+    color: var(--fg2);
+    margin-bottom: 22px;
+    line-height: 1.6;
+  }
+  .step .subtitle strong { color: var(--fg); font-weight: 600; }
+
+  /* ── Section label ── */
+  .step-section {
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--fg3);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── Instruction steps ── */
+  .instr-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 22px;
+  }
+  .instr-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .instr-num {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: rgba(184,245,66,0.12);
+    border: 1px solid rgba(184,245,66,0.3);
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-top: 1px;
+  }
+  .instr-text {
+    font-size: 12px;
+    color: var(--fg2);
+    line-height: 1.55;
+    flex: 1;
+  }
+  .instr-text strong { color: var(--fg); }
+  .instr-text a {
+    color: var(--accent);
+    text-decoration: none;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .instr-text a:hover { text-decoration: underline; }
+
+  /* ── URL chip ── */
+  .url-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg4);
+    border: 1px solid var(--border2);
+    border-radius: var(--r);
+    padding: 4px 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    margin: 6px 0 0;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s;
+    user-select: none;
+  }
+  .url-chip:hover { border-color: var(--accent); background: rgba(184,245,66,0.06); }
+  .url-chip .copy-icon { font-size: 12px; opacity: 0.6; }
+  .url-chip.copied { background: rgba(184,245,66,0.1); }
+  .url-chip.copied .chip-url::after { content: ' ✓ copied'; color: var(--accent); }
+
+  /* ── Screenshot placeholder / visual hint box ── */
+  .hint-box {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 12px 14px;
+    margin-top: 10px;
+    margin-bottom: 20px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .hint-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .hint-text { font-size: 11px; color: var(--fg2); line-height: 1.55; }
+  .hint-text strong { color: var(--fg); }
+  .hint-text code {
+    font-family: var(--mono);
+    font-size: 10px;
+    background: var(--bg4);
+    border: 1px solid var(--border2);
+    border-radius: 2px;
+    padding: 1px 5px;
+    color: var(--yellow);
+  }
+
+  /* ── Credential inputs ── */
+  .cred-fields { display: flex; flex-direction: column; gap: 12px; margin-bottom: 22px; }
+  .cred-field label {
+    display: block;
+    font-size: 10px;
+    color: var(--fg2);
+    font-family: var(--mono);
+    margin-bottom: 4px;
+  }
+  .cred-field label span {
+    color: var(--fg3);
+    font-size: 9px;
+    margin-left: 6px;
+  }
+  .cred-field input {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: var(--r);
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 10px;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    letter-spacing: 0.04em;
+  }
+  .cred-field input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(184,245,66,0.12);
+  }
+  .cred-field input.error { border-color: var(--red); }
+  .cred-field input::placeholder { color: var(--fg3); letter-spacing: 0; }
+
+  /* ── Inline field error ── */
+  .field-error {
+    font-size: 10px;
+    color: var(--red);
+    font-family: var(--mono);
+    margin-top: 4px;
+    display: none;
+  }
+  .field-error.visible { display: block; }
+
+  /* ── Status bar (save step) ── */
+  #save-status {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--fg3);
+    min-height: 18px;
+    margin-bottom: 10px;
+    transition: color 0.2s;
+  }
+  #save-status.ok   { color: var(--accent); }
+  #save-status.fail { color: var(--red); }
+
+  /* ── Confirm / summary ── */
+  .confirm-summary {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 14px 16px;
+    margin-bottom: 20px;
+  }
+  .confirm-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .confirm-row:last-child { border-bottom: none; }
+  .confirm-row span { font-size: 11px; color: var(--fg2); }
+  .confirm-row strong {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--fg);
+    word-break: break-all;
+    text-align: right;
+    max-width: 280px;
+  }
+  .confirm-row .masked { letter-spacing: 0.18em; color: var(--fg3); }
+
+  /* ── Buttons ── */
+  .btn-row {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 4px;
+  }
+  button {
+    font-family: var(--sans);
+    font-size: 12px;
+    border: none;
+    border-radius: var(--r);
+    cursor: pointer;
+    padding: 8px 18px;
+    transition: background 0.12s, color 0.12s, transform 0.09s;
+  }
+  button:active { transform: scale(0.97); }
+  .btn-primary {
+    background: var(--accent);
+    color: #0a0a0a;
+    font-weight: 600;
+  }
+  .btn-primary:hover   { background: var(--accent-d); }
+  .btn-primary:disabled {
+    background: var(--fg3);
+    color: var(--bg3);
+    cursor: not-allowed;
+    transform: none;
+  }
+  .btn-secondary {
+    background: var(--bg4);
+    color: var(--fg);
+    border: 1px solid var(--border2);
+  }
+  .btn-secondary:hover { background: var(--border2); }
+
+  /* ── Welcome feature list ── */
+  .feature-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 24px;
+  }
+  .feature-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 12px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+  }
+  .feature-icon { font-size: 16px; flex-shrink: 0; }
+  .feature-text { font-size: 12px; color: var(--fg2); }
+  .feature-text strong { color: var(--fg); }
+
+  /* ── Progress bar (saving) ── */
+  #save-progress {
+    height: 2px;
+    background: var(--bg4);
+    border-radius: 1px;
+    overflow: hidden;
+    margin-bottom: 16px;
+    display: none;
+  }
+  #save-progress.visible { display: block; }
+  #save-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 1px;
+    width: 0%;
+    transition: width 0.4s ease;
+  }
+
+  /* ── Done checkmark ── */
+  .done-check {
+    text-align: center;
+    padding: 10px 0 18px;
+  }
+  .done-check-circle {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: rgba(184,245,66,0.12);
+    border: 2px solid rgba(184,245,66,0.4);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+    margin: 0 auto 12px;
+    animation: checkPop 0.4s cubic-bezier(0.22,1,0.36,1) 0.1s both;
+  }
+  @keyframes checkPop {
+    from { transform: scale(0.5); opacity: 0; }
+    to   { transform: scale(1);   opacity: 1; }
+  }
+  .done-check h2 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .done-check p  { font-size: 12px; color: var(--fg2); }
+
+  /* ── Divider ── */
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 20px 0;
+  }
+
+  /* ── Tooltips ── */
+  [title] { cursor: help; }
+</style>
+</head>
+<body>
+
+<div id="wizard">
+
+  <!-- Header -->
+  <div id="wiz-header">
+    <span class="wiz-logo">TGDOWNLOADER</span>
+    <span class="wiz-step-label" id="step-label">Step 1 of 4</span>
+    <div class="wiz-dots">
+      <div class="wiz-dot active" id="dot-0"></div>
+      <div class="wiz-dot"       id="dot-1"></div>
+      <div class="wiz-dot"       id="dot-2"></div>
+      <div class="wiz-dot"       id="dot-3"></div>
+    </div>
+  </div>
+
+  <!-- Body -->
+  <div id="wiz-body">
+
+    <!-- ═══ STEP 0: WELCOME ═══ -->
+    <div class="step active" id="step-0">
+      <h1>Welcome to TGDownloader</h1>
+      <p class="subtitle">
+        TGDownloader is a <strong>personal Telegram client</strong> for managing your own music library.
+        It connects to a Telegram bot of <em>your choosing</em> that you already use to receive audio files.
+        You'll need a free Telegram API key — this only takes a few minutes.
+      </p>
+
+      <div class="step-section">What you're setting up</div>
+      <div class="feature-list">
+        <div class="feature-row">
+          <span class="feature-icon">🔑</span>
+          <span class="feature-text"><strong>Telegram API credentials</strong> — lets TGDownloader talk to Telegram on your behalf. Free, no credit card.</span>
+        </div>
+        <div class="feature-row">
+          <span class="feature-icon">📁</span>
+          <span class="feature-text"><strong>Stored locally only</strong> — your credentials are saved to <code style="font-family:var(--mono);font-size:10px;background:var(--bg4);border:1px solid var(--border2);border-radius:2px;padding:1px 5px;color:var(--yellow)">tg_audio_config.json</code> on this machine and never sent anywhere else.</span>
+        </div>
+        <div class="feature-row">
+          <span class="feature-icon">🔒</span>
+          <span class="feature-text"><strong>Your account is safe</strong> — the API key only works when combined with your personal Telegram login (done separately after this).</span>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn-primary" onclick="goStep(1)">Get Started →</button>
+      </div>
+    </div>
+
+    <!-- ═══ STEP 1: GET CREDENTIALS ═══ -->
+    <div class="step" id="step-1">
+      <h1>Get Your API Credentials</h1>
+      <p class="subtitle">
+        Follow these steps on the Telegram developer portal.
+        Open the link below in your browser — it's the same Telegram account you already use.
+      </p>
+
+      <div class="step-section">Instructions</div>
+      <div class="instr-list">
+        <div class="instr-row">
+          <div class="instr-num">1</div>
+          <div class="instr-text">
+            Open the Telegram API portal and log in with your phone number:<br>
+            <div class="url-chip" id="chip-portal" onclick="copyChip(this, 'https://my.telegram.org/auth')">
+              <span class="copy-icon">⧉</span>
+              <span class="chip-url">my.telegram.org/auth</span>
+            </div>
+          </div>
+        </div>
+        <div class="instr-row">
+          <div class="instr-num">2</div>
+          <div class="instr-text">
+            After logging in, click <strong>"API Development Tools"</strong> in the menu.
+          </div>
+        </div>
+        <div class="instr-row">
+          <div class="instr-num">3</div>
+          <div class="instr-text">
+            Fill in the form — the values don't matter much. Use anything like:<br>
+            <strong>App title:</strong> TGDownloader &nbsp;·&nbsp; <strong>Short name:</strong> tgdl &nbsp;·&nbsp; <strong>Platform:</strong> Desktop
+          </div>
+        </div>
+        <div class="instr-row">
+          <div class="instr-num">4</div>
+          <div class="instr-text">
+            Click <strong>"Create application"</strong>. You'll see your <code>api_id</code> (a number)
+            and <code>api_hash</code> (a long hex string). Copy both and paste them below.
+          </div>
+        </div>
+      </div>
+
+      <div class="hint-box">
+        <span class="hint-icon">💡</span>
+        <div class="hint-text">
+          <strong>Tip:</strong> The <code>api_id</code> is a short integer (e.g. <code>12345678</code>).
+          The <code>api_hash</code> is a 32-character hex string like <code>a1b2c3d4…</code>.
+          If you see those shapes, you're in the right place.
+        </div>
+      </div>
+
+      <div class="step-section">Enter your credentials</div>
+      <div class="cred-fields">
+        <div class="cred-field">
+          <label>API ID <span>— the number shown on your app page</span></label>
+          <input type="text" id="api-id-input" placeholder="e.g. 12345678" autocomplete="off" spellcheck="false" inputmode="numeric">
+          <div class="field-error" id="err-api-id">Must be a number (digits only).</div>
+        </div>
+        <div class="cred-field">
+          <label>API Hash <span>— the 32-character hex string</span></label>
+          <input type="text" id="api-hash-input" placeholder="e.g. a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6" autocomplete="off" spellcheck="false">
+          <div class="field-error" id="err-api-hash">Must be a 32-character hex string.</div>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn-secondary" onclick="goStep(0)">← Back</button>
+        <button class="btn-primary"   onclick="validateAndNext()">Next →</button>
+      </div>
+    </div>
+
+
+    <!-- ═══ STEP 2: BOT USERNAME ═══ -->
+    <div class="step" id="step-2">
+      <h1>Your Telegram Bot</h1>
+      <p class="subtitle">
+        TGDownloader needs to know which Telegram bot to send URLs to.
+        This is <strong>your bot</strong> — the one you already use to receive audio files.
+        Enter its username below (starting with @).
+      </p>
+
+      <div class="step-section">Bot username</div>
+      <div class="cred-fields">
+        <div class="cred-field">
+          <label>Bot username <span>— e.g. @YourMusicBot</span></label>
+          <input type="text" id="bot-username-input" placeholder="@YourMusicBot" autocomplete="off" spellcheck="false">
+          <div class="field-error" id="err-bot-username">Must start with @ and be at least 5 characters.</div>
+        </div>
+      </div>
+
+      <div class="hint-box">
+        <span class="hint-icon">💡</span>
+        <div class="hint-text">
+          <strong>Not sure?</strong> Open Telegram, find the bot you use to download music, and copy its username from the bot's profile.
+          It always starts with <code>@</code>.
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn-secondary" onclick="goStep(1)">← Back</button>
+        <button class="btn-primary"   onclick="validateBotAndNext()">Next →</button>
+      </div>
+    </div>
+
+    <!-- ═══ STEP 3: CONFIRM + SAVE ═══ -->
+    <div class="step" id="step-3">
+      <h1>Confirm & Save</h1>
+      <p class="subtitle">
+        Review your credentials below. Once saved, TGDownloader will use these every time it starts.
+        You can change them later via <strong>Settings → API Credentials</strong>.
+      </p>
+
+      <div class="confirm-summary" id="confirm-summary">
+        <div class="confirm-row">
+          <span>API ID</span>
+          <strong id="confirm-api-id">—</strong>
+        </div>
+        <div class="confirm-row">
+          <span>API Hash</span>
+          <strong><span id="confirm-api-hash" class="masked">—</span></strong>
+        </div>
+        <div class="confirm-row">
+          <span>Bot Username</span>
+          <strong id="confirm-bot-username">—</strong>
+        </div>
+        <div class="confirm-row">
+          <span>Saved to</span>
+          <strong style="color:var(--fg3);font-size:10px">tg_audio_config.json (local only)</strong>
+        </div>
+      </div>
+
+      <div class="hint-box">
+        <span class="hint-icon">🔐</span>
+        <div class="hint-text">
+          After saving, you'll be taken to the main app where you'll log in to your
+          <strong>Telegram account</strong> using the TG button in the top bar. That's a separate step
+          — your API credentials just unlock the connection.
+        </div>
+      </div>
+
+      <div id="save-progress"><div id="save-progress-fill"></div></div>
+      <div id="save-status"></div>
+
+      <!-- Done state (hidden until save succeeds) -->
+      <div class="done-check" id="done-check" style="display:none">
+        <div class="done-check-circle">✓</div>
+        <h2>All set!</h2>
+        <p>Credentials saved. Opening TGDownloader…</p>
+      </div>
+
+      <div class="btn-row" id="confirm-btn-row">
+        <button class="btn-secondary" onclick="goStep(1)" id="btn-back-2">← Back</button>
+        <button class="btn-primary"   onclick="saveCredentials()" id="btn-save">Save & Launch →</button>
+      </div>
+    </div>
+
+  </div><!-- #wiz-body -->
+</div><!-- #wizard -->
+
+<script>
+// ═══════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════
+let currentStep = 0;
+const TOTAL_STEPS = 4;
+
+// ═══════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════
+function goStep(n) {
+  document.querySelector('.step.active')?.classList.remove('active');
+  document.getElementById(`step-${n}`).classList.add('active');
+
+  // Dots
+  for (let i = 0; i < TOTAL_STEPS; i++) {
+    const dot = document.getElementById(`dot-${i}`);
+    dot.className = 'wiz-dot' + (i < n ? ' done' : i === n ? ' active' : '');
+  }
+
+  document.getElementById('step-label').textContent = `Step ${n + 1} of ${TOTAL_STEPS}`;
+  currentStep = n;
+
+  // Populate confirm summary when entering step 3
+  if (n === 3) {
+    const id   = document.getElementById('api-id-input').value.trim();
+    const hash = document.getElementById('api-hash-input').value.trim();
+    const bot  = document.getElementById('bot-username-input').value.trim();
+    document.getElementById('confirm-api-id').textContent       = id;
+    document.getElementById('confirm-bot-username').textContent  = bot;
+    // Show first 4 + masked middle + last 4
+    const masked = hash.length >= 8
+      ? hash.slice(0, 4) + '·'.repeat(hash.length - 8) + hash.slice(-4)
+      : hash;
+    document.getElementById('confirm-api-hash').textContent = masked;
+    document.getElementById('save-status').textContent      = '';
+    document.getElementById('save-status').className        = '';
+    document.getElementById('done-check').style.display     = 'none';
+    document.getElementById('confirm-btn-row').style.display = '';
+  }
+}
+
+// ═══════════════════════════════════════
+//  VALIDATION
+// ═══════════════════════════════════════
+function validateAndNext() {
+  const idEl   = document.getElementById('api-id-input');
+  const hashEl = document.getElementById('api-hash-input');
+  const errId  = document.getElementById('err-api-id');
+  const errHash = document.getElementById('err-api-hash');
+
+  const id   = idEl.value.trim();
+  const hash = hashEl.value.trim();
+
+  let ok = true;
+
+  // API ID: digits only, reasonable length
+  if (!/^\d{5,12}$/.test(id)) {
+    idEl.classList.add('error');
+    errId.classList.add('visible');
+    ok = false;
+  } else {
+    idEl.classList.remove('error');
+    errId.classList.remove('visible');
+  }
+
+  // API Hash: 32-char hex
+  if (!/^[0-9a-f]{32}$/i.test(hash)) {
+    hashEl.classList.add('error');
+    errHash.classList.add('visible');
+    ok = false;
+  } else {
+    hashEl.classList.remove('error');
+    errHash.classList.remove('visible');
+  }
+
+  if (ok) goStep(2);  // → bot username step
+}
+
+
+// ═══════════════════════════════════════
+//  BOT USERNAME VALIDATION
+// ═══════════════════════════════════════
+function validateBotAndNext() {
+  const botEl  = document.getElementById('bot-username-input');
+  const errBot = document.getElementById('err-bot-username');
+  const bot    = botEl.value.trim();
+
+  // Must start with @ and be at least @xxxx (5 chars total)
+  if (!/^@[a-zA-Z0-9_]{4,}$/.test(bot)) {
+    botEl.classList.add('error');
+    errBot.classList.add('visible');
+    return;
+  }
+  botEl.classList.remove('error');
+  errBot.classList.remove('visible');
+  goStep(3);
+}
+
+// ═══════════════════════════════════════
+//  SAVE  (POST to /setup endpoint)
+// ═══════════════════════════════════════
+async function saveCredentials() {
+  const id   = document.getElementById('api-id-input').value.trim();
+  const hash = document.getElementById('api-hash-input').value.trim();
+  const btn  = document.getElementById('btn-save');
+  const back = document.getElementById('btn-back-2');
+  const statusEl = document.getElementById('save-status');
+  const progress = document.getElementById('save-progress');
+  const fill     = document.getElementById('save-progress-fill');
+
+  btn.disabled  = true;
+  back.disabled = true;
+  btn.textContent = 'Saving…';
+  progress.classList.add('visible');
+  statusEl.textContent = 'Writing credentials to config…';
+  statusEl.className   = '';
+
+  // Animate progress bar
+  fill.style.width = '30%';
+  await new Promise(r => setTimeout(r, 200));
+  fill.style.width = '65%';
+
+  try {
+    const resp = await fetch('/setup', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ api_id: parseInt(id, 10), api_hash: hash,
+                                bot_username: document.getElementById('bot-username-input').value.trim() }),
+    });
+
+    fill.style.width = '90%';
+    await new Promise(r => setTimeout(r, 150));
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+      throw new Error(err.error || `Server error ${resp.status}`);
+    }
+
+    fill.style.width = '100%';
+    await new Promise(r => setTimeout(r, 250));
+
+    statusEl.textContent = '✓ Saved successfully.';
+    statusEl.className   = 'ok';
+
+    document.getElementById('confirm-btn-row').style.display = 'none';
+    document.getElementById('done-check').style.display = 'block';
+
+    // Redirect to main app after a short celebration
+    await new Promise(r => setTimeout(r, 1800));
+    window.location.href = '/';
+
+  } catch (err) {
+    fill.style.width = '100%';
+    fill.style.background = 'var(--red)';
+    await new Promise(r => setTimeout(r, 200));
+
+    statusEl.textContent = `Error: ${err.message}`;
+    statusEl.className   = 'fail';
+
+    btn.disabled  = false;
+    back.disabled = false;
+    btn.textContent = 'Save & Launch →';
+    progress.classList.remove('visible');
+    fill.style.width    = '0%';
+    fill.style.background = '';
+  }
+}
+
+// ═══════════════════════════════════════
+//  COPY CHIP
+// ═══════════════════════════════════════
+function copyChip(el, url) {
+  navigator.clipboard.writeText(url).then(() => {
+    el.classList.add('copied');
+    setTimeout(() => el.classList.remove('copied'), 1800);
+  }).catch(() => {
+    // Fallback: open the URL
+    window.open(url, '_blank');
+  });
+}
+
+// ═══════════════════════════════════════
+//  KEYBOARD SHORTCUTS
+// ═══════════════════════════════════════
+document.addEventListener('keydown', (e) => {
+  // Enter in step 1 inputs → try to advance
+  if (e.key === 'Enter' && currentStep === 1) {
+    const active = document.activeElement;
+    if (active?.id === 'api-id-input') {
+      document.getElementById('api-hash-input').focus();
+    } else {
+      validateAndNext();
+    }
+  }
+  // Enter on step 2 → save
+  if (e.key === 'Enter' && currentStep === 2) {
+    const btn = document.getElementById('btn-save');
+    if (!btn.disabled) saveCredentials();
+  }
+});
+
+// Live validation: clear error as soon as input looks right
+document.getElementById('bot-username-input')?.addEventListener('input', (e) => {
+  if (/^@[a-zA-Z0-9_]{4,}$/.test(e.target.value.trim())) {
+    e.target.classList.remove('error');
+    document.getElementById('err-bot-username').classList.remove('visible');
+  }
+});
+document.getElementById('bot-username-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') validateBotAndNext();
+});
+document.getElementById('api-id-input')?.addEventListener('input', (e) => {
+  if (/^\d{5,12}$/.test(e.target.value.trim())) {
+    e.target.classList.remove('error');
+    document.getElementById('err-api-id').classList.remove('visible');
+  }
+});
+document.getElementById('api-hash-input')?.addEventListener('input', (e) => {
+  if (/^[0-9a-f]{32}$/i.test(e.target.value.trim())) {
+    e.target.classList.remove('error');
+    document.getElementById('err-api-hash').classList.remove('visible');
+  }
+});
+</script>
+</body>
+</html>

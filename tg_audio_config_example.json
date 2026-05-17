@@ -1,0 +1,15 @@
+{
+  "home_music_folder": "path/to/your/folder",
+  "bot_username": "@YourBotUsername",
+  "reply_timeout": 30,
+  "queue_wait_timeout": 120,
+  "inter_file_idle_timeout": 8,
+  "idle_check_interval": 0.5,
+  "bot_busy_wait": 10,
+  "bot_busy_retries": 12,
+  "max_queue": 10,
+  "ui_scale": 1.0,
+  "target_quality": "FLAC",
+  "api_id": 12345678,
+  "api_hash": "your_32_character_hex_hash_here"
+}
