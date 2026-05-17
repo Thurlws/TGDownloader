@@ -120,6 +120,10 @@ DEFAULT_CONFIG: dict = {
     "max_queue":               10,
     "ui_scale":                1.0,
     "target_quality":          "FLAC",  # FLAC | MP3 320 | MP3 128
+    # Maximum number of tracks downloaded in parallel per album.
+    # Keeping this at 3 prevents ExportAuthorization flood-waits from
+    # Telegram when many tracks on a non-home DC are authorised at once.
+    "max_parallel_downloads":  3,
 }
 
 BOT_BUSY_PHRASES = [
@@ -1023,6 +1027,7 @@ async def download_all_async(
     client,
     pending_events: list,
     tmp_dir: Path,
+    cfg: dict | None = None,
 ) -> list[Path]:
     total        = len(pending_events)
     done_counter = [0]
@@ -1056,9 +1061,10 @@ async def download_all_async(
     # The 200 ms stagger on connect() spaces the ImportAuthorization
     # handshakes on non-home DCs so Telegram does not reject them.
     # ──────────────────────────────────────────────────────────────────────
-    _AUTH_STAGGER_S  = 0.2   # seconds between successive connect() calls
-    _MAX_AUTH_TRIES  = 3     # retries on ImportAuthorization failure
-    _AUTH_RETRY_WAIT = 2.0   # seconds to wait between auth retries
+    _AUTH_STAGGER_S  = 4.0   # seconds between successive connect() calls — wider gap prevents DC auth floods
+    _MAX_AUTH_TRIES  = 8     # retries on auth failure
+    _AUTH_RETRY_WAIT = 8.0   # seconds to wait between auth retries
+    _MAX_FLOOD_WAIT  = 300   # honour flood waits up to 5 min; skip file only if longer than that
     session_string   = StringSession.save(client.session)
 
     def _emit_progress_ts() -> None:
@@ -1101,7 +1107,30 @@ async def download_all_async(
                     break   # success; exit retry loop
 
                 except Exception as exc:
-                    if "ImportAuthorization" in str(exc) and attempt < _MAX_AUTH_TRIES:
+                    exc_str = str(exc)
+                    # FloodWaitError from ExportAuthorization / ImportAuthorization:
+                    # Telegram rate-limits DC auth handshakes when many parallel
+                    # connections hit the same non-home DC at once.
+                    # Honour waits up to _MAX_FLOOD_WAIT seconds; skip the file
+                    # (raise) if Telegram wants us to wait longer.
+                    import re as _re
+                    flood_match = _re.search(r"A wait of (\d+) seconds? is required", exc_str)
+                    if flood_match:
+                        wait_secs = int(flood_match.group(1))
+                        if wait_secs <= _MAX_FLOOD_WAIT and attempt < _MAX_AUTH_TRIES:
+                            _log(
+                                f"  ⏳ Flood-wait {wait_secs}s for {filename} "
+                                f"(attempt {attempt}/{_MAX_AUTH_TRIES}) — waiting…"
+                            )
+                            await asyncio.sleep(wait_secs + 1)
+                        else:
+                            raise   # wait too long or retries exhausted
+                    elif ("ImportAuthorization" in exc_str or "ExportAuthorization" in exc_str) \
+                            and attempt < _MAX_AUTH_TRIES:
+                        _log(
+                            f"  ⚠ Auth error for {filename} "
+                            f"(attempt {attempt}/{_MAX_AUTH_TRIES}) — retrying in {_AUTH_RETRY_WAIT}s…"
+                        )
                         await asyncio.sleep(_AUTH_RETRY_WAIT)
                     else:
                         raise   # non-auth error or retries exhausted
@@ -1137,10 +1166,12 @@ async def download_all_async(
                 loop.close()
                 asyncio.set_event_loop(None)
 
-    # Dispatch every download to its own thread; await completion without
-    # blocking the caller's event loop.
+    # Limit concurrency to avoid hammering Telegram's ExportAuthorization endpoint.
+    # The config key max_parallel_downloads defaults to 3 which stays safely under
+    # Telegram's per-DC rate limit even for large albums.
+    _max_parallel = cfg.get("max_parallel_downloads", 3) if cfg else 3
     main_loop = asyncio.get_running_loop()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=total) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(total, _max_parallel)) as executor:
         futures = [
             main_loop.run_in_executor(executor, _dl_one_threaded, ev, i)
             for i, ev in enumerate(pending_events)
@@ -1417,7 +1448,7 @@ async def process_url(
         await cleanup()
         return [], expected_total
 
-    downloaded = await download_all_async(client, pending_events, tmp_dir)
+    downloaded = await download_all_async(client, pending_events, tmp_dir, cfg)
     await cleanup()
     return downloaded, expected_total
 

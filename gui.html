@@ -2628,6 +2628,10 @@
         <input type="text" id="cfg-busy-retries">
       </div>
       <div class="modal-field">
+        <label>Max Parallel Downloads (per album)</label>
+        <input type="text" id="cfg-max-parallel" placeholder="3">
+      </div>
+      <div class="modal-field">
         <label>Max Queue Size</label>
         <input type="text" id="cfg-max-queue">
       </div>
@@ -4957,6 +4961,7 @@ const CFG_FIELDS = {
   'cfg-idle-check':    'idle_check_interval',
   'cfg-busy-wait':     'bot_busy_wait',
   'cfg-busy-retries':  'bot_busy_retries',
+  'cfg-max-parallel':  'max_parallel_downloads',
   'cfg-max-queue':     'max_queue',
 };
 
