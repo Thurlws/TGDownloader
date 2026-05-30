@@ -1356,6 +1356,83 @@ def _toggle_liked(entry: dict) -> dict:
 
 
 # ══════════════════════════════════════════════
+#  SCROBBLING  (ListenBrainz / Last.fm — opt-in)
+# ══════════════════════════════════════════════
+
+def _scrobble_submit(cfg: dict, meta: dict, now_playing: bool) -> dict:
+    """Forward a play to the configured scrobble service.
+
+    meta: {title, artist, album}.  Returns {"ok": bool, ...}.
+    Only called for local-file plays (never 30s Deezer previews).
+    """
+    if not cfg.get("scrobble_enabled"):
+        return {"ok": False, "skipped": "disabled"}
+    title  = (meta.get("title")  or "").strip()
+    artist = (meta.get("artist") or "").strip()
+    album  = (meta.get("album")  or "").strip()
+    if not title or not artist:
+        return {"ok": False, "skipped": "missing artist/title"}
+
+    service = (cfg.get("scrobble_service") or "listenbrainz").lower()
+    try:
+        if service == "listenbrainz":
+            token = (cfg.get("listenbrainz_token") or "").strip()
+            if not token:
+                return {"ok": False, "skipped": "no token"}
+            track_meta = {"artist_name": artist, "track_name": title}
+            if album:
+                track_meta["release_name"] = album
+            if now_playing:
+                payload = {"listen_type": "playing_now",
+                           "payload": [{"track_metadata": track_meta}]}
+            else:
+                payload = {"listen_type": "single",
+                           "payload": [{"listened_at": int(time.time()),
+                                        "track_metadata": track_meta}]}
+            data = json.dumps(payload).encode("utf-8")
+            req  = urllib.request.Request(
+                "https://api.listenbrainz.org/1/submit-listens",
+                data=data, method="POST",
+                headers={"Authorization": f"Token {token}",
+                         "Content-Type": "application/json",
+                         "User-Agent": "TGDownloader/6"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                resp.read()
+            return {"ok": True}
+
+        if service == "lastfm":
+            api_key = (cfg.get("lastfm_api_key") or "").strip()
+            secret  = (cfg.get("lastfm_secret") or "").strip()
+            sk      = (cfg.get("lastfm_session_key") or "").strip()
+            if not (api_key and secret and sk):
+                return {"ok": False, "skipped": "lastfm not configured"}
+            method = "track.updateNowPlaying" if now_playing else "track.scrobble"
+            params = {"method": method, "api_key": api_key, "sk": sk,
+                      "artist": artist, "track": title}
+            if album:
+                params["album"] = album
+            if not now_playing:
+                params["timestamp"] = str(int(time.time()))
+            # API signature: md5 of sorted "<k><v>" pairs + secret
+            sig_base = "".join(f"{k}{params[k]}" for k in sorted(params)) + secret
+            params["api_sig"] = hashlib.md5(sig_base.encode("utf-8")).hexdigest()
+            params["format"]  = "json"
+            data = urllib.parse.urlencode(params).encode("utf-8")
+            req  = urllib.request.Request(
+                "https://ws.audioscrobbler.com/2.0/",
+                data=data, method="POST",
+                headers={"User-Agent": "TGDownloader/6"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                resp.read()
+            return {"ok": True}
+
+        return {"ok": False, "error": f"unknown service: {service}"}
+    except Exception as exc:
+        logger.warning("scrobble failed: %s", exc)
+        return {"ok": False, "error": str(exc)}
+
+
+# ══════════════════════════════════════════════
 #  WEBSOCKET HANDLER
 # ══════════════════════════════════════════════
 
@@ -2237,6 +2314,7 @@ class Handler(BaseHTTPRequestHandler):
                 total_files = total_bytes = album_count = 0
                 artist_stats: dict = {}   # artist -> {tracks, bytes}
                 orphaned: list = []
+                format_counts: dict = {}  # extension (e.g. "flac") -> file count
 
                 for f in home_path.rglob("*"):
                     if not (f.is_file() and f.suffix.lower() in AUDIO_EXT):
@@ -2244,6 +2322,8 @@ class Handler(BaseHTTPRequestHandler):
                     total_files += 1
                     sz           = f.stat().st_size
                     total_bytes += sz
+                    ext          = f.suffix.lower().lstrip(".")
+                    format_counts[ext] = format_counts.get(ext, 0) + 1
 
                 # Per-artist stats from the Artists/ tree (artist/album/file)
                 if artists_root.is_dir():
@@ -2283,6 +2363,39 @@ class Handler(BaseHTTPRequestHandler):
                     "latest":         timestamps[-1][:10] if timestamps else None,
                 }
 
+                # Library growth over time: cumulative tracks added per month,
+                # derived from manifest entry timestamps + their file counts.
+                monthly: dict = {}   # "YYYY-MM" -> tracks added that month
+                for v in manifest.values():
+                    ts = v.get("timestamp", "")
+                    if len(ts) < 7:
+                        continue
+                    month = ts[:7]
+                    added = len(v.get("files") or []) or 1
+                    monthly[month] = monthly.get(month, 0) + added
+                growth: list = []
+                running = 0
+                for month in sorted(monthly):
+                    running += monthly[month]
+                    growth.append({"month": month, "added": monthly[month], "cumulative": running})
+
+                # Top genres (reuse the genre scanner used for playlist creation)
+                top_genres: list = []
+                try:
+                    genre_map = _scan_genres(home_path)
+                    top_genres = sorted(
+                        ({"name": g, "tracks": len(tracks)} for g, tracks in genre_map.items()),
+                        key=lambda x: x["tracks"], reverse=True
+                    )[:12]
+                except Exception:
+                    logger.exception("genre scan failed in /library-stats")
+
+                # Format / quality breakdown
+                formats = sorted(
+                    ({"ext": e.upper(), "count": c} for e, c in format_counts.items()),
+                    key=lambda x: x["count"], reverse=True
+                )
+
                 self._send_json(200, {
                     "total_files":           total_files,
                     "total_bytes":           total_bytes,
@@ -2292,6 +2405,9 @@ class Handler(BaseHTTPRequestHandler):
                     "artists_by_tracks":     artists_by_tracks[:20],
                     "orphaned":              orphaned,
                     "download_history_summary": history_summary,
+                    "growth":                growth,
+                    "top_genres":            top_genres,
+                    "formats":               formats,
                 })
             except Exception as exc:
                 logger.exception("Error in /library-stats")
@@ -2756,6 +2872,18 @@ class Handler(BaseHTTPRequestHandler):
             cfg.update(body)
             m.save_config(cfg)
             self._send_json(200, {"ok": True})
+            return
+
+        if path == "/scrobble":
+            m   = _tgd_import()
+            cfg = m.load_config()
+            kind = body.get("kind", "scrobble")   # "now_playing" | "scrobble"
+            result = _scrobble_submit(cfg, {
+                "title":  body.get("title"),
+                "artist": body.get("artist"),
+                "album":  body.get("album"),
+            }, now_playing=(kind == "now_playing"))
+            self._send_json(200, result)
             return
 
         if path == "/sessions":

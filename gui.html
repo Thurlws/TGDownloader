@@ -29,6 +29,24 @@
     --r:         3px;
   }
 
+  /* Light theme — overrides the dark palette when html.theme-light is set */
+  html.theme-light {
+    --bg:        #f5f5f4;
+    --bg2:       #ececea;
+    --bg3:       #e2e2df;
+    --bg4:       #d6d6d2;
+    --border:    #cfcfca;
+    --border2:   #b8b8b2;
+    --accent:    #5a8f00;
+    --accent-d:  #4a7a00;
+    --fg:        #1a1a1a;
+    --fg2:       #444444;
+    --fg3:       #777771;
+    --red:       #c0392b;
+    --yellow:    #b8860b;
+    --blue:      #2c6fbf;
+  }
+
   html, body {
     height: 100%; background: var(--bg); color: var(--fg);
     font-family: var(--sans); font-size: 13px; line-height: 1.5;
@@ -3109,7 +3127,41 @@
           <input type="text" id="cfg-scale-text" style="width:52px;text-align:center;" placeholder="1.0">
         </div>
       </div>
+      <div class="modal-section-label">Scrobbling</div>
+      <label class="modal-toggle">
+        <input type="checkbox" id="cfg-scrobble-enabled">
+        <span>Scrobble local plays (logs what you listen to)</span>
+      </label>
+      <div class="modal-field">
+        <label>Service</label>
+        <select id="cfg-scrobble-service" style="width:100%;background:var(--bg3);color:var(--fg);border:1px solid var(--border2);border-radius:4px;padding:6px 8px;font-family:var(--mono);font-size:11px;">
+          <option value="listenbrainz">ListenBrainz</option>
+          <option value="lastfm">Last.fm</option>
+        </select>
+      </div>
+      <div class="modal-field" id="cfg-lb-wrap">
+        <label>ListenBrainz Token <span style="color:var(--fg3);font-weight:400">— from listenbrainz.org/settings</span></label>
+        <input type="text" id="cfg-listenbrainz-token" placeholder="paste your user token" autocomplete="off">
+      </div>
+      <div id="cfg-lastfm-wrap" style="display:none">
+        <div class="modal-field">
+          <label>Last.fm API Key</label>
+          <input type="text" id="cfg-lastfm-key" autocomplete="off">
+        </div>
+        <div class="modal-field">
+          <label>Last.fm Shared Secret</label>
+          <input type="text" id="cfg-lastfm-secret" autocomplete="off">
+        </div>
+        <div class="modal-field">
+          <label>Last.fm Session Key</label>
+          <input type="text" id="cfg-lastfm-sk" autocomplete="off">
+        </div>
+      </div>
       <div class="modal-section-label">Interface</div>
+      <label class="modal-toggle">
+        <input type="checkbox" id="cfg-theme-light">
+        <span>Light theme</span>
+      </label>
       <label class="modal-toggle">
         <input type="checkbox" id="cfg-show-welcome" checked>
         <span>Show welcome screen on startup</span>
@@ -5362,6 +5414,22 @@ function renderStats() {
           </div>`;
         }).join('')}
       </div>` : ''}
+      ${ls.growth?.length > 1 ? `
+      <div class="stat-card">
+        <div class="stat-card-title">Library Growth</div>
+        ${makeGrowthChart(ls.growth)}
+        <div class="stat-row" style="margin-top:6px"><span>Tracks added (90d)</span><strong style="color:var(--accent)">${_growthRecent(ls.growth)}</strong></div>
+      </div>` : ''}
+      ${ls.top_genres?.length ? `
+      <div class="stat-card">
+        <div class="stat-card-title">Top Genres</div>
+        ${makeBarChart(ls.top_genres.map(g => ({ label: g.name, value: g.tracks })))}
+      </div>` : ''}
+      ${ls.formats?.length ? `
+      <div class="stat-card">
+        <div class="stat-card-title">Format Breakdown</div>
+        ${makeBarChart(ls.formats.map(f => ({ label: f.ext, value: f.count })))}
+      </div>` : ''}
     `;
   } else if (!ls) {
     // Trigger fetch in background
@@ -5409,6 +5477,45 @@ function makeSparkline(values) {
   return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" class="stat-spark-svg">
     <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round" opacity="0.85" vector-effect="non-scaling-stroke"/>
   </svg>`;
+}
+
+// Horizontal labelled bar chart for {label, value} rows (genres, formats, …)
+function makeBarChart(rows) {
+  if (!rows || !rows.length) return '';
+  const max = Math.max(...rows.map(r => r.value), 1);
+  return rows.map(r => {
+    const barW = Math.round((r.value / max) * 100);
+    return `<div class="stat-row" style="gap:8px;">
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(String(r.label))}</span>
+      <strong style="font-size:10px;min-width:36px;text-align:right">${r.value.toLocaleString()}</strong>
+      <div style="width:70px;height:3px;background:var(--bg4);border-radius:2px;overflow:hidden;flex-shrink:0">
+        <div style="width:${barW}%;height:100%;background:var(--accent);border-radius:2px"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Cumulative library-growth line chart from [{month, cumulative}]
+function makeGrowthChart(growth) {
+  const vals = growth.map(g => g.cumulative);
+  if (vals.length < 2) return '';
+  const w = 260, h = 56, max = Math.max(...vals), min = Math.min(...vals);
+  const span = Math.max(max - min, 1);
+  const pts = vals.map((v, i) => {
+    const x = (i / (vals.length - 1)) * w;
+    const y = h - ((v - min) / span) * (h - 8) - 4;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const area = `0,${h} ${pts.join(' ')} ${w},${h}`;
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:56px;display:block">
+    <polygon points="${area}" fill="var(--accent)" opacity="0.12"/>
+    <polyline points="${pts.join(' ')}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round" opacity="0.9" vector-effect="non-scaling-stroke"/>
+  </svg>`;
+}
+
+// Sum of tracks added in the trailing ~90 days (last 3 month buckets)
+function _growthRecent(growth) {
+  return growth.slice(-3).reduce((s, g) => s + (g.added || 0), 0).toLocaleString();
 }
 
 
@@ -5712,6 +5819,16 @@ const CFG_FIELDS = {
   'cfg-max-queue':     'max_queue',
 };
 
+function applyTheme(theme) {
+  document.documentElement.classList.toggle('theme-light', theme === 'light');
+  try { localStorage.setItem('tgd_theme', theme); } catch (_) {}
+}
+
+// Apply theme as early as possible: localStorage first (instant, no flash),
+// then reconcile with the server config.
+applyTheme(localStorage.getItem('tgd_theme') || 'dark');
+fetch('/config').then(r => r.json()).then(cfg => { if (cfg.theme) applyTheme(cfg.theme); }).catch(() => {});
+
 function applyScale(v) {
   const n   = Math.min(2.0, Math.max(0.6, parseFloat(v) || 1.0));
   const app = document.getElementById('app');
@@ -5745,8 +5862,25 @@ function openSettings() {
     document.getElementById('cfg-scale-range').value = s;
     document.getElementById('cfg-scale-text').value  = s.toFixed(2);
     document.getElementById('cfg-show-welcome').checked = showWelcomeOnStart;
+    // Scrobbling
+    document.getElementById('cfg-scrobble-enabled').checked = !!cfg.scrobble_enabled;
+    document.getElementById('cfg-scrobble-service').value   = cfg.scrobble_service || 'listenbrainz';
+    document.getElementById('cfg-listenbrainz-token').value = cfg.listenbrainz_token || '';
+    document.getElementById('cfg-lastfm-key').value         = cfg.lastfm_api_key || '';
+    document.getElementById('cfg-lastfm-secret').value      = cfg.lastfm_secret || '';
+    document.getElementById('cfg-lastfm-sk').value          = cfg.lastfm_session_key || '';
+    _syncScrobbleService();
+    // Theme
+    document.getElementById('cfg-theme-light').checked = (cfg.theme === 'light');
     document.getElementById('modal-overlay').classList.add('open');
   });
+}
+
+// Show only the relevant credential fields for the chosen scrobble service
+function _syncScrobbleService() {
+  const svc = document.getElementById('cfg-scrobble-service').value;
+  document.getElementById('cfg-lb-wrap').style.display     = (svc === 'listenbrainz') ? '' : 'none';
+  document.getElementById('cfg-lastfm-wrap').style.display = (svc === 'lastfm') ? '' : 'none';
 }
 
 function saveSettings() {
@@ -5763,6 +5897,19 @@ function saveSettings() {
 
   showWelcomeOnStart = document.getElementById('cfg-show-welcome').checked;
   localStorage.setItem('tgd_show_welcome', showWelcomeOnStart ? 'true' : 'false');
+
+  // Scrobbling (kept as raw strings — never numeric-coerced like CFG_FIELDS)
+  patch.scrobble_enabled   = document.getElementById('cfg-scrobble-enabled').checked;
+  patch.scrobble_service   = document.getElementById('cfg-scrobble-service').value;
+  patch.listenbrainz_token = document.getElementById('cfg-listenbrainz-token').value.trim();
+  patch.lastfm_api_key     = document.getElementById('cfg-lastfm-key').value.trim();
+  patch.lastfm_secret      = document.getElementById('cfg-lastfm-secret').value.trim();
+  patch.lastfm_session_key = document.getElementById('cfg-lastfm-sk').value.trim();
+
+  // Theme
+  const theme = document.getElementById('cfg-theme-light').checked ? 'light' : 'dark';
+  patch.theme = theme;
+  applyTheme(theme);
 
   fetch('/config', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -6233,6 +6380,7 @@ document.getElementById('btn-run').addEventListener('click', runOrStop);
 
 document.getElementById('btn-settings').addEventListener('click', openSettings);
 document.getElementById('btn-modal-save').addEventListener('click', saveSettings);
+document.getElementById('cfg-scrobble-service').addEventListener('change', _syncScrobbleService);
 document.getElementById('btn-modal-cancel').addEventListener('click', () =>
   document.getElementById('modal-overlay').classList.remove('open'));
 document.getElementById('modal-overlay').addEventListener('click', e => {
@@ -6686,6 +6834,7 @@ let _mpCurrentAlb = null;  // album that owns the current playback queue — nev
 let _mpShuffle   = false;          // shuffle on/off
 let _mpRepeat    = 'off';          // 'off' | 'all' | 'one'
 let _mpShuffleOrder = [];          // remaining indices to play when shuffling
+let _mpScrobbleState = null;       // { isLocal, scrobbled, meta } for current track
 let _likedKeys   = new Set();      // "path_hash\x00name" keys of liked songs
 const _likedAlbum = { album: 'Liked Songs', artist: '', path_hash: '', cover_url: null, is_liked: true };
 const _mpAudio   = document.getElementById('mini-audio');
@@ -8647,6 +8796,31 @@ function _mpPlayTrack(idx, alb) {
   _mpUpdateLikeBtn(_isTrackLiked(track, alb));
   _mpHighlightRow(idx);
   _npUpdate(track, alb);
+
+  // Scrobbling: only local files (never 30s Deezer previews).
+  const _isLocalTrack = !!(trackPh && track.name);
+  _mpScrobbleState = {
+    isLocal: _isLocalTrack,
+    scrobbled: false,
+    meta: {
+      title:  track.title || track.name || '',
+      artist: track.artist || alb?.artist || '',
+      album:  track.album || (alb && !alb.is_liked ? alb.album : '') || '',
+    },
+  };
+  if (_isLocalTrack) _sendScrobble('now_playing');
+}
+
+// Fire-and-forget scrobble submission to the backend (which forwards to
+// ListenBrainz / Last.fm if the user has enabled and configured it).
+function _sendScrobble(kind) {
+  const st = _mpScrobbleState;
+  if (!st || !st.isLocal || !st.meta.title || !st.meta.artist) return;
+  fetch('/scrobble', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind, ...st.meta }),
+  }).catch(() => {});
 }
 
 function _mpUpdatePlayBtn() {
@@ -8691,6 +8865,14 @@ _mpAudio.addEventListener('timeupdate', () => {
   if (fill)  fill.style.width = pct + '%';
   if (curEl) curEl.textContent = `${Math.floor(cur / 60)}:${String(Math.floor(cur % 60)).padStart(2, '0')}`;
   if (totEl) totEl.textContent = `${Math.floor(dur / 60)}:${String(Math.floor(dur % 60)).padStart(2, '0')}`;
+
+  // Scrobble once the track passes the standard threshold (≥50% played, or
+  // ≥4 min). Local files only; _sendScrobble guards on that.
+  const st = _mpScrobbleState;
+  if (st && st.isLocal && !st.scrobbled && cur >= Math.min(dur * 0.5, 240) && cur > 20) {
+    st.scrobbled = true;
+    _sendScrobble('scrobble');
+  }
 });
 
 _mpAudio.addEventListener('play',  () => { _mpPlaying = true;  _mpUpdatePlayBtn(); });
