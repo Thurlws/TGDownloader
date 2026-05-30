@@ -135,6 +135,8 @@ BOT_BUSY_PHRASES = [
 ]
 
 UNKNOWN_ALBUM    = "_Unknown Album"
+PLAYLISTS_DIRNAME = "Playlists"   # top-level folder holding downloaded/created playlists
+ARTISTS_DIRNAME   = "Artists"     # parent folder that all artist folders live under
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac",
                     ".wav", ".aif", ".aiff", ".wma", ".ape", ".wv"}
 
@@ -163,8 +165,10 @@ _TRACK_PROGRESS_RE = re.compile(r"track\s+\d+\s+of\s+(\d+)",    re.IGNORECASE)
 
 @dataclass
 class URLEntry:
-    url:    str
-    artist: str
+    url:           str
+    artist:        str
+    is_playlist:   bool = False   # True → store flat in <home>/Playlists/<name>/
+    playlist_name: str  = ""      # display/folder name for a playlist download
 
 
 @dataclass
@@ -242,6 +246,72 @@ def configure_settings(cfg: dict) -> dict:
 
 
 # ═════════════════════════════════════════════
+#  LIBRARY LAYOUT  (artists live under <home>/Artists/)
+# ═════════════════════════════════════════════
+
+def artists_root(home: Path) -> Path:
+    """The parent directory that holds every artist folder."""
+    return home / ARTISTS_DIRNAME
+
+
+def _dir_has_audio(d: Path) -> bool:
+    """True if *d* contains at least one audio file (recursively)."""
+    try:
+        for p in d.rglob("*"):
+            if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def migrate_artists_layout(home: Path) -> int:
+    """One-time, idempotent migration: move top-level artist folders into
+    <home>/Artists/.  Conservative & non-destructive — only moves directories
+    that actually contain audio, skips system folders, and merges (never
+    overwrites) on a name clash.  Returns the number of folders moved."""
+    system = {ARTISTS_DIRNAME, PLAYLISTS_DIRNAME, ".tgdownloader",
+              "tg_tmp_downloads"}
+    try:
+        entries = list(home.iterdir())
+    except Exception:
+        return 0
+
+    candidates = [
+        d for d in entries
+        if d.is_dir() and not d.name.startswith(".")
+        and d.name not in system and _dir_has_audio(d)
+    ]
+    if not candidates:
+        return 0
+
+    root = artists_root(home)
+    root.mkdir(parents=True, exist_ok=True)
+    moved = 0
+    for d in candidates:
+        dest = root / d.name
+        try:
+            if dest.exists():
+                # Merge children that don't already exist at the destination.
+                for child in d.iterdir():
+                    cdest = dest / child.name
+                    if not cdest.exists():
+                        shutil.move(str(child), str(cdest))
+                try:
+                    d.rmdir()          # only succeeds if now empty
+                except OSError:
+                    pass
+            else:
+                shutil.move(str(d), str(dest))
+            moved += 1
+        except Exception as e:
+            _log(f"  WARNING: could not move '{d.name}' into {ARTISTS_DIRNAME}/: {e}")
+    if moved:
+        _log(f"  Reorganised {moved} artist folder(s) under '{ARTISTS_DIRNAME}/'.")
+    return moved
+
+
+# ═════════════════════════════════════════════
 #  MANIFEST
 # ═════════════════════════════════════════════
 
@@ -287,14 +357,23 @@ def mark_url_complete(
     home: Path, manifest: dict,
     url: str, artist: str, files: list[str],
     albums: list[str] | None = None,
+    is_playlist: bool = False,
+    playlist: str = "",
+    cover: str = "",
 ) -> None:
-    manifest[url] = {
+    entry = {
         "status":    "complete",
         "artist":    artist,
         "files":     files,
         "albums":    albums or [],
         "timestamp": datetime.now().isoformat(timespec="seconds"),
     }
+    if is_playlist:
+        entry["is_playlist"] = True
+        entry["playlist"]    = playlist
+        if cover:
+            entry["cover"] = cover     # remote Spotify/Deezer cover URL
+    manifest[url] = entry
     save_manifest(home, manifest)
 
 
@@ -316,7 +395,25 @@ def is_url_complete(
     if not files:
         return True
 
-    artist_dir = home / _sanitise_path(artist)
+    # Playlists are stored flat under <home>/Playlists/<name>/ — verify there.
+    if entry.get("is_playlist"):
+        pl_dir = home / PLAYLISTS_DIRNAME / _sanitise_path(entry.get("playlist", ""))
+        if not pl_dir.exists():
+            _log(
+                f"  Manifest: playlist folder '{pl_dir.name}' not found — "
+                "treating URL as incomplete."
+            )
+            return False
+        missing = [f for f in files if not _exists_in_tree(f, pl_dir)]
+        if missing:
+            _log(
+                f"  Manifest: {len(missing)}/{len(files)} track(s) missing on disk "
+                f"for playlist '{pl_dir.name}' — will re-download."
+            )
+            return False
+        return True
+
+    artist_dir = artists_root(home) / _sanitise_path(artist)
     if not artist_dir.exists():
         _log(
             f"  Manifest: artist folder '{artist_dir.name}' not found — "
@@ -553,9 +650,19 @@ def build_library_hash_index(home: Path) -> set[str]:
     total    = 0
     rehashed = 0
 
+    # Playlist folders hold COPIES of tracks — exclude them from the dedup index
+    # so a real album/artist download is never skipped just because one of its
+    # tracks also lives in a playlist.
+    playlists_root = (home / PLAYLISTS_DIRNAME).resolve()
+
     for p in home.rglob("*"):
         if not (p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS):
             continue
+        try:
+            if playlists_root in p.resolve().parents:
+                continue
+        except Exception:
+            pass
         key = str(p)
         try:
             st    = p.stat()
@@ -607,7 +714,7 @@ def check_pre_download(entry: "URLEntry", home: Path) -> None:
        contains an album whose name closely resembles the URL's Deezer
        album title (extracted from the URL path, best-effort).
     """
-    artist_dir = _fuzzy_match_dir(entry.artist, home)
+    artist_dir = _fuzzy_match_dir(entry.artist, artists_root(home))
     if artist_dir is None:
         return                                     # no match — nothing to warn about
 
@@ -741,6 +848,179 @@ def sort_by_album(source: Path, dest: Path,
 
     real_albums = [a for a in groups.keys() if a != _sanitise_path(UNKNOWN_ALBUM)]
     return dupes, real_albums
+
+
+def _norm_track_title(s: str) -> str:
+    """Normalise a track title for fuzzy matching (lowercase, alnum only)."""
+    return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
+
+
+def _order_playlist_files(files: list[Path],
+                          ordered: list[dict]) -> list[tuple[Path, dict | None]]:
+    """Reorder *files* to match the playlist's original track order.
+
+    *ordered* is a list of {"title","artist","date_added"} from Spotify/Deezer.
+    Each file is matched to a playlist position by its title tag (exact, then
+    fuzzy substring).  Returns an ordered list of (file, matched_entry|None);
+    unmatched files are appended (with None) so nothing is ever lost."""
+    titled: list[list] = []
+    for f in files:
+        title = ""
+        try:
+            a = MutagenFile(f, easy=True)
+            if a is not None:
+                tag = a.get("title")
+                if tag and str(tag[0]).strip():
+                    title = str(tag[0]).strip()
+        except Exception:
+            pass
+        titled.append([f, _norm_track_title(title) or _norm_track_title(f.stem)])
+
+    used = [False] * len(titled)
+    result: list[tuple[Path, dict | None]] = []
+    for trk in ordered:
+        nt = _norm_track_title(trk.get("title", ""))
+        if not nt:
+            continue
+        best = -1
+        for i, (f, ft) in enumerate(titled):           # exact first
+            if not used[i] and ft == nt:
+                best = i
+                break
+        if best == -1:                                  # then fuzzy substring
+            for i, (f, ft) in enumerate(titled):
+                if not used[i] and ft and (ft in nt or nt in ft):
+                    best = i
+                    break
+        if best != -1:
+            used[best] = True
+            result.append((titled[best][0], trk))
+
+    for i, (f, ft) in enumerate(titled):                # leftovers
+        if not used[i]:
+            result.append((f, None))
+    return result
+
+
+def _set_track_number(path: Path, idx: int) -> None:
+    """Best-effort: write the playlist position into the track-number tag."""
+    try:
+        a = MutagenFile(path, easy=True)
+        if a is None:
+            return
+        a["tracknumber"] = str(idx)
+        a.save()
+    except Exception:
+        pass
+
+
+def _save_playlist_cover(cover_url: str, playlist_dir: Path) -> None:
+    """Download the playlist's cover art and store it as cover.jpg so the GUI
+    serves the original Spotify/Deezer art instead of an embedded track cover."""
+    if not cover_url:
+        return
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            cover_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = resp.read()
+        if data:
+            playlist_dir.mkdir(parents=True, exist_ok=True)
+            (playlist_dir / "cover.jpg").write_bytes(data)
+            _log(f"  Saved playlist cover ({len(data) // 1024} KB).")
+    except Exception as e:
+        _log(f"  WARNING: could not save playlist cover: {e}")
+
+
+def load_playlist_meta(home: Path) -> dict:
+    """Read the side file the GUI writes at session start:
+    { url: {"cover": str, "tracks": [{"title","artist"}, …]} }.  Best-effort."""
+    try:
+        p = home / ".tgdownloader" / "playlist_meta.json"
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def sort_into_playlist(source: Path, playlist_dir: Path,
+                       ordered: list[dict] | None = None) -> tuple[int, list[str]]:
+    """Move every downloaded audio file flat into <home>/Playlists/<name>/.
+
+    Unlike sort_by_album(), playlist tracks are intentionally NOT grouped by
+    their individual album tags (that scatters a playlist across many artist
+    folders).  When *ordered* (the playlist's original Spotify/Deezer order) is
+    supplied, files are arranged to match it and their track-number tag is set
+    accordingly; otherwise they fall back to alphabetical order.  A zero-padded
+    index prefix keeps a stable order and prevents same-title collisions.  No
+    global hash dedup is applied — a playlist may legitimately contain tracks
+    that also live under an artist folder.  Returns (dupes, [final_filenames])."""
+    _log(f"\n{'─'*50}")
+    _log(f"  ADDING TO PLAYLIST: {playlist_dir.name}")
+    _log(f"{'─'*50}\n")
+
+    files: list[Path] = []
+    for p in source.rglob("*"):
+        if not (p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS):
+            continue
+        clean_name = _sanitise_filename(p.name)
+        if clean_name != p.name:
+            new_path = p.parent / clean_name
+            p.rename(new_path)
+            p = new_path
+        files.append(p)
+
+    if not files:
+        _log("  No audio files found to add.")
+        return 0, []
+
+    # Build an ordered list of (file, matched_entry|None)
+    if ordered:
+        pairs = _order_playlist_files(files, ordered)
+        _log(f"  Ordering {len(pairs)} track(s) to match the original playlist.")
+    else:
+        pairs = [(f, None) for f in sorted(files, key=lambda x: x.name.lower())]
+
+    playlist_dir.mkdir(parents=True, exist_ok=True)
+    width = max(2, len(str(len(pairs))))
+    moved = errors = 0
+    final_names: list[str] = []
+    sidecar: dict = {}      # final_filename → {"date_added": …} for the GUI
+
+    for idx, (track, entry) in enumerate(pairs, 1):
+        prefix = f"{idx:0{width}d} - "
+        target = playlist_dir / f"{prefix}{track.name}"
+        counter = 1
+        while target.exists():
+            target = playlist_dir / f"{prefix}{track.stem} ({counter}){track.suffix}"
+            counter += 1
+        try:
+            shutil.move(str(track), str(target))
+            _set_track_number(target, idx)
+            final_names.append(target.name)
+            da = (entry or {}).get("date_added", "")
+            if da:
+                sidecar[target.name] = {"date_added": da}
+            moved += 1
+        except Exception as e:
+            _log(f"    ERROR  {track.name}: {e}")
+            errors += 1
+
+    # Persist per-track playlist metadata (date added) for the library view.
+    if sidecar:
+        try:
+            (playlist_dir / ".tgplaylist.json").write_text(
+                json.dumps(sidecar, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
+    msg = f"  Added {moved} track(s) to playlist '{playlist_dir.name}'."
+    if errors:
+        msg += f"  {errors} error(s)."
+    _log(msg)
+    return 0, final_names
 
 
 
@@ -1489,8 +1769,24 @@ def collect_url_entries(max_queue: int) -> list[URLEntry]:
                 if not artist and not _is_gui:
                     print("  Artist name is required.")
 
+        # GUI sends a 3rd line per entry: the playlist name (empty = not a
+        # playlist).  The interactive CLI never sends it, so only read in GUI
+        # mode to keep the two protocols in sync.
+        playlist_name = ""
+        if _is_gui:
+            playlist_name = input("").strip()
+        # Fall back to URL-based detection so a playlist still routes correctly
+        # even if the GUI couldn't resolve its name.
+        is_playlist = bool(playlist_name) or ("/playlist/" in url.lower())
+        if is_playlist and not playlist_name:
+            mm = re.search(r"/playlist/([A-Za-z0-9]+)", url)
+            playlist_name = f"Playlist {mm.group(1)}" if mm else "Playlist"
+
         last_artist = artist
-        entries.append(URLEntry(url=url, artist=artist))
+        entries.append(URLEntry(
+            url=url, artist=artist,
+            is_playlist=is_playlist, playlist_name=playlist_name,
+        ))
 
     if not entries:
         sys.exit("No URLs provided — exiting.")
@@ -1572,7 +1868,9 @@ async def main() -> None:
             sys.exit("Bye!")
 
     home     = get_home_music_folder(cfg)
+    migrate_artists_layout(home)               # nest artist folders under Artists/
     manifest = load_manifest(home)
+    playlist_meta = load_playlist_meta(home)   # {url: {cover, tracks}} for playlists
     entries  = collect_url_entries(cfg["max_queue"])
 
     # ── Build library hash index (once per session) ───────────────────────
@@ -1618,8 +1916,8 @@ async def main() -> None:
         # ── Fuzzy artist-directory resolution ─────────────────────────────
         # Prefer an existing folder whose name closely matches the artist
         # (handles typos, spacing differences, etc.) over creating a new one.
-        artist_dir_exact = home / _sanitise_path(entry.artist)
-        artist_dir = _fuzzy_match_dir(entry.artist, home) or artist_dir_exact
+        artist_dir_exact = artists_root(home) / _sanitise_path(entry.artist)
+        artist_dir = _fuzzy_match_dir(entry.artist, artists_root(home)) or artist_dir_exact
 
         if skip_completed and is_url_complete(manifest, entry.url, home):
             _log(f"\n  [{i}/{len(entries)}] Skipping (manifest + files verified): {entry.url[:60]}")
@@ -1661,6 +1959,33 @@ async def main() -> None:
             ))
             _emit_result(entry.url, entry.artist, "error",
                          expected=expected, error="No files received")
+        elif entry.is_playlist:
+            # Playlist → store flat in <home>/Playlists/<name>/ (don't scatter
+            # the tracks across artist/album folders).
+            pl_name  = entry.playlist_name or "Playlist"
+            pl_dir   = home / PLAYLISTS_DIRNAME / _sanitise_path(pl_name)
+            pmeta    = playlist_meta.get(entry.url, {})
+            ordered  = pmeta.get("tracks") or None
+            dupes, final_names = sort_into_playlist(url_tmp, pl_dir, ordered=ordered)
+            # ── On-device quality conversion ──────────────────────────
+            _tgt_q = cfg.get('target_quality', 'FLAC')
+            convert_directory_quality(pl_dir, _tgt_q)
+            # Original Spotify/Deezer cover art for the playlist folder
+            _cover_url = pmeta.get("cover", "")
+            _save_playlist_cover(_cover_url, pl_dir)
+            mark_url_complete(home, manifest, entry.url, entry.artist,
+                              final_names, [pl_name],
+                              is_playlist=True, playlist=pl_name, cover=_cover_url)
+            dl_count = len(downloaded)
+            status   = "ok" if (expected is None or dl_count >= expected) else "partial"
+            results.append(URLResult(
+                url=entry.url, artist=entry.artist,
+                expected=expected, downloaded=dl_count, dupes_skipped=dupes,
+                dest=pl_dir, status=status,
+            ))
+            _emit_result(entry.url, entry.artist, status,
+                         downloaded=dl_count, expected=expected,
+                         dupes_skipped=dupes)
         else:
             dupes, albums = sort_by_album(url_tmp, artist_dir, hash_index)
             # ── On-device quality conversion ──────────────────────────
