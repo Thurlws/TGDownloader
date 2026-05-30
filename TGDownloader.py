@@ -124,6 +124,17 @@ DEFAULT_CONFIG: dict = {
     # Keeping this at 3 prevents ExportAuthorization flood-waits from
     # Telegram when many tracks on a non-home DC are authorised at once.
     "max_parallel_downloads":  3,
+    # ── Scrobbling (opt-in; off unless a token/key is provided) ──
+    "scrobble_enabled":        False,
+    "scrobble_service":        "listenbrainz",  # "listenbrainz" | "lastfm"
+    "listenbrainz_token":      "",
+    "lastfm_api_key":          "",
+    "lastfm_secret":           "",
+    "lastfm_session_key":      "",
+    # ── Artist watchlist / new-release radar ──
+    "watchlist_autocheck":     True,
+    # ── UI preferences ──
+    "theme":                   "dark",   # "dark" | "light"
 }
 
 BOT_BUSY_PHRASES = [
