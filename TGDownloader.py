@@ -124,6 +124,17 @@ DEFAULT_CONFIG: dict = {
     # Keeping this at 3 prevents ExportAuthorization flood-waits from
     # Telegram when many tracks on a non-home DC are authorised at once.
     "max_parallel_downloads":  3,
+    # ── Scrobbling (opt-in; off unless a token/key is provided) ──
+    "scrobble_enabled":        False,
+    "scrobble_service":        "listenbrainz",  # "listenbrainz" | "lastfm"
+    "listenbrainz_token":      "",
+    "lastfm_api_key":          "",
+    "lastfm_secret":           "",
+    "lastfm_session_key":      "",
+    # ── Artist watchlist / new-release radar ──
+    "watchlist_autocheck":     True,
+    # ── UI preferences ──
+    "theme":                   "dark",   # "dark" | "light"
 }
 
 BOT_BUSY_PHRASES = [
@@ -702,6 +713,43 @@ def build_library_hash_index(home: Path) -> set[str]:
         f"{len(hashes)} unique hash(es)."
     )
     return hashes
+
+
+def build_duplicate_groups(home: Path) -> "list[list[str]]":
+    """Return groups of file paths that share an identical MD5 (true duplicates).
+
+    Reuses the persistent hash cache written by build_library_hash_index so
+    unchanged files are not re-read. Unlike the dedup index, Playlist copies
+    are *included* here so the user can spot redundant copies if they wish.
+    Only groups with more than one member are returned.
+    """
+    old_cache: dict = {}
+    if _HASH_CACHE_FILE.exists():
+        try:
+            old_cache = json.loads(_HASH_CACHE_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            old_cache = {}
+
+    by_hash: dict[str, list[str]] = {}
+    for p in home.rglob("*"):
+        if not (p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS):
+            continue
+        key = str(p)
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        cached = old_cache.get(key)
+        if cached and cached.get("mtime") == st.st_mtime and cached.get("size") == st.st_size:
+            h = cached["hash"]
+        else:
+            try:
+                h = _audio_hash(p)
+            except OSError:
+                continue
+        by_hash.setdefault(h, []).append(key)
+
+    return [paths for paths in by_hash.values() if len(paths) > 1]
 
 
 def check_pre_download(entry: "URLEntry", home: Path) -> None:
