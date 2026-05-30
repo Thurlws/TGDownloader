@@ -2337,6 +2337,95 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": str(exc)})
             return
 
+        if path == "/duplicates":
+            try:
+                m    = _tgd_import()
+                cfg  = m.load_config()
+                home = cfg.get("home_music_folder")
+                if not home:
+                    self._send_json(200, {"error": "No home music folder configured."})
+                    return
+                from pathlib import Path as _P
+                home_path = _P(home)
+                groups_raw = m.build_duplicate_groups(home_path)
+                groups = []
+                for paths in groups_raw:
+                    members = []
+                    for p in paths:
+                        pp = _P(p)
+                        try:
+                            sz = pp.stat().st_size
+                        except OSError:
+                            sz = 0
+                        members.append({
+                            "path":     p,
+                            "rel":      str(pp.relative_to(home_path)) if str(pp).startswith(str(home_path)) else pp.name,
+                            "name":     pp.name,
+                            "size":     sz,
+                        })
+                    members.sort(key=lambda x: x["path"])
+                    groups.append({"size": members[0]["size"], "files": members})
+                groups.sort(key=lambda g: g["size"] * (len(g["files"]) - 1), reverse=True)
+                wasted = sum(g["size"] * (len(g["files"]) - 1) for g in groups)
+                self._send_json(200, {"groups": groups, "wasted_bytes": wasted})
+            except Exception as exc:
+                logger.exception("Error in /duplicates")
+                self._send_json(500, {"error": str(exc)})
+            return
+
+        if path == "/library-scan":
+            try:
+                m    = _tgd_import()
+                cfg  = m.load_config()
+                home = cfg.get("home_music_folder")
+                if not home:
+                    self._send_json(200, {"error": "No home music folder configured."})
+                    return
+                from pathlib import Path as _P
+                home_path    = _P(home)
+                artists_root = home_path / ARTISTS_DIRNAME
+                AUDIO_EXT = {".mp3",".flac",".ogg",".opus",".m4a",".aac",
+                             ".wav",".aif",".aiff",".wma",".ape",".wv"}
+                corrupt:    list = []
+                no_cover:   list = []
+                scanned_files = scanned_albums = 0
+
+                if artists_root.is_dir():
+                    for artist_dir in artists_root.iterdir():
+                        if not artist_dir.is_dir() or artist_dir.name.startswith("."):
+                            continue
+                        for album_dir in artist_dir.iterdir():
+                            if not album_dir.is_dir():
+                                continue
+                            audio = [f for f in album_dir.iterdir()
+                                     if f.is_file() and f.suffix.lower() in AUDIO_EXT]
+                            if not audio:
+                                continue
+                            scanned_albums += 1
+                            # Corrupt / unreadable tracks
+                            for f in audio:
+                                scanned_files += 1
+                                try:
+                                    from mutagen import File as _MF
+                                    if _MF(f) is None:
+                                        corrupt.append(str(f.relative_to(home_path)))
+                                except Exception:
+                                    corrupt.append(str(f.relative_to(home_path)))
+                            # Missing cover art
+                            if _extract_cover_bytes(album_dir) is None:
+                                no_cover.append(str(album_dir.relative_to(home_path)))
+
+                self._send_json(200, {
+                    "scanned_files":  scanned_files,
+                    "scanned_albums": scanned_albums,
+                    "corrupt":        corrupt,
+                    "missing_cover":  no_cover,
+                })
+            except Exception as exc:
+                logger.exception("Error in /library-scan")
+                self._send_json(500, {"error": str(exc)})
+            return
+
         if path == "/search":
             qs     = urlparse(self.path).query
             params: dict[str, str] = {}
@@ -3016,6 +3105,83 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"ok": True})
             else:
                 self._send_json(400, {"error": f"unknown action: {action}"})
+            return
+
+        if path == "/delete-file":
+            m    = _tgd_import()
+            cfg  = m.load_config()
+            home = cfg.get("home_music_folder")
+            target = body.get("path", "")
+            if not home or not target:
+                self._send_json(400, {"error": "Missing home folder or path"})
+                return
+            from pathlib import Path as _P
+            home_path = _P(home).resolve()
+            try:
+                tp = _P(target).resolve()
+            except Exception:
+                self._send_json(400, {"error": "Invalid path"})
+                return
+            # Safety: only allow deleting files that live under the music library
+            if home_path not in tp.parents:
+                self._send_json(403, {"error": "Refusing to delete outside the library folder"})
+                return
+            try:
+                tp.unlink()
+                logger.info("Deleted duplicate file: %s", tp)
+                self._send_json(200, {"ok": True})
+            except Exception as exc:
+                logger.exception("delete-file failed")
+                self._send_json(500, {"error": str(exc)})
+            return
+
+        if path == "/edit-tags":
+            m    = _tgd_import()
+            cfg  = m.load_config()
+            home = cfg.get("home_music_folder")
+            tags = body.get("tags") or {}
+            # Two input modes: explicit absolute `files`, or {path_hash, names}
+            # resolved through the in-memory album map (preferred from the UI).
+            files = list(body.get("files") or [])
+            ph = (body.get("path_hash") or "").strip()
+            if ph:
+                names = body.get("names") or []
+                files += [str(p) for p in _resolve_track_sources(
+                    [{"path_hash": ph, "name": n} for n in names])]
+            if not home or not files:
+                self._send_json(400, {"error": "Missing home folder or files"})
+                return
+            from pathlib import Path as _P
+            home_path = _P(home).resolve()
+            # Only persist the recognised, non-empty easy-tag fields
+            allowed = {k: str(v) for k, v in tags.items()
+                       if k in ("artist", "album", "albumartist", "genre", "date", "title")
+                       and str(v).strip() != ""}
+            if not allowed:
+                self._send_json(400, {"error": "No editable tags provided"})
+                return
+            updated, errors = 0, []
+            for fp in files:
+                try:
+                    tp = _P(fp).resolve()
+                except Exception:
+                    continue
+                if home_path not in tp.parents:
+                    errors.append({"file": fp, "error": "outside library"})
+                    continue
+                try:
+                    from mutagen import File as _MF
+                    audio = _MF(tp, easy=True)
+                    if audio is None:
+                        errors.append({"file": fp, "error": "unreadable"})
+                        continue
+                    for k, v in allowed.items():
+                        audio[k] = [v]
+                    audio.save()
+                    updated += 1
+                except Exception as exc:
+                    errors.append({"file": fp, "error": str(exc)})
+            self._send_json(200, {"ok": True, "updated": updated, "errors": errors})
             return
 
         if path == "/sessions":

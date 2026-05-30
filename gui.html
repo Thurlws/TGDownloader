@@ -2887,6 +2887,7 @@
       <button class="tab" data-tab="library">Library <span class="tab-kbd">3</span></button>
       <button class="tab" data-tab="stats">Stats <span class="tab-kbd">4</span></button>
       <button class="tab" data-tab="releases">Releases <span id="releases-badge" class="tab-badge" style="display:none">0</span></button>
+      <button class="tab" data-tab="maint">Maintenance</button>
       <button class="tab" data-tab="debug">Debug <span class="tab-kbd">5</span></button>
       <span class="spacer"></span>
       <button id="log-clear">clear</button>
@@ -2946,6 +2947,28 @@
       </div>
       <div id="releases-content" style="overflow-y:auto;flex:1;padding:12px 14px;">
         <div class="stat-empty">Watch artists from the Library tab to track their new releases.</div>
+      </div>
+    </div>
+
+    <!-- Maintenance tab -->
+    <div class="tab-pane" id="tab-maint" style="overflow-y:auto;">
+      <div style="padding:14px;max-width:760px;">
+        <div class="stat-card" style="margin-bottom:14px">
+          <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <span>Integrity Scan</span>
+            <button class="btn-secondary" id="btn-run-scan" style="width:auto">Run scan</button>
+          </div>
+          <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Finds unreadable/corrupt tracks and albums missing cover art.</div>
+          <div id="scan-results"></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <span>Duplicate Finder</span>
+            <button class="btn-secondary" id="btn-find-dupes" style="width:auto">Find duplicates</button>
+          </div>
+          <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Groups byte-identical audio files so you can reclaim space.</div>
+          <div id="dupes-results"></div>
+        </div>
       </div>
     </div>
 
@@ -3791,7 +3814,7 @@ function switchTab(tab) {
   document.getElementById('app').classList.toggle('queue-hidden', tab !== 'log');
 
   const clearBtn = document.getElementById('log-clear');
-  if (tab === 'stats' || tab === 'debug' || tab === 'releases') {
+  if (tab === 'stats' || tab === 'debug' || tab === 'releases' || tab === 'maint') {
     // These tabs have no "clear" affordance
     clearBtn.style.visibility = 'hidden';
   } else if (tab === 'history') {
@@ -6421,6 +6444,8 @@ document.getElementById('btn-settings').addEventListener('click', openSettings);
 document.getElementById('btn-modal-save').addEventListener('click', saveSettings);
 document.getElementById('cfg-scrobble-service').addEventListener('change', _syncScrobbleService);
 document.getElementById('btn-check-releases').addEventListener('click', () => checkReleases(true));
+document.getElementById('btn-run-scan').addEventListener('click', runIntegrityScan);
+document.getElementById('btn-find-dupes').addEventListener('click', findDuplicates);
 document.getElementById('btn-modal-cancel').addEventListener('click', () =>
   document.getElementById('modal-overlay').classList.remove('open'));
 document.getElementById('modal-overlay').addEventListener('click', e => {
@@ -7731,6 +7756,91 @@ function _markReleaseSeen(rel) {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'mark_seen', artist_id: rel.artist_id, album_ids: [rel.album_id] }),
   }).catch(() => {});
+}
+
+// ── Maintenance: integrity scan + duplicate finder ────────────────────────
+async function runIntegrityScan() {
+  const el  = document.getElementById('scan-results');
+  const btn = document.getElementById('btn-run-scan');
+  el.innerHTML = '<div style="font-family:var(--mono);font-size:10px;color:var(--fg3)">Scanning…</div>';
+  if (btn) btn.disabled = true;
+  try {
+    const d = await (await fetch('/library-scan')).json();
+    if (d.error) { el.innerHTML = `<div style="color:var(--red);font-size:11px">${escHtml(d.error)}</div>`; return; }
+    const section = (title, items, color) => items.length
+      ? `<div class="stat-row" style="margin-top:6px"><span style="color:${color}">${title}</span><strong>${items.length}</strong></div>
+         <div style="max-height:160px;overflow-y:auto;font-family:var(--mono);font-size:10px;color:var(--fg3)">${
+           items.map(p => `<div style="padding:1px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(p)}">${escHtml(p)}</div>`).join('')}</div>`
+      : '';
+    const clean = !d.corrupt.length && !d.missing_cover.length;
+    el.innerHTML = `
+      <div class="stat-row"><span>Albums scanned</span><strong>${d.scanned_albums.toLocaleString()}</strong></div>
+      <div class="stat-row"><span>Tracks scanned</span><strong>${d.scanned_files.toLocaleString()}</strong></div>
+      ${clean ? '<div class="stat-row" style="margin-top:6px;color:var(--accent)">✓ No issues found.</div>' : ''}
+      ${section('Corrupt / unreadable', d.corrupt, 'var(--red)')}
+      ${section('Missing cover art', d.missing_cover, 'var(--yellow)')}`;
+  } catch (e) {
+    el.innerHTML = `<div style="color:var(--red);font-size:11px">Scan failed: ${escHtml(String(e))}</div>`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function findDuplicates() {
+  const el  = document.getElementById('dupes-results');
+  const btn = document.getElementById('btn-find-dupes');
+  el.innerHTML = '<div style="font-family:var(--mono);font-size:10px;color:var(--fg3)">Hashing library…</div>';
+  if (btn) btn.disabled = true;
+  try {
+    const d = await (await fetch('/duplicates')).json();
+    if (d.error) { el.innerHTML = `<div style="color:var(--red);font-size:11px">${escHtml(d.error)}</div>`; return; }
+    if (!d.groups.length) { el.innerHTML = '<div class="stat-row" style="color:var(--accent)">✓ No duplicates found.</div>'; return; }
+    renderDupes(d);
+  } catch (e) {
+    el.innerHTML = `<div style="color:var(--red);font-size:11px">Failed: ${escHtml(String(e))}</div>`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+let _dupeData = null;
+function renderDupes(d) {
+  _dupeData = d;
+  const el = document.getElementById('dupes-results');
+  if (!d.groups.length) { el.innerHTML = '<div class="stat-row" style="color:var(--accent)">✓ No duplicates remaining.</div>'; return; }
+  el.innerHTML = `<div class="stat-row"><span>Duplicate groups</span><strong>${d.groups.length}</strong></div>
+    <div class="stat-row"><span>Reclaimable</span><strong style="color:var(--accent)">${_fmtBytes(d.wasted_bytes)}</strong></div>` +
+    d.groups.map((g, gi) => `
+      <div style="border:1px solid var(--border);border-radius:5px;padding:6px 8px;margin-top:8px">
+        <div style="font-size:10px;color:var(--fg3);margin-bottom:4px">${g.files.length} copies · ${_fmtBytes(g.size)} each</div>
+        ${g.files.map((f, fi) => `
+          <div style="display:flex;align-items:center;gap:8px;padding:2px 0">
+            <span style="flex:1;min-width:0;font-family:var(--mono);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(f.rel)}">${escHtml(f.rel)}</span>
+            <button class="btn-icon" style="flex-shrink:0" title="Delete this copy" onclick="_deleteDupe(${gi},${fi})">✕</button>
+          </div>`).join('')}
+      </div>`).join('');
+}
+
+async function _deleteDupe(gi, fi) {
+  const grp = _dupeData?.groups[gi];
+  const file = grp?.files[fi];
+  if (!file) return;
+  const ok = await _confirm(`Delete this copy?\n\n${file.rel}`, { title: 'Delete duplicate', confirmLabel: 'Delete', danger: true });
+  if (!ok) return;
+  try {
+    const d = await (await fetch('/delete-file', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: file.path }),
+    })).json();
+    if (d.error) { appendLog(`Delete failed: ${d.error}\n`, 'log-error'); return; }
+    grp.files.splice(fi, 1);
+    if (grp.files.length < 2) _dupeData.groups.splice(gi, 1);
+    _dupeData.wasted_bytes = _dupeData.groups.reduce((s, g) => s + g.size * (g.files.length - 1), 0);
+    renderDupes(_dupeData);
+    appendLog(`Deleted duplicate: ${file.rel}\n`, 'log-ok');
+  } catch (e) {
+    appendLog(`Delete failed: ${e}\n`, 'log-error');
+  }
 }
 
 function _renderLibHero(artist) {
