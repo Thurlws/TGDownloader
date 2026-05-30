@@ -1356,6 +1356,94 @@ def _toggle_liked(entry: dict) -> dict:
 
 
 # ══════════════════════════════════════════════
+#  ARTIST WATCHLIST / NEW-RELEASE RADAR
+# ══════════════════════════════════════════════
+
+WATCHLIST_FILE = DATA_DIR / "watchlist.json"   # {artist_id: {...}}
+
+
+def _load_watchlist() -> dict:
+    """Return {artist_id: {name, cover_url, added, last_checked, known_album_ids}}."""
+    try:
+        if WATCHLIST_FILE.exists():
+            data = json.loads(WATCHLIST_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+    except Exception as exc:
+        logger.debug("Could not read watchlist: %s", exc)
+    return {}
+
+
+def _save_watchlist(data: dict) -> None:
+    try:
+        WATCHLIST_FILE.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as exc:
+        logger.debug("Could not write watchlist: %s", exc)
+
+
+def _fetch_artist_albums(artist_id: str) -> "list[dict]":
+    """Fetch an artist's albums from Deezer as a normalised list:
+    [{album_id, title, cover, link, release_date, record_type}]."""
+    out: list = []
+    try:
+        api_url = (f"https://api.deezer.com/artist/{artist_id}/albums"
+                   "?limit=200&output=json")
+        req = urllib.request.Request(api_url, headers={"User-Agent": "TGDownloader/6"})
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        for a in data.get("data", []):
+            out.append({
+                "album_id":    str(a.get("id", "")),
+                "title":       a.get("title", ""),
+                "cover":       a.get("cover_medium") or a.get("cover") or "",
+                "link":        a.get("link") or f"https://www.deezer.com/album/{a.get('id','')}",
+                "release_date": a.get("release_date", ""),
+                "record_type": a.get("record_type", ""),
+            })
+    except Exception as exc:
+        logger.warning("Deezer artist albums fetch failed for %s: %s", artist_id, exc)
+    return out
+
+
+def _watchlist_add(artist_id: str, name: str, cover_url: str) -> dict:
+    """Add an artist; seed known_album_ids with their current discography so
+    only future releases surface as 'new'."""
+    artist_id = str(artist_id).strip()
+    if not artist_id:
+        return {"error": "Missing artist_id"}
+    wl = _load_watchlist()
+    albums = _fetch_artist_albums(artist_id)
+    wl[artist_id] = {
+        "name":            name or "",
+        "cover_url":       cover_url or "",
+        "added":           int(time.time()),
+        "last_checked":    int(time.time()),
+        "known_album_ids": [a["album_id"] for a in albums],
+    }
+    _save_watchlist(wl)
+    return {"ok": True, "watching": True, "count": len(wl)}
+
+
+def _watchlist_check() -> dict:
+    """Diff each watched artist's current discography against the seeded
+    baseline; return albums released since they were added."""
+    wl = _load_watchlist()
+    new_releases: list = []
+    for artist_id, info in wl.items():
+        known = set(info.get("known_album_ids") or [])
+        for a in _fetch_artist_albums(artist_id):
+            if a["album_id"] and a["album_id"] not in known:
+                new_releases.append({"artist_id": artist_id,
+                                     "artist": info.get("name", ""), **a})
+        info["last_checked"] = int(time.time())
+    _save_watchlist(wl)
+    # Newest first by release date
+    new_releases.sort(key=lambda x: x.get("release_date", ""), reverse=True)
+    return {"new_releases": new_releases, "checked": len(wl)}
+
+
+# ══════════════════════════════════════════════
 #  SCROBBLING  (ListenBrainz / Last.fm — opt-in)
 # ══════════════════════════════════════════════
 
@@ -2229,6 +2317,26 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": "Invalid artist id"})
             return
 
+        if path == "/watchlist":
+            wl = _load_watchlist()
+            items = [
+                {"artist_id": aid, **{k: v for k, v in info.items()
+                                      if k != "known_album_ids"},
+                 "known_count": len(info.get("known_album_ids") or [])}
+                for aid, info in wl.items()
+            ]
+            items.sort(key=lambda x: x.get("added", 0), reverse=True)
+            self._send_json(200, {"artists": items})
+            return
+
+        if path == "/watchlist-check":
+            try:
+                self._send_json(200, _watchlist_check())
+            except Exception as exc:
+                logger.exception("watchlist-check failed")
+                self._send_json(500, {"error": str(exc)})
+            return
+
         if path == "/search":
             qs     = urlparse(self.path).query
             params: dict[str, str] = {}
@@ -2884,6 +2992,30 @@ class Handler(BaseHTTPRequestHandler):
                 "album":  body.get("album"),
             }, now_playing=(kind == "now_playing"))
             self._send_json(200, result)
+            return
+
+        if path == "/watchlist":
+            action = body.get("action", "add")
+            if action == "add":
+                self._send_json(200, _watchlist_add(
+                    body.get("artist_id"), body.get("name"), body.get("cover_url")))
+            elif action == "remove":
+                wl = _load_watchlist()
+                wl.pop(str(body.get("artist_id", "")), None)
+                _save_watchlist(wl)
+                self._send_json(200, {"ok": True, "watching": False, "count": len(wl)})
+            elif action == "mark_seen":
+                wl  = _load_watchlist()
+                aid = str(body.get("artist_id", ""))
+                info = wl.get(aid)
+                if info is not None:
+                    known = set(info.get("known_album_ids") or [])
+                    known.update(str(x) for x in (body.get("album_ids") or []))
+                    info["known_album_ids"] = sorted(known)
+                    _save_watchlist(wl)
+                self._send_json(200, {"ok": True})
+            else:
+                self._send_json(400, {"error": f"unknown action: {action}"})
             return
 
         if path == "/sessions":
