@@ -9,6 +9,7 @@ tg_audio_session.session-journal
 hash_cache.json
 album_id_cache.json
 liked_songs.json
+watchlist.json
 tg_sessions.json
 bot_initialized.flag
 tgdownloader_debug.log
