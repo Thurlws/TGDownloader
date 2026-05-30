@@ -29,6 +29,24 @@
     --r:         3px;
   }
 
+  /* Light theme — overrides the dark palette when html.theme-light is set */
+  html.theme-light {
+    --bg:        #f5f5f4;
+    --bg2:       #ececea;
+    --bg3:       #e2e2df;
+    --bg4:       #d6d6d2;
+    --border:    #cfcfca;
+    --border2:   #b8b8b2;
+    --accent:    #5a8f00;
+    --accent-d:  #4a7a00;
+    --fg:        #1a1a1a;
+    --fg2:       #444444;
+    --fg3:       #777771;
+    --red:       #c0392b;
+    --yellow:    #b8860b;
+    --blue:      #2c6fbf;
+  }
+
   html, body {
     height: 100%; background: var(--bg); color: var(--fg);
     font-family: var(--sans); font-size: 13px; line-height: 1.5;
@@ -451,6 +469,11 @@
     border: 1px solid var(--border2); border-radius: 2px; padding: 0 3px;
   }
   .tab.active .tab-kbd { color: var(--accent); border-color: rgba(184,245,66,.3); }
+  .tab-badge {
+    font-size: 8px; font-weight: 700; color: #111; background: var(--accent);
+    border-radius: 8px; padding: 0 5px; margin-left: 2px; min-width: 14px;
+    display: inline-block; text-align: center;
+  }
   #tab-bar .spacer { flex: 1; }
   #log-clear {
     font-size: 10px; background: none; border: none; color: var(--fg3);
@@ -1635,6 +1658,16 @@
     color: rgba(255,255,255,0.55); margin-top: 3px;
   }
   #lib-hero-text { min-width: 0; flex: 1; }
+  #lib-watch-btn {
+    margin-top: 7px; padding: 3px 10px; border-radius: 12px; cursor: pointer;
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    background: rgba(0,0,0,0.35); color: #fff;
+    border: 1px solid rgba(255,255,255,0.35); transition: all .12s;
+  }
+  #lib-watch-btn:hover { background: rgba(0,0,0,0.55); border-color: rgba(255,255,255,0.6); }
+  #lib-watch-btn.watching {
+    background: var(--accent); color: #111; border-color: var(--accent);
+  }
   #lib-hero-about {
     font-size: 10px; color: rgba(255,255,255,0.38);
     line-height: 1.5; margin-top: 5px;
@@ -2853,6 +2886,8 @@
       <button class="tab" data-tab="history">History <span class="tab-kbd">2</span></button>
       <button class="tab" data-tab="library">Library <span class="tab-kbd">3</span></button>
       <button class="tab" data-tab="stats">Stats <span class="tab-kbd">4</span></button>
+      <button class="tab" data-tab="releases">Releases <span id="releases-badge" class="tab-badge" style="display:none">0</span></button>
+      <button class="tab" data-tab="maint">Maintenance</button>
       <button class="tab" data-tab="debug">Debug <span class="tab-kbd">5</span></button>
       <span class="spacer"></span>
       <button id="log-clear">clear</button>
@@ -2904,6 +2939,46 @@
       </div>
     </div>
 
+    <!-- New Releases tab -->
+    <div class="tab-pane" id="tab-releases">
+      <div id="releases-toolbar" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);flex-shrink:0;">
+        <button class="btn-secondary" id="btn-check-releases" style="width:auto">Check now</button>
+        <span id="releases-status" style="font-family:var(--mono);font-size:10px;color:var(--fg3)"></span>
+      </div>
+      <div id="releases-content" style="overflow-y:auto;flex:1;padding:12px 14px;">
+        <div class="stat-empty">Watch artists from the Library tab to track their new releases.</div>
+      </div>
+    </div>
+
+    <!-- Maintenance tab -->
+    <div class="tab-pane" id="tab-maint" style="overflow-y:auto;">
+      <div style="padding:14px;max-width:760px;">
+        <div class="stat-card" style="margin-bottom:14px">
+          <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <span>Integrity Scan</span>
+            <button class="btn-secondary" id="btn-run-scan" style="width:auto">Run scan</button>
+          </div>
+          <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Finds unreadable/corrupt tracks and albums missing cover art.</div>
+          <div id="scan-results"></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <span>Duplicate Finder</span>
+            <button class="btn-secondary" id="btn-find-dupes" style="width:auto">Find duplicates</button>
+          </div>
+          <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Groups byte-identical audio files so you can reclaim space.</div>
+          <div id="dupes-results"></div>
+        </div>
+        <div class="stat-card" style="margin-top:14px">
+          <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <span>Backup</span>
+            <button class="btn-secondary" id="btn-backup" style="width:auto">Download backup</button>
+          </div>
+          <div style="font-size:11px;color:var(--fg3);margin:4px 0 0">Saves liked songs, watchlist, sessions and settings (no credentials) as a zip.</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Library Analytics tab -->
   <div class="tab-pane" id="tab-library" style="flex-direction:row;overflow:hidden;">
 
@@ -2937,6 +3012,7 @@
           <div id="lib-hero-text">
             <div id="lib-hero-name"></div>
             <div id="lib-hero-genres"></div>
+            <button id="lib-watch-btn" style="display:none">★ Watch artist</button>
             <div id="lib-hero-about"></div>
           </div>
           <div id="lib-hero-stats">
@@ -3109,7 +3185,45 @@
           <input type="text" id="cfg-scale-text" style="width:52px;text-align:center;" placeholder="1.0">
         </div>
       </div>
+      <div class="modal-section-label">Scrobbling</div>
+      <label class="modal-toggle">
+        <input type="checkbox" id="cfg-scrobble-enabled">
+        <span>Scrobble local plays (logs what you listen to)</span>
+      </label>
+      <div class="modal-field">
+        <label>Service</label>
+        <select id="cfg-scrobble-service" style="width:100%;background:var(--bg3);color:var(--fg);border:1px solid var(--border2);border-radius:4px;padding:6px 8px;font-family:var(--mono);font-size:11px;">
+          <option value="listenbrainz">ListenBrainz</option>
+          <option value="lastfm">Last.fm</option>
+        </select>
+      </div>
+      <div class="modal-field" id="cfg-lb-wrap">
+        <label>ListenBrainz Token <span style="color:var(--fg3);font-weight:400">— from listenbrainz.org/settings</span></label>
+        <input type="text" id="cfg-listenbrainz-token" placeholder="paste your user token" autocomplete="off">
+      </div>
+      <div id="cfg-lastfm-wrap" style="display:none">
+        <div class="modal-field">
+          <label>Last.fm API Key</label>
+          <input type="text" id="cfg-lastfm-key" autocomplete="off">
+        </div>
+        <div class="modal-field">
+          <label>Last.fm Shared Secret</label>
+          <input type="text" id="cfg-lastfm-secret" autocomplete="off">
+        </div>
+        <div class="modal-field">
+          <label>Last.fm Session Key</label>
+          <input type="text" id="cfg-lastfm-sk" autocomplete="off">
+        </div>
+      </div>
       <div class="modal-section-label">Interface</div>
+      <label class="modal-toggle">
+        <input type="checkbox" id="cfg-theme-light">
+        <span>Light theme</span>
+      </label>
+      <label class="modal-toggle">
+        <input type="checkbox" id="cfg-notify">
+        <span>Desktop notifications (downloads &amp; new releases)</span>
+      </label>
       <label class="modal-toggle">
         <input type="checkbox" id="cfg-show-welcome" checked>
         <span>Show welcome screen on startup</span>
@@ -3593,6 +3707,11 @@ function connectWS() {
       const ok = msg.code === 0;
       appendLog(`\nProcess exited (code ${msg.code})\n`, ok ? 'log-success' : 'log-error');
       appendLog('─'.repeat(52) + '\n', 'log-dim');
+      if (document.visibilityState !== 'visible') {
+        const nOk = Object.values(sessionResults).filter(r => r.status === 'ok').length;
+        _notify(ok ? 'Downloads complete' : 'Downloads finished with errors',
+                nOk ? `${nOk} item${nOk === 1 ? '' : 's'} downloaded` : 'Session ended');
+      }
       if (_prog.raw && _prog.smoothSpeed > 0) {
         speedHistory.push(_prog.smoothSpeed);
         speedHistory = speedHistory.slice(-20);
@@ -3711,8 +3830,8 @@ function switchTab(tab) {
   document.getElementById('app').classList.toggle('queue-hidden', tab !== 'log');
 
   const clearBtn = document.getElementById('log-clear');
-  if (tab === 'stats' || tab === 'debug') {
-    // Debug tab has its own "Clear Log File" button in the toolbar
+  if (tab === 'stats' || tab === 'debug' || tab === 'releases' || tab === 'maint') {
+    // These tabs have no "clear" affordance
     clearBtn.style.visibility = 'hidden';
   } else if (tab === 'history') {
     clearBtn.textContent   = 'clear history';
@@ -3726,6 +3845,7 @@ function switchTab(tab) {
   if (tab === 'stats')   { if (!_libStatsCache) _fetchLibStats(); renderStats(); }
   if (tab === 'debug')   loadDebugLog();
   if (tab === 'library') loadLibrary();
+  if (tab === 'releases') renderReleases();
 }
 
 
@@ -3857,6 +3977,16 @@ function _openReleasePage() {
   document.getElementById('btn-check-update')?.addEventListener('click', () => _checkForUpdate(true));
   _loadAppVersion();
   _checkForUpdate(false);     // silent, cache-backed check on launch
+})();
+
+// New-release radar: silent check on launch if the user has opted in.
+(async function initReleaseRadar() {
+  try {
+    await _loadWatchlist();
+    if (!_watchedIds.size) return;
+    const cfg = await fetch('/config').then(r => r.json()).catch(() => ({}));
+    if (cfg.watchlist_autocheck !== false) checkReleases(false);
+  } catch (_) {}
 })();
 
 function startDebugAutoRefresh() {
@@ -5362,6 +5492,22 @@ function renderStats() {
           </div>`;
         }).join('')}
       </div>` : ''}
+      ${ls.growth?.length > 1 ? `
+      <div class="stat-card">
+        <div class="stat-card-title">Library Growth</div>
+        ${makeGrowthChart(ls.growth)}
+        <div class="stat-row" style="margin-top:6px"><span>Tracks added (90d)</span><strong style="color:var(--accent)">${_growthRecent(ls.growth)}</strong></div>
+      </div>` : ''}
+      ${ls.top_genres?.length ? `
+      <div class="stat-card">
+        <div class="stat-card-title">Top Genres</div>
+        ${makeBarChart(ls.top_genres.map(g => ({ label: g.name, value: g.tracks })))}
+      </div>` : ''}
+      ${ls.formats?.length ? `
+      <div class="stat-card">
+        <div class="stat-card-title">Format Breakdown</div>
+        ${makeBarChart(ls.formats.map(f => ({ label: f.ext, value: f.count })))}
+      </div>` : ''}
     `;
   } else if (!ls) {
     // Trigger fetch in background
@@ -5409,6 +5555,45 @@ function makeSparkline(values) {
   return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" class="stat-spark-svg">
     <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round" opacity="0.85" vector-effect="non-scaling-stroke"/>
   </svg>`;
+}
+
+// Horizontal labelled bar chart for {label, value} rows (genres, formats, …)
+function makeBarChart(rows) {
+  if (!rows || !rows.length) return '';
+  const max = Math.max(...rows.map(r => r.value), 1);
+  return rows.map(r => {
+    const barW = Math.round((r.value / max) * 100);
+    return `<div class="stat-row" style="gap:8px;">
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(String(r.label))}</span>
+      <strong style="font-size:10px;min-width:36px;text-align:right">${r.value.toLocaleString()}</strong>
+      <div style="width:70px;height:3px;background:var(--bg4);border-radius:2px;overflow:hidden;flex-shrink:0">
+        <div style="width:${barW}%;height:100%;background:var(--accent);border-radius:2px"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Cumulative library-growth line chart from [{month, cumulative}]
+function makeGrowthChart(growth) {
+  const vals = growth.map(g => g.cumulative);
+  if (vals.length < 2) return '';
+  const w = 260, h = 56, max = Math.max(...vals), min = Math.min(...vals);
+  const span = Math.max(max - min, 1);
+  const pts = vals.map((v, i) => {
+    const x = (i / (vals.length - 1)) * w;
+    const y = h - ((v - min) / span) * (h - 8) - 4;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const area = `0,${h} ${pts.join(' ')} ${w},${h}`;
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:56px;display:block">
+    <polygon points="${area}" fill="var(--accent)" opacity="0.12"/>
+    <polyline points="${pts.join(' ')}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round" opacity="0.9" vector-effect="non-scaling-stroke"/>
+  </svg>`;
+}
+
+// Sum of tracks added in the trailing ~90 days (last 3 month buckets)
+function _growthRecent(growth) {
+  return growth.slice(-3).reduce((s, g) => s + (g.added || 0), 0).toLocaleString();
 }
 
 
@@ -5712,6 +5897,25 @@ const CFG_FIELDS = {
   'cfg-max-queue':     'max_queue',
 };
 
+function applyTheme(theme) {
+  document.documentElement.classList.toggle('theme-light', theme === 'light');
+  try { localStorage.setItem('tgd_theme', theme); } catch (_) {}
+}
+
+// Desktop notification (opt-in; only fires when enabled + permission granted)
+function _notify(title, body) {
+  try {
+    if (localStorage.getItem('tgd_notify') !== 'true') return;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    new Notification(title, { body });
+  } catch (_) {}
+}
+
+// Apply theme as early as possible: localStorage first (instant, no flash),
+// then reconcile with the server config.
+applyTheme(localStorage.getItem('tgd_theme') || 'dark');
+fetch('/config').then(r => r.json()).then(cfg => { if (cfg.theme) applyTheme(cfg.theme); }).catch(() => {});
+
 function applyScale(v) {
   const n   = Math.min(2.0, Math.max(0.6, parseFloat(v) || 1.0));
   const app = document.getElementById('app');
@@ -5745,8 +5949,26 @@ function openSettings() {
     document.getElementById('cfg-scale-range').value = s;
     document.getElementById('cfg-scale-text').value  = s.toFixed(2);
     document.getElementById('cfg-show-welcome').checked = showWelcomeOnStart;
+    // Scrobbling
+    document.getElementById('cfg-scrobble-enabled').checked = !!cfg.scrobble_enabled;
+    document.getElementById('cfg-scrobble-service').value   = cfg.scrobble_service || 'listenbrainz';
+    document.getElementById('cfg-listenbrainz-token').value = cfg.listenbrainz_token || '';
+    document.getElementById('cfg-lastfm-key').value         = cfg.lastfm_api_key || '';
+    document.getElementById('cfg-lastfm-secret').value      = cfg.lastfm_secret || '';
+    document.getElementById('cfg-lastfm-sk').value          = cfg.lastfm_session_key || '';
+    _syncScrobbleService();
+    // Theme + notifications
+    document.getElementById('cfg-theme-light').checked = (cfg.theme === 'light');
+    document.getElementById('cfg-notify').checked = (localStorage.getItem('tgd_notify') === 'true');
     document.getElementById('modal-overlay').classList.add('open');
   });
+}
+
+// Show only the relevant credential fields for the chosen scrobble service
+function _syncScrobbleService() {
+  const svc = document.getElementById('cfg-scrobble-service').value;
+  document.getElementById('cfg-lb-wrap').style.display     = (svc === 'listenbrainz') ? '' : 'none';
+  document.getElementById('cfg-lastfm-wrap').style.display = (svc === 'lastfm') ? '' : 'none';
 }
 
 function saveSettings() {
@@ -5763,6 +5985,26 @@ function saveSettings() {
 
   showWelcomeOnStart = document.getElementById('cfg-show-welcome').checked;
   localStorage.setItem('tgd_show_welcome', showWelcomeOnStart ? 'true' : 'false');
+
+  // Scrobbling (kept as raw strings — never numeric-coerced like CFG_FIELDS)
+  patch.scrobble_enabled   = document.getElementById('cfg-scrobble-enabled').checked;
+  patch.scrobble_service   = document.getElementById('cfg-scrobble-service').value;
+  patch.listenbrainz_token = document.getElementById('cfg-listenbrainz-token').value.trim();
+  patch.lastfm_api_key     = document.getElementById('cfg-lastfm-key').value.trim();
+  patch.lastfm_secret      = document.getElementById('cfg-lastfm-secret').value.trim();
+  patch.lastfm_session_key = document.getElementById('cfg-lastfm-sk').value.trim();
+
+  // Theme
+  const theme = document.getElementById('cfg-theme-light').checked ? 'light' : 'dark';
+  patch.theme = theme;
+  applyTheme(theme);
+
+  // Desktop notifications (browser-local preference; request permission on enable)
+  const notifyOn = document.getElementById('cfg-notify').checked;
+  localStorage.setItem('tgd_notify', notifyOn ? 'true' : 'false');
+  if (notifyOn && 'Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {});
+  }
 
   fetch('/config', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -6233,6 +6475,15 @@ document.getElementById('btn-run').addEventListener('click', runOrStop);
 
 document.getElementById('btn-settings').addEventListener('click', openSettings);
 document.getElementById('btn-modal-save').addEventListener('click', saveSettings);
+document.getElementById('cfg-scrobble-service').addEventListener('change', _syncScrobbleService);
+document.getElementById('btn-check-releases').addEventListener('click', () => checkReleases(true));
+document.getElementById('btn-run-scan').addEventListener('click', runIntegrityScan);
+document.getElementById('btn-find-dupes').addEventListener('click', findDuplicates);
+document.getElementById('btn-backup').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = '/backup'; a.download = 'tgdownloader-backup.zip';
+  document.body.appendChild(a); a.click(); a.remove();
+});
 document.getElementById('btn-modal-cancel').addEventListener('click', () =>
   document.getElementById('modal-overlay').classList.remove('open'));
 document.getElementById('modal-overlay').addEventListener('click', e => {
@@ -6634,6 +6885,8 @@ let _libArtistList  = [];   // [{name, artist_id, albums[], cover_url, _meta}]
 let _libActiveArtist = null;
 let _libActiveAlbum  = null;
 let _libView         = 'albums';  // 'albums' | 'tracks'
+let _watchedIds      = new Set(); // artist_ids on the new-release watchlist
+let _newReleases     = [];        // cached results from /watchlist-check
 
 // ── Queue sync: grey out not-owned library cards when removed from queue ──
 function _syncLibQueuedState() {
@@ -6686,6 +6939,7 @@ let _mpCurrentAlb = null;  // album that owns the current playback queue — nev
 let _mpShuffle   = false;          // shuffle on/off
 let _mpRepeat    = 'off';          // 'off' | 'all' | 'one'
 let _mpShuffleOrder = [];          // remaining indices to play when shuffling
+let _mpScrobbleState = null;       // { isLocal, scrobbled, meta } for current track
 let _likedKeys   = new Set();      // "path_hash\x00name" keys of liked songs
 const _likedAlbum = { album: 'Liked Songs', artist: '', path_hash: '', cover_url: null, is_liked: true };
 const _mpAudio   = document.getElementById('mini-audio');
@@ -6779,6 +7033,8 @@ async function loadLibrary(opts = {}) {
   const keepView = !!opts.keepView;   // refresh data but stay on current artist
   const content  = document.getElementById('lib-content');
   const artList  = document.getElementById('lib-artist-list');
+
+  _loadWatchlist();   // refresh which artists show as "Watching" in heroes
 
   // When refreshing in place, remember the open artist + cached discographies
   // so newly-downloaded albums move into "In Your Library" without a full reset.
@@ -7401,6 +7657,230 @@ async function _selectLibArtist(artist, scroll) {
 }
 
 // ── Hero ───────────────────────────────────────────────────────────────────
+// ── Artist watchlist / new-release radar ──────────────────────────────────
+async function _loadWatchlist() {
+  try {
+    const r = await fetch('/watchlist');
+    const d = await r.json();
+    _watchedIds = new Set((d.artists || []).map(a => String(a.artist_id)));
+  } catch (_) {}
+}
+
+function _updateWatchBtn(artist) {
+  const btn = document.getElementById('lib-watch-btn');
+  if (!btn) return;
+  // Only real Deezer-backed artists can be watched
+  const showable = artist && artist.artist_id &&
+    !artist.is_playlist_group && !artist.is_liked_group && !artist.is_home_group;
+  if (!showable) { btn.style.display = 'none'; return; }
+  const aid = String(artist.artist_id);
+  const watching = _watchedIds.has(aid);
+  btn.style.display = '';
+  btn.classList.toggle('watching', watching);
+  btn.textContent = watching ? '★ Watching' : '★ Watch artist';
+  btn.onclick = () => _toggleWatch(artist);
+}
+
+async function _toggleWatch(artist) {
+  const aid = String(artist.artist_id || '');
+  if (!aid) return;
+  const watching = _watchedIds.has(aid);
+  const btn = document.getElementById('lib-watch-btn');
+  if (btn) { btn.disabled = true; btn.textContent = watching ? 'Removing…' : 'Adding…'; }
+  try {
+    const r = await fetch('/watchlist', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: watching ? 'remove' : 'add',
+        artist_id: aid, name: artist.name,
+        cover_url: artist.cover_url || artist._meta?.picture_medium || '',
+      }),
+    });
+    const d = await r.json();
+    if (!d.error) {
+      if (watching) _watchedIds.delete(aid); else _watchedIds.add(aid);
+      if (!watching) appendLog(`Watching ${artist.name} for new releases.\n`, 'log-ok');
+    }
+  } catch (_) {}
+  if (btn) btn.disabled = false;
+  _updateWatchBtn(artist);
+}
+
+function _updateReleasesBadge() {
+  const badge = document.getElementById('releases-badge');
+  if (!badge) return;
+  const n = _newReleases.length;
+  badge.textContent = n;
+  badge.style.display = n ? '' : 'none';
+}
+
+async function checkReleases(manual) {
+  const statusEl = document.getElementById('releases-status');
+  if (!_watchedIds.size && !manual) return;   // nothing to check on silent runs
+  if (statusEl) statusEl.textContent = 'Checking…';
+  try {
+    const r = await fetch('/watchlist-check');
+    const d = await r.json();
+    _newReleases = d.new_releases || [];
+    _updateReleasesBadge();
+    if (statusEl) {
+      statusEl.textContent = d.checked
+        ? `${d.checked} artist${d.checked === 1 ? '' : 's'} watched · ${_newReleases.length} new`
+        : 'No artists watched yet.';
+    }
+    if (activeTab === 'releases') renderReleases();
+    if (_newReleases.length && typeof _notify === 'function') {
+      _notify('New releases available', `${_newReleases.length} new album${_newReleases.length === 1 ? '' : 's'} from artists you watch`);
+    }
+  } catch (_) {
+    if (statusEl) statusEl.textContent = 'Check failed.';
+  }
+}
+
+function renderReleases() {
+  const el = document.getElementById('releases-content');
+  if (!el) return;
+  if (!_watchedIds.size) {
+    el.innerHTML = '<div class="stat-empty">Watch artists from the Library tab to track their new releases.</div>';
+    return;
+  }
+  if (!_newReleases.length) {
+    el.innerHTML = '<div class="stat-empty">No new releases. Hit “Check now” to refresh.</div>';
+    return;
+  }
+  el.innerHTML = _newReleases.map((rel, i) => {
+    const cover = rel.cover || '';
+    const date  = rel.release_date ? ` · ${rel.release_date}` : '';
+    return `<div class="release-row" style="display:flex;align-items:center;gap:10px;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;background:var(--bg2)">
+      ${cover ? `<img src="${escHtml(cover)}" style="width:46px;height:46px;border-radius:4px;flex-shrink:0;object-fit:cover">`
+              : `<div style="width:46px;height:46px;border-radius:4px;flex-shrink:0;background:var(--bg4)"></div>`}
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(rel.title || '')}</div>
+        <div style="font-size:11px;color:var(--fg3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(rel.artist || '')}${escHtml(date)}</div>
+      </div>
+      <button class="btn-secondary" style="width:auto;flex-shrink:0" onclick="_addReleaseToQueue(${i})">Add to queue</button>
+      <button class="btn-icon" style="flex-shrink:0" title="Dismiss" onclick="_dismissRelease(${i})">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function _addReleaseToQueue(i) {
+  const rel = _newReleases[i];
+  if (!rel) return;
+  entries.push({
+    url: rel.link || `https://www.deezer.com/album/${rel.album_id}`,
+    artist: rel.artist || '', albumTitle: rel.title || '',
+    coverUrl: rel.cover || null, nbTracks: null,
+  });
+  renderQueue();
+  _markReleaseSeen(rel);
+  _newReleases.splice(i, 1);
+  _updateReleasesBadge();
+  renderReleases();
+  appendLog(`Added new release “${rel.title}” to the queue.\n`, 'log-ok');
+}
+
+function _dismissRelease(i) {
+  const rel = _newReleases[i];
+  if (!rel) return;
+  _markReleaseSeen(rel);
+  _newReleases.splice(i, 1);
+  _updateReleasesBadge();
+  renderReleases();
+}
+
+function _markReleaseSeen(rel) {
+  fetch('/watchlist', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'mark_seen', artist_id: rel.artist_id, album_ids: [rel.album_id] }),
+  }).catch(() => {});
+}
+
+// ── Maintenance: integrity scan + duplicate finder ────────────────────────
+async function runIntegrityScan() {
+  const el  = document.getElementById('scan-results');
+  const btn = document.getElementById('btn-run-scan');
+  el.innerHTML = '<div style="font-family:var(--mono);font-size:10px;color:var(--fg3)">Scanning…</div>';
+  if (btn) btn.disabled = true;
+  try {
+    const d = await (await fetch('/library-scan')).json();
+    if (d.error) { el.innerHTML = `<div style="color:var(--red);font-size:11px">${escHtml(d.error)}</div>`; return; }
+    const section = (title, items, color) => items.length
+      ? `<div class="stat-row" style="margin-top:6px"><span style="color:${color}">${title}</span><strong>${items.length}</strong></div>
+         <div style="max-height:160px;overflow-y:auto;font-family:var(--mono);font-size:10px;color:var(--fg3)">${
+           items.map(p => `<div style="padding:1px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(p)}">${escHtml(p)}</div>`).join('')}</div>`
+      : '';
+    const clean = !d.corrupt.length && !d.missing_cover.length;
+    el.innerHTML = `
+      <div class="stat-row"><span>Albums scanned</span><strong>${d.scanned_albums.toLocaleString()}</strong></div>
+      <div class="stat-row"><span>Tracks scanned</span><strong>${d.scanned_files.toLocaleString()}</strong></div>
+      ${clean ? '<div class="stat-row" style="margin-top:6px;color:var(--accent)">✓ No issues found.</div>' : ''}
+      ${section('Corrupt / unreadable', d.corrupt, 'var(--red)')}
+      ${section('Missing cover art', d.missing_cover, 'var(--yellow)')}`;
+  } catch (e) {
+    el.innerHTML = `<div style="color:var(--red);font-size:11px">Scan failed: ${escHtml(String(e))}</div>`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function findDuplicates() {
+  const el  = document.getElementById('dupes-results');
+  const btn = document.getElementById('btn-find-dupes');
+  el.innerHTML = '<div style="font-family:var(--mono);font-size:10px;color:var(--fg3)">Hashing library…</div>';
+  if (btn) btn.disabled = true;
+  try {
+    const d = await (await fetch('/duplicates')).json();
+    if (d.error) { el.innerHTML = `<div style="color:var(--red);font-size:11px">${escHtml(d.error)}</div>`; return; }
+    if (!d.groups.length) { el.innerHTML = '<div class="stat-row" style="color:var(--accent)">✓ No duplicates found.</div>'; return; }
+    renderDupes(d);
+  } catch (e) {
+    el.innerHTML = `<div style="color:var(--red);font-size:11px">Failed: ${escHtml(String(e))}</div>`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+let _dupeData = null;
+function renderDupes(d) {
+  _dupeData = d;
+  const el = document.getElementById('dupes-results');
+  if (!d.groups.length) { el.innerHTML = '<div class="stat-row" style="color:var(--accent)">✓ No duplicates remaining.</div>'; return; }
+  el.innerHTML = `<div class="stat-row"><span>Duplicate groups</span><strong>${d.groups.length}</strong></div>
+    <div class="stat-row"><span>Reclaimable</span><strong style="color:var(--accent)">${_fmtBytes(d.wasted_bytes)}</strong></div>` +
+    d.groups.map((g, gi) => `
+      <div style="border:1px solid var(--border);border-radius:5px;padding:6px 8px;margin-top:8px">
+        <div style="font-size:10px;color:var(--fg3);margin-bottom:4px">${g.files.length} copies · ${_fmtBytes(g.size)} each</div>
+        ${g.files.map((f, fi) => `
+          <div style="display:flex;align-items:center;gap:8px;padding:2px 0">
+            <span style="flex:1;min-width:0;font-family:var(--mono);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(f.rel)}">${escHtml(f.rel)}</span>
+            <button class="btn-icon" style="flex-shrink:0" title="Delete this copy" onclick="_deleteDupe(${gi},${fi})">✕</button>
+          </div>`).join('')}
+      </div>`).join('');
+}
+
+async function _deleteDupe(gi, fi) {
+  const grp = _dupeData?.groups[gi];
+  const file = grp?.files[fi];
+  if (!file) return;
+  const ok = await _confirm(`Delete this copy?\n\n${file.rel}`, { title: 'Delete duplicate', confirmLabel: 'Delete', danger: true });
+  if (!ok) return;
+  try {
+    const d = await (await fetch('/delete-file', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: file.path }),
+    })).json();
+    if (d.error) { appendLog(`Delete failed: ${d.error}\n`, 'log-error'); return; }
+    grp.files.splice(fi, 1);
+    if (grp.files.length < 2) _dupeData.groups.splice(gi, 1);
+    _dupeData.wasted_bytes = _dupeData.groups.reduce((s, g) => s + g.size * (g.files.length - 1), 0);
+    renderDupes(_dupeData);
+    appendLog(`Deleted duplicate: ${file.rel}\n`, 'log-ok');
+  } catch (e) {
+    appendLog(`Delete failed: ${e}\n`, 'log-error');
+  }
+}
+
 function _renderLibHero(artist) {
   const hero = document.getElementById('lib-artist-hero');
   hero.style.display = 'block';
@@ -7444,6 +7924,8 @@ function _renderLibHero(artist) {
     aboutEl.textContent  = cleanBio || '';
     aboutEl.style.display = cleanBio ? '' : 'none';
   }
+
+  _updateWatchBtn(artist);
 
   // Stats: IN LIBRARY / TOTAL ALBUMS / TO DOWNLOAD
   const notOwned = (artist._discog || []).filter(d => {
@@ -8256,6 +8738,20 @@ function _renderLibTracks(tracks, alb, opts) {
       <div style="font-size:11px;color:var(--accent);font-family:var(--mono);margin-top:3px">${escHtml(alb.artist)}</div>
       <div style="font-size:10px;color:var(--fg3);font-family:var(--mono);margin-top:2px">${meta}</div>
     `;
+    // Export-as-m3u — only for local folders (those backed by a path_hash)
+    if (alb.path_hash) {
+      const exp = document.createElement('button');
+      exp.className = 'btn-secondary';
+      exp.style.cssText = 'width:auto;margin-top:6px;font-size:10px';
+      exp.textContent = 'Export .m3u';
+      exp.addEventListener('click', () => {
+        const url = `/export-m3u?path_hash=${encodeURIComponent(alb.path_hash)}&name=${encodeURIComponent(alb.album || 'playlist')}`;
+        const a = document.createElement('a');
+        a.href = url; a.download = `${alb.album || 'playlist'}.m3u`;
+        document.body.appendChild(a); a.click(); a.remove();
+      });
+      infoDiv.appendChild(exp);
+    }
     headerDiv.appendChild(infoDiv);
 
     if (canQueue) {
@@ -8647,6 +9143,31 @@ function _mpPlayTrack(idx, alb) {
   _mpUpdateLikeBtn(_isTrackLiked(track, alb));
   _mpHighlightRow(idx);
   _npUpdate(track, alb);
+
+  // Scrobbling: only local files (never 30s Deezer previews).
+  const _isLocalTrack = !!(trackPh && track.name);
+  _mpScrobbleState = {
+    isLocal: _isLocalTrack,
+    scrobbled: false,
+    meta: {
+      title:  track.title || track.name || '',
+      artist: track.artist || alb?.artist || '',
+      album:  track.album || (alb && !alb.is_liked ? alb.album : '') || '',
+    },
+  };
+  if (_isLocalTrack) _sendScrobble('now_playing');
+}
+
+// Fire-and-forget scrobble submission to the backend (which forwards to
+// ListenBrainz / Last.fm if the user has enabled and configured it).
+function _sendScrobble(kind) {
+  const st = _mpScrobbleState;
+  if (!st || !st.isLocal || !st.meta.title || !st.meta.artist) return;
+  fetch('/scrobble', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind, ...st.meta }),
+  }).catch(() => {});
 }
 
 function _mpUpdatePlayBtn() {
@@ -8691,6 +9212,14 @@ _mpAudio.addEventListener('timeupdate', () => {
   if (fill)  fill.style.width = pct + '%';
   if (curEl) curEl.textContent = `${Math.floor(cur / 60)}:${String(Math.floor(cur % 60)).padStart(2, '0')}`;
   if (totEl) totEl.textContent = `${Math.floor(dur / 60)}:${String(Math.floor(dur % 60)).padStart(2, '0')}`;
+
+  // Scrobble once the track passes the standard threshold (≥50% played, or
+  // ≥4 min). Local files only; _sendScrobble guards on that.
+  const st = _mpScrobbleState;
+  if (st && st.isLocal && !st.scrobbled && cur >= Math.min(dur * 0.5, 240) && cur > 20) {
+    st.scrobbled = true;
+    _sendScrobble('scrobble');
+  }
 });
 
 _mpAudio.addEventListener('play',  () => { _mpPlaying = true;  _mpUpdatePlayBtn(); });
