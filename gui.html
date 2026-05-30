@@ -2969,6 +2969,13 @@
           <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Groups byte-identical audio files so you can reclaim space.</div>
           <div id="dupes-results"></div>
         </div>
+        <div class="stat-card" style="margin-top:14px">
+          <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <span>Backup</span>
+            <button class="btn-secondary" id="btn-backup" style="width:auto">Download backup</button>
+          </div>
+          <div style="font-size:11px;color:var(--fg3);margin:4px 0 0">Saves liked songs, watchlist, sessions and settings (no credentials) as a zip.</div>
+        </div>
       </div>
     </div>
 
@@ -3212,6 +3219,10 @@
       <label class="modal-toggle">
         <input type="checkbox" id="cfg-theme-light">
         <span>Light theme</span>
+      </label>
+      <label class="modal-toggle">
+        <input type="checkbox" id="cfg-notify">
+        <span>Desktop notifications (downloads &amp; new releases)</span>
       </label>
       <label class="modal-toggle">
         <input type="checkbox" id="cfg-show-welcome" checked>
@@ -3696,6 +3707,11 @@ function connectWS() {
       const ok = msg.code === 0;
       appendLog(`\nProcess exited (code ${msg.code})\n`, ok ? 'log-success' : 'log-error');
       appendLog('─'.repeat(52) + '\n', 'log-dim');
+      if (document.visibilityState !== 'visible') {
+        const nOk = Object.values(sessionResults).filter(r => r.status === 'ok').length;
+        _notify(ok ? 'Downloads complete' : 'Downloads finished with errors',
+                nOk ? `${nOk} item${nOk === 1 ? '' : 's'} downloaded` : 'Session ended');
+      }
       if (_prog.raw && _prog.smoothSpeed > 0) {
         speedHistory.push(_prog.smoothSpeed);
         speedHistory = speedHistory.slice(-20);
@@ -5886,6 +5902,15 @@ function applyTheme(theme) {
   try { localStorage.setItem('tgd_theme', theme); } catch (_) {}
 }
 
+// Desktop notification (opt-in; only fires when enabled + permission granted)
+function _notify(title, body) {
+  try {
+    if (localStorage.getItem('tgd_notify') !== 'true') return;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    new Notification(title, { body });
+  } catch (_) {}
+}
+
 // Apply theme as early as possible: localStorage first (instant, no flash),
 // then reconcile with the server config.
 applyTheme(localStorage.getItem('tgd_theme') || 'dark');
@@ -5932,8 +5957,9 @@ function openSettings() {
     document.getElementById('cfg-lastfm-secret').value      = cfg.lastfm_secret || '';
     document.getElementById('cfg-lastfm-sk').value          = cfg.lastfm_session_key || '';
     _syncScrobbleService();
-    // Theme
+    // Theme + notifications
     document.getElementById('cfg-theme-light').checked = (cfg.theme === 'light');
+    document.getElementById('cfg-notify').checked = (localStorage.getItem('tgd_notify') === 'true');
     document.getElementById('modal-overlay').classList.add('open');
   });
 }
@@ -5972,6 +5998,13 @@ function saveSettings() {
   const theme = document.getElementById('cfg-theme-light').checked ? 'light' : 'dark';
   patch.theme = theme;
   applyTheme(theme);
+
+  // Desktop notifications (browser-local preference; request permission on enable)
+  const notifyOn = document.getElementById('cfg-notify').checked;
+  localStorage.setItem('tgd_notify', notifyOn ? 'true' : 'false');
+  if (notifyOn && 'Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {});
+  }
 
   fetch('/config', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -6446,6 +6479,11 @@ document.getElementById('cfg-scrobble-service').addEventListener('change', _sync
 document.getElementById('btn-check-releases').addEventListener('click', () => checkReleases(true));
 document.getElementById('btn-run-scan').addEventListener('click', runIntegrityScan);
 document.getElementById('btn-find-dupes').addEventListener('click', findDuplicates);
+document.getElementById('btn-backup').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = '/backup'; a.download = 'tgdownloader-backup.zip';
+  document.body.appendChild(a); a.click(); a.remove();
+});
 document.getElementById('btn-modal-cancel').addEventListener('click', () =>
   document.getElementById('modal-overlay').classList.remove('open'));
 document.getElementById('modal-overlay').addEventListener('click', e => {
@@ -8700,6 +8738,20 @@ function _renderLibTracks(tracks, alb, opts) {
       <div style="font-size:11px;color:var(--accent);font-family:var(--mono);margin-top:3px">${escHtml(alb.artist)}</div>
       <div style="font-size:10px;color:var(--fg3);font-family:var(--mono);margin-top:2px">${meta}</div>
     `;
+    // Export-as-m3u — only for local folders (those backed by a path_hash)
+    if (alb.path_hash) {
+      const exp = document.createElement('button');
+      exp.className = 'btn-secondary';
+      exp.style.cssText = 'width:auto;margin-top:6px;font-size:10px';
+      exp.textContent = 'Export .m3u';
+      exp.addEventListener('click', () => {
+        const url = `/export-m3u?path_hash=${encodeURIComponent(alb.path_hash)}&name=${encodeURIComponent(alb.album || 'playlist')}`;
+        const a = document.createElement('a');
+        a.href = url; a.download = `${alb.album || 'playlist'}.m3u`;
+        document.body.appendChild(a); a.click(); a.remove();
+      });
+      infoDiv.appendChild(exp);
+    }
     headerDiv.appendChild(infoDiv);
 
     if (canQueue) {

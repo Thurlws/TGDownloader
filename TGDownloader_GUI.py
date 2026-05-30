@@ -2426,6 +2426,83 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": str(exc)})
             return
 
+        if path == "/export-m3u":
+            params = {}
+            for part in urlparse(self.path).query.split("&"):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    params[unquote_plus(k)] = unquote_plus(v)
+            ph = params.get("path_hash", "")
+            album_dir = _path_hash_map.get(ph)
+            if not album_dir or not album_dir.is_dir():
+                self.send_error(404); return
+            AUDIO_EXT = {".mp3",".flac",".ogg",".opus",".m4a",".aac",
+                         ".wav",".aif",".aiff",".wma",".ape",".wv"}
+            audio = sorted(f for f in album_dir.iterdir()
+                           if f.is_file() and f.suffix.lower() in AUDIO_EXT)
+            lines = ["#EXTM3U"]
+            for f in audio:
+                title, dur = f.stem, -1
+                try:
+                    from mutagen import File as _MF
+                    mf = _MF(f, easy=True)
+                    if mf is not None:
+                        if mf.get("title"):
+                            title = mf["title"][0]
+                        if getattr(mf, "info", None) and getattr(mf.info, "length", None):
+                            dur = int(mf.info.length)
+                except Exception:
+                    pass
+                lines.append(f"#EXTINF:{dur},{title}")
+                lines.append(str(f.resolve()))
+            data = ("\n".join(lines) + "\n").encode("utf-8")
+            fname = (params.get("name") or album_dir.name or "playlist").replace('"', "")
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/x-mpegurl")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Disposition", f'attachment; filename="{fname}.m3u"')
+            self.end_headers()
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+
+        if path == "/backup":
+            import io, zipfile
+            buf = io.BytesIO()
+            state_files = ["liked_songs.json", "watchlist.json",
+                           "tg_sessions.json", "album_id_cache.json"]
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for name in state_files:
+                    fp = DATA_DIR / name
+                    if fp.exists():
+                        try:
+                            zf.writestr(name, fp.read_bytes())
+                        except Exception:
+                            pass
+                # Drop credentials from the archived config copy
+                try:
+                    cfg = json.loads((DATA_DIR / "tg_audio_config.json").read_text("utf-8"))
+                    for secret in ("api_id", "api_hash", "listenbrainz_token",
+                                   "lastfm_api_key", "lastfm_secret", "lastfm_session_key"):
+                        cfg.pop(secret, None)
+                    zf.writestr("tg_audio_config.json", json.dumps(cfg, indent=2))
+                except Exception:
+                    pass
+            data = buf.getvalue()
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Disposition", f'attachment; filename="tgdownloader-backup-{stamp}.zip"')
+            self.end_headers()
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+
         if path == "/search":
             qs     = urlparse(self.path).query
             params: dict[str, str] = {}
