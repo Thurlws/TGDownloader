@@ -8,6 +8,7 @@ tg_audio_session.session-journal
 # ── Runtime data (generated locally, not needed in repo) ──────────────────
 hash_cache.json
 album_id_cache.json
+liked_songs.json
 tg_sessions.json
 bot_initialized.flag
 tgdownloader_debug.log
@@ -40,8 +41,10 @@ build/
 Thumbs.db
 desktop.ini
 
-# ── Editor ────────────────────────────────────────────────────────────────
+# ── Editor / local tooling ──────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
+.claude/
+todo.md
