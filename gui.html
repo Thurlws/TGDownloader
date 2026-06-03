@@ -53,6 +53,14 @@
     overflow: hidden;
   }
 
+  /* App-chrome feel: disable text selection everywhere (this also stops the
+     Edge/WebView2 selection mini-toolbar from popping up). Selection stays on
+     only for actual text fields and anything explicitly opted in via .selectable. */
+  body { -webkit-user-select: none; user-select: none; }
+  input, textarea, [contenteditable="true"], .selectable {
+    -webkit-user-select: text; user-select: text;
+  }
+
   /* ── Layout ──────────────────────────── */
   #app {
     display: grid;
@@ -410,7 +418,7 @@
     display: flex; flex-direction: column; overflow: hidden;
   }
   #np-header {
-    display: flex; align-items: center; gap: 8px; height: 38px;
+    display: flex; align-items: center; gap: 8px; height: 36px;
     padding: 0 10px; flex-shrink: 0; border-bottom: 1px solid var(--border);
   }
   #np-header-title { font-size: 12px; font-weight: 600; color: var(--fg); white-space: nowrap; }
@@ -432,23 +440,81 @@
   #np-cover { width: 100%; height: 100%; object-fit: cover; display: none; }
   #np-cover-ph { color: var(--fg3); display: flex; }
   #np-cover-ph svg { width: 44px; height: 44px; }
-  #np-track-title { font-size: 20px; font-weight: 700; color: var(--fg); margin-top: 15px; letter-spacing: -0.01em; line-height: 1.2; }
-  #np-track-artist { font-size: 12px; color: var(--accent); font-family: var(--mono); margin-top: 5px; }
+  #np-track-title { font-size: 20px; font-weight: 700; color: var(--fg); margin-top: 15px; letter-spacing: -0.01em; line-height: 1.2; cursor: pointer; }
+  #np-track-title:hover { text-decoration: underline; }
+  #np-track-artist { font-size: 12px; color: var(--accent); font-family: var(--mono); margin-top: 5px; cursor: pointer; display: inline-block; }
+  #np-track-artist:hover { text-decoration: underline; }
   .np-section-label { font-size: 13px; font-weight: 600; color: var(--fg); margin: 24px 0 11px; }
   #np-about-card {
     background: var(--bg3); border: 1px solid var(--border); border-radius: 8px;
-    overflow: hidden; cursor: pointer; transition: border-color .15s;
+    overflow: hidden; transition: border-color .15s;
   }
   #np-about-card:hover { border-color: var(--border2); }
-  #np-about-img { width: 100%; height: 150px; background-size: cover; background-position: center top; background-color: var(--bg4); }
+  #np-about-img {
+    width: 100%; height: 150px; background-size: cover; background-position: center top;
+    background-color: var(--bg4); cursor: pointer;
+  }
   #np-about-info { padding: 12px 14px 14px; }
-  #np-about-name { font-size: 14px; font-weight: 700; color: var(--fg); }
-  #np-about-fans { font-size: 11px; color: var(--fg2); font-family: var(--mono); margin-top: 4px; }
+  #np-about-name { font-size: 14px; font-weight: 700; color: var(--fg); cursor: pointer; display: inline-block; }
+  #np-about-name:hover { text-decoration: underline; }
+  #np-about-meta { font-size: 11px; color: var(--fg2); font-family: var(--mono); margin-top: 4px; }
   #np-about-bio {
     font-size: 11px; color: var(--fg3); line-height: 1.65; margin-top: 11px;
     display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden;
   }
+  #np-about.np-bio-expanded #np-about-bio { -webkit-line-clamp: unset; display: block; }
+  #np-about-more {
+    background: none; border: none; color: var(--accent); font-family: var(--mono);
+    font-size: 10px; padding: 6px 0 0; cursor: pointer;
+  }
+  #np-about-more:hover { text-decoration: underline; }
+  #np-about-wiki {
+    display: block; margin-top: 10px; font-size: 10px; font-family: var(--mono);
+    color: var(--fg3); text-decoration: none;
+  }
+  #np-about-wiki:hover { color: var(--accent); }
   #mp-np-toggle.active { color: var(--accent); }
+  #np-lyrics-toggle.active { color: var(--accent); }
+  /* Lyrics view — replaces cover/queue/about while active */
+  #np-lyrics { display: none; padding-top: 14px; }
+  #np-content.np-lyrics-mode #np-cover-wrap,
+  #np-content.np-lyrics-mode #np-queue,
+  #np-content.np-lyrics-mode #np-about { display: none !important; }
+  #np-content.np-lyrics-mode #np-lyrics { display: block; }
+  .np-lyrics-status { color: var(--fg3); font-family: var(--mono); font-size: 11px; padding: 8px 0; }
+  .np-lyric-line {
+    font-size: 14px; line-height: 1.5; color: var(--fg3); padding: 3px 0;
+    transition: color .15s; cursor: default;
+  }
+  .np-lyric-line.synced { cursor: pointer; }
+  .np-lyric-line.active { color: var(--accent); font-weight: 600; }
+  .np-lyrics-plain { white-space: pre-wrap; font-size: 13px; line-height: 1.7; color: var(--fg2); }
+  /* Up Next queue list in the Now Playing panel */
+  .np-queue-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .np-text-btn {
+    background: none; border: none; color: var(--fg3); font-family: var(--mono);
+    font-size: 10px; cursor: pointer; padding: 0;
+  }
+  .np-text-btn:hover { color: var(--accent); }
+  .np-q-row {
+    display: flex; align-items: center; gap: 9px; padding: 6px 6px; border-radius: 6px;
+    cursor: pointer; transition: background .12s;
+  }
+  .np-q-row:hover { background: var(--bg3); }
+  .np-q-row.dragging { opacity: 0.4; }
+  .np-q-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+  .np-q-row.drop-after  { box-shadow: inset 0 -2px 0 var(--accent); }
+  .np-q-thumb {
+    width: 34px; height: 34px; border-radius: 4px; flex-shrink: 0; overflow: hidden;
+    background: var(--bg4); display: flex; align-items: center; justify-content: center;
+  }
+  .np-q-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .np-q-thumb .ico { color: var(--fg3); }
+  .np-q-thumb .ico svg { width: 15px; height: 15px; }
+  .np-q-info { flex: 1; min-width: 0; }
+  .np-q-title { font-size: 12px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .np-q-artist { font-size: 10px; color: var(--fg3); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+  .np-q-empty { color: var(--fg3); font-family: var(--mono); font-size: 11px; padding: 6px; }
   #tab-bar {
     display: flex; align-items: center;
     border-bottom: 1px solid var(--border); flex-shrink: 0; height: 36px;
@@ -796,6 +862,58 @@
   }
   .modal-actions button { padding: 6px 16px; font-size: 12px; }
 
+  /* ── Settings: tabbed / sidebar categories ───────────────────────── */
+  #modal.settings-modal {
+    width: 680px; max-width: 94vw;
+    height: min(560px, 86vh);   /* constant size — panels scroll internally */
+    padding: 0; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .settings-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 15px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .settings-head h2 { margin: 0; }
+  .settings-main { display: flex; min-height: 0; flex: 1; }
+  .settings-nav {
+    width: 172px; flex-shrink: 0; border-right: 1px solid var(--border);
+    padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto;
+  }
+  .settings-nav-item {
+    display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+    background: none; border: none; color: var(--fg2); font-family: var(--sans);
+    font-size: 12px; padding: 8px 10px; border-radius: 6px; cursor: pointer;
+    transition: background .12s, color .12s;
+  }
+  .settings-nav-item:hover { background: var(--bg3); color: var(--fg); }
+  .settings-nav-item.active { background: var(--bg4); color: var(--fg); font-weight: 600; }
+  .settings-nav-item .ico, .settings-nav-item svg { width: 15px; height: 15px; flex-shrink: 0; opacity: .85; }
+  .settings-content { flex: 1; min-width: 0; overflow-y: auto; padding: 18px 20px;
+    scrollbar-width: thin; scrollbar-color: var(--border2) transparent; }
+  .settings-content::-webkit-scrollbar,
+  .settings-nav::-webkit-scrollbar { width: 8px; }
+  .settings-content::-webkit-scrollbar-track,
+  .settings-nav::-webkit-scrollbar-track { background: transparent; }
+  .settings-content::-webkit-scrollbar-thumb,
+  .settings-nav::-webkit-scrollbar-thumb {
+    background: var(--border2); border-radius: 4px;
+    border: 2px solid transparent; background-clip: padding-box;
+  }
+  .settings-content::-webkit-scrollbar-thumb:hover,
+  .settings-nav::-webkit-scrollbar-thumb:hover { background: var(--fg3); background-clip: padding-box; }
+  .settings-panel { display: none; }
+  .settings-panel.active { display: block; animation: paneIn .18s ease both; }
+  .settings-panel-title { font-size: 13px; font-weight: 700; color: var(--fg); margin-bottom: 3px; }
+  .settings-panel-desc { font-size: 11px; color: var(--fg3); margin-bottom: 16px; line-height: 1.5; }
+  /* In the tabbed layout the first section label shouldn't draw a top divider */
+  .settings-panel .modal-section-label:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+  .settings-foot {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding: 13px 20px; border-top: 1px solid var(--border); flex-shrink: 0;
+  }
+  .settings-about-row { font-size: 12px; color: var(--fg2); font-family: var(--mono); margin-bottom: 8px; }
+  .settings-about-row a { color: var(--accent); text-decoration: none; }
+  .settings-about-row a:hover { text-decoration: underline; }
+
   /* ── Context menu ────────────────────── */
   #ctx-menu {
     position: absolute; z-index: 9999;
@@ -863,6 +981,13 @@
   }
   #search-modal h2 { font-size: 13px; font-weight: 600; margin-bottom: 12px; flex-shrink: 0; }
   #search-bar { display: flex; gap: 8px; margin-bottom: 8px; flex-shrink: 0; }
+  #search-provider {
+    background: var(--bg3); border: 1px solid var(--border2); border-radius: var(--r);
+    color: var(--fg2); font-family: var(--mono); font-size: 11px; padding: 0 8px;
+    outline: none; cursor: pointer; flex-shrink: 0;
+  }
+  #search-provider:focus { border-color: var(--accent); }
+  #search-provider option { background: var(--bg2); color: var(--fg); }
   #search-bar input {
     flex: 1; background: var(--bg3); border: 1px solid var(--border2);
     border-radius: var(--r); color: var(--fg); font-family: var(--mono);
@@ -910,6 +1035,35 @@
   #search-results { flex: 1; overflow-y: auto; min-height: 0; }
   #search-results::-webkit-scrollbar { width: 4px; }
   #search-results::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  /* ── Library search palette ( / ) ── */
+  #libsearch-overlay {
+    display: none; position: absolute; inset: 0; z-index: 120;
+    background: rgba(0,0,0,0.55); align-items: flex-start; justify-content: center; padding-top: 11vh;
+  }
+  #libsearch-overlay.open { display: flex; }
+  #libsearch-modal {
+    background: var(--bg2); border: 1px solid var(--border2); border-radius: 8px;
+    width: 560px; max-width: 92vw; max-height: 70vh; display: flex; flex-direction: column;
+    overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.7);
+  }
+  #libsearch-bar { display: flex; align-items: center; gap: 9px; padding: 11px 14px; border-bottom: 1px solid var(--border); }
+  #libsearch-bar .lib-search-icon { display: flex; color: var(--fg3); }
+  #libsearch-bar .lib-search-icon svg { width: 15px; height: 15px; }
+  #libsearch-input { flex: 1; background: none; border: none; outline: none; color: var(--fg); font-family: var(--sans); font-size: 14px; }
+  #libsearch-results { overflow-y: auto; padding: 6px; }
+  #libsearch-results::-webkit-scrollbar { width: 5px; }
+  #libsearch-results::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  .ls-group-label { font-size: 9px; color: var(--fg3); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.1em; padding: 8px 8px 4px; }
+  .ls-item { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 6px; cursor: pointer; }
+  .ls-item:hover, .ls-item.active { background: var(--bg3); }
+  .ls-thumb { width: 34px; height: 34px; border-radius: 4px; flex-shrink: 0; object-fit: cover; background: var(--bg4); }
+  .ls-thumb-ph { width: 34px; height: 34px; border-radius: 4px; flex-shrink: 0; background: var(--bg4); display: flex; align-items: center; justify-content: center; color: var(--fg3); }
+  .ls-thumb-ph svg { width: 15px; height: 15px; }
+  .ls-info { flex: 1; min-width: 0; }
+  .ls-title { font-size: 13px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ls-sub { font-size: 10px; color: var(--fg3); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ls-empty { color: var(--fg3); font-family: var(--mono); font-size: 11px; text-align: center; padding: 24px; }
   .album-grid { display: grid; grid-template-columns: 1fr; gap: 5px; padding-bottom: 4px; }
   .album-card {
     display: flex; align-items: center; gap: 10px;
@@ -1044,6 +1198,45 @@
   #genre-pl-status.error   { color: var(--red); }
   #genre-pl-status.success { color: var(--accent); }
   #genre-pl-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* Smart playlist modal — reuses the genre-pl look */
+  #smart-pl-overlay {
+    display: none; position: absolute; inset: 0;
+    background: rgba(0,0,0,0.78); z-index: 550;
+    align-items: center; justify-content: center;
+  }
+  #smart-pl-overlay.open { display: flex; }
+  #smart-pl-box {
+    background: var(--bg2); border: 1px solid var(--border2);
+    border-radius: 6px; width: 360px; max-height: 86vh; display: flex; flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.8); overflow: hidden;
+  }
+  #smart-pl-header {
+    padding: 16px 18px 14px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  #smart-pl-icon {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: rgba(184,245,66,0.12); border: 1px solid rgba(184,245,66,0.35);
+    color: var(--accent); display: flex; align-items: center; justify-content: center;
+    font-size: 15px; flex-shrink: 0;
+  }
+  #smart-pl-icon svg { width: 17px; height: 17px; }
+  #smart-pl-title { font-size: 13px; font-weight: 600; color: var(--fg); }
+  #smart-pl-bodywrap { padding: 14px 18px 18px; overflow-y: auto; }
+  #smart-pl-bodywrap .genre-pl-msg-x {
+    font-size: 11px; color: var(--fg2); font-family: var(--mono); line-height: 1.6; margin-bottom: 14px;
+  }
+  #smart-pl-bodywrap select, #smart-pl-bodywrap input[type="text"] {
+    width: 100%; background: var(--bg3); border: 1px solid var(--border2);
+    border-radius: var(--r); color: var(--fg); font-family: var(--mono);
+    font-size: 12px; padding: 6px 8px; outline: none; margin-bottom: 12px;
+  }
+  #smart-pl-bodywrap select:focus, #smart-pl-bodywrap input[type="text"]:focus { border-color: var(--accent); }
+  #smart-pl-status { font-size: 10px; font-family: var(--mono); color: var(--fg3); min-height: 14px; margin: 4px 0 12px; }
+  #smart-pl-status.error { color: var(--red); }
+  #smart-pl-status.success { color: var(--accent); }
+  .genre-pl-actions-x { display: flex; gap: 8px; justify-content: flex-end; }
 
   /* ── Load-session confirm overlay ───────────────────────── */
   #load-session-overlay {
@@ -1406,9 +1599,12 @@
   /* ── Home overview ─────────────────────── */
   .home-hero {
     position: relative; overflow: hidden; border-radius: 12px;
-    padding: 26px 28px 24px; margin-bottom: 20px;
+    padding: 40px 30px 34px; margin-bottom: 20px;
     background: var(--bg3); border: 1px solid var(--border);
     isolation: isolate;
+    /* #lib-content is a column flex container; without this the hero (overflow:
+       hidden ⇒ flex min-size 0) gets compressed and clips the greeting. */
+    flex-shrink: 0;
   }
   .home-hero-bg {
     position: absolute; inset: -10%; display: flex; z-index: 0;
@@ -1429,7 +1625,7 @@
     display: flex; align-items: center; gap: 7px;
   }
   .home-hero-eyebrow svg { width: 13px; height: 13px; }
-  .home-hero-title { font-size: 26px; font-weight: 700; color: var(--fg); letter-spacing: -0.02em; }
+  .home-hero-title { font-size: 30px; font-weight: 700; color: var(--fg); letter-spacing: -0.02em; }
   .home-hero-sub { font-size: 12px; color: var(--fg2); font-family: var(--mono); margin-top: 6px; }
   .home-stats {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -1454,13 +1650,21 @@
   .home-section-label {
     font-size: 13px; font-weight: 600; color: var(--fg); margin-bottom: 12px;
   }
+  .home-releases-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 22px; }
+  .home-count-badge {
+    display: inline-block; margin-left: 8px; min-width: 18px; padding: 1px 6px;
+    background: var(--accent); color: #000; border-radius: 9px; font-size: 10px;
+    font-weight: 700; text-align: center; font-family: var(--mono);
+  }
   .home-recent-card { cursor: pointer; }
   .lib-artist-row-info { flex: 1; min-width: 0; }
   .lib-artist-row-name {
     font-size: 12px; font-weight: 500; color: var(--fg);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    line-height: 1.3;
+    line-height: 1.3; display: flex; align-items: center; gap: 5px;
   }
+  .lib-artist-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .watch-star { color: var(--accent); font-size: 10px; flex-shrink: 0; line-height: 1; }
   .lib-artist-row.active .lib-artist-row-name { color: var(--accent); }
   .lib-artist-row-count {
     font-size: 9px; color: var(--fg3); font-family: var(--mono); margin-top: 1px;
@@ -1488,14 +1692,14 @@
     transition: color 0.12s, background 0.12s;
   }
   #lib-add-artist-row:hover { background: var(--bg3); color: var(--accent); }
-  #lib-add-playlist-row {
+  #lib-add-playlist-row, #lib-add-smart-row {
     display: flex; align-items: center; gap: 8px;
     padding: 9px 12px; border-top: 1px solid var(--border);
     cursor: pointer; flex-shrink: 0;
     font-family: var(--mono); font-size: 11px; color: var(--fg3);
     transition: color 0.12s, background 0.12s;
   }
-  #lib-add-playlist-row:hover { background: var(--bg3); color: var(--accent); }
+  #lib-add-playlist-row:hover, #lib-add-smart-row:hover { background: var(--bg3); color: var(--accent); }
 
   /* Main panel (right side) */
   #lib-main {
@@ -1505,23 +1709,48 @@
     display: none;
   }
 
-  /* Album toolbar (breadcrumb + filter) */
+  /* Album toolbar — now hosts the "In Your Library" header line (left) on the
+     same row as the A–Z / search controls (right). 14px sides match the album
+     grid's edges in #lib-content below. */
   #lib-album-toolbar {
     display: flex; align-items: center; gap: 10px;
-    padding: 5px 14px; border-bottom: 1px solid var(--border);
-    flex-shrink: 0; min-height: 32px; background: var(--bg2);
+    padding: 6px 14px; flex-shrink: 0; min-height: 34px; background: var(--bg2);
   }
   #lib-album-toolbar #lib-breadcrumb {
     flex: 1; display: flex; align-items: center; gap: 5px; padding: 0;
     border-bottom: none; min-height: unset;
   }
-  #lib-album-filter {
-    background: var(--bg3); border: 1px solid var(--border2);
-    border-radius: var(--r); color: var(--fg); font-family: var(--mono);
-    font-size: 10px; padding: 3px 7px; outline: none; width: 140px;
-    transition: border-color 0.15s;
+  #lib-album-tools { display: flex; align-items: center; gap: 6px; }
+  /* Sleek pill sort control with a custom caret */
+  .lib-sort-select {
+    appearance: none; -webkit-appearance: none;
+    background: transparent; border: 1px solid var(--border2); border-radius: 14px;
+    color: var(--fg2); font-family: var(--mono); font-size: 10px;
+    padding: 4px 22px 4px 11px; outline: none; cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a7a7a' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-repeat: no-repeat; background-position: right 8px center;
   }
-  #lib-album-filter:focus { border-color: var(--accent); }
+  .lib-sort-select:hover { color: var(--fg); border-color: var(--border3, var(--border2)); }
+  .lib-sort-select:focus { border-color: var(--accent); }
+  .lib-sort-select option { background: var(--bg2); color: var(--fg); }
+
+  /* Search: an always-visible compact field with a leading magnifier icon */
+  #lib-album-search {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--bg3); border: 1px solid var(--border2);
+    border-radius: 14px; padding: 4px 10px;
+    transition: border-color .15s;
+  }
+  #lib-album-search:focus-within { border-color: var(--accent); }
+  #lib-album-search .lib-search-icon { display: flex; color: var(--fg3); flex-shrink: 0; cursor: text; }
+  #lib-album-search:focus-within .lib-search-icon { color: var(--accent); }
+  #lib-album-search .lib-search-icon svg { width: 14px; height: 14px; }
+  #lib-album-filter {
+    background: none; border: none; color: var(--fg); font-family: var(--mono);
+    font-size: 11px; padding: 0; outline: none; width: 130px;
+  }
+  #lib-album-filter::placeholder { color: var(--fg3); }
 
   /* Hero stats row */
   #lib-hero-stats {
@@ -1653,21 +1882,38 @@
     text-shadow: 0 1px 6px rgba(0,0,0,0.7);
     letter-spacing: -0.01em; line-height: 1.1;
   }
+
+  /* Playlists collection hero — distinct from an artist page */
+  #lib-artist-hero.is-playlists {
+    background: linear-gradient(120deg, rgba(196,250,85,0.10), transparent 60%), var(--bg2);
+  }
+  #lib-artist-hero.is-playlists::after { display: none; }
+  #lib-artist-hero.is-playlists #lib-hero-bg { display: none; }
+  #lib-artist-hero.is-playlists #lib-hero-ph {
+    border-radius: 12px; border: none;
+    background: linear-gradient(135deg, var(--accent), #6fae1f);
+    color: #0a0a0a; font-size: 26px;
+  }
+  #lib-artist-hero.is-playlists #lib-hero-ph svg { width: 28px; height: 28px; }
+  #lib-artist-hero.is-playlists #lib-hero-name { color: var(--fg); text-shadow: none; font-size: 22px; }
+  #lib-artist-hero.is-playlists #lib-hero-genres { color: var(--fg3); }
   #lib-hero-meta {
     font-family: var(--mono); font-size: 11px;
     color: rgba(255,255,255,0.55); margin-top: 3px;
   }
   #lib-hero-text { min-width: 0; flex: 1; }
-  #lib-watch-btn {
+  #lib-hero-actions { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+  #lib-watch-btn, #lib-dl-missing-btn {
     margin-top: 7px; padding: 3px 10px; border-radius: 12px; cursor: pointer;
     font-family: var(--mono); font-size: 10px; font-weight: 600;
     background: rgba(0,0,0,0.35); color: #fff;
     border: 1px solid rgba(255,255,255,0.35); transition: all .12s;
   }
-  #lib-watch-btn:hover { background: rgba(0,0,0,0.55); border-color: rgba(255,255,255,0.6); }
+  #lib-watch-btn:hover, #lib-dl-missing-btn:hover { background: rgba(0,0,0,0.55); border-color: rgba(255,255,255,0.6); }
   #lib-watch-btn.watching {
     background: var(--accent); color: #111; border-color: var(--accent);
   }
+  #lib-dl-missing-btn:disabled { opacity: .6; cursor: default; }
   #lib-hero-about {
     font-size: 10px; color: rgba(255,255,255,0.38);
     line-height: 1.5; margin-top: 5px;
@@ -1678,21 +1924,22 @@
 
   /* Discography section label + toggle */
   .lib-discog-section {
-    font-size: 10px; font-weight: 700; color: var(--fg2);
-    letter-spacing: 0.14em; text-transform: uppercase;
-    padding: 10px 0 10px; display: flex; align-items: center; gap: 10px;
+    font-size: 11px; font-weight: 700; color: var(--fg);
+    letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 16px 0 12px; display: flex; align-items: center; gap: 9px;
   }
   .lib-discog-count {
-    font-family: var(--mono); font-size: 9px; color: var(--fg);
-    background: var(--bg4); border: 1px solid var(--border2);
-    border-radius: 8px; padding: 2px 8px; font-weight: 600;
+    font-family: var(--mono); font-size: 9px; color: var(--fg3);
+    border: 1px solid var(--border2);
+    border-radius: 10px; padding: 1px 7px; font-weight: 600; line-height: 1.5;
   }
   .lib-discog-sep {
-    height: 1px; flex: 1; background: var(--border2);
+    height: 1px; flex: 1;
+    background: linear-gradient(to right, var(--border2), transparent);
   }
   .lib-discog-section[data-type="owned"] .lib-discog-section-label { color: var(--accent); }
-  .lib-discog-section[data-type="owned"] .lib-discog-count { color: var(--accent); border-color: rgba(184,245,66,0.3); background: rgba(184,245,66,0.08); }
-  .lib-discog-section[data-type="owned"] .lib-discog-sep { background: rgba(184,245,66,0.2); }
+  .lib-discog-section[data-type="owned"] .lib-discog-count { color: var(--accent); border-color: rgba(184,245,66,0.5); }
+  .lib-discog-section[data-type="owned"] .lib-discog-sep { background: linear-gradient(to right, rgba(184,245,66,0.25), transparent); }
   .lib-discog-section[data-type="missing"] .lib-discog-section-label { color: var(--fg3); }
   .lib-discog-section[data-type="missing"] .lib-discog-count { color: var(--fg3); }
 
@@ -1722,11 +1969,15 @@
   .lib-add-btn:hover { transform: scale(1.15); background: #e8ff77; box-shadow: 0 3px 18px rgba(184,245,66,0.75); }
   .lib-add-btn svg { width: 15px; height: 15px; display: block; }
   .lib-add-btn.queued {
-    background: rgba(184,245,66,0.22); color: var(--accent); cursor: default; opacity: 1;
+    background: rgba(184,245,66,0.22); color: var(--accent); cursor: pointer; opacity: 1;
     font-size: 13px; box-shadow: 0 0 0 1.5px rgba(184,245,66,0.45);
   }
   .lib-add-btn.queued svg { width: 13px; height: 13px; }
-  .lib-add-btn.queued:hover { transform: none; }
+  /* Hovering a queued album flips to a red "remove" affordance */
+  .lib-add-btn.queued:hover {
+    transform: scale(1.12); background: var(--red); color: #fff;
+    box-shadow: 0 3px 14px rgba(224,85,85,0.6);
+  }
   @keyframes addBtnPop {
     0%   { transform: scale(1); }
     30%  { transform: scale(1.55); }
@@ -1892,13 +2143,17 @@
   .lib-track-list-wrap.no-thumb .lib-track-thumb { display: none; }
   .lib-track-row {
     padding: 5px 6px; border-bottom: 1px solid var(--border);
-    transition: background 0.1s; cursor: default; border-radius: 4px;
+    cursor: default; border-radius: 4px;
     user-select: none;
   }
   .lib-track-row:hover { background: var(--bg3); }   /* highlight only — no indent */
   .lib-track-row.playing { background: rgba(196,250,85,0.08); }
   .lib-track-row.selected { background: rgba(196,250,85,0.14); }
   .lib-track-row.selected:hover { background: rgba(196,250,85,0.18); }
+  /* Drag-to-reorder (playlists) — normal cursor; only dim while dragging */
+  .lib-track-row.dragging-track { opacity: 0.4; }
+  .lib-track-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+  .lib-track-row.drop-after  { box-shadow: inset 0 -2px 0 var(--accent); }
 
   /* Column header row */
   .lib-track-head {
@@ -1952,6 +2207,7 @@
   .lib-track-album {
     min-width: 0; font-size: 11px; color: var(--fg2);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    justify-self: start; max-width: 100%;   /* hug the text so empty column space isn't clickable */
   }
   /* Per-track album name → clickable link that queues that album */
   .lib-track-album.clickable { cursor: pointer; }
@@ -2024,12 +2280,14 @@
   #mp-info { flex: 0 1 auto; min-width: 0; }   /* hug content so the heart sits next to it */
   #mp-title {
     font-size: 12px; font-weight: 500; color: var(--fg);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
   }
+  #mp-title:hover { text-decoration: underline; }
   #mp-artist-name {
     font-size: 10px; color: var(--accent); font-family: var(--mono);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
   }
+  #mp-artist-name:hover { text-decoration: underline; }
   #mp-preview-note {
     font-size: 9px; color: var(--fg3); font-family: var(--mono);
   }
@@ -2815,7 +3073,7 @@
           <input type="text" id="url-input" placeholder="Deezer or Spotify link…" autocomplete="off" autocorrect="off" spellcheck="false">
         </div>
         <div class="btn-row" style="margin-top:6px;">
-          <button class="btn-secondary" id="btn-deezer-search"><span class="bi" data-icon="search"></span>Search Deezer</button>
+          <button class="btn-secondary" id="btn-deezer-search"><span class="bi" data-icon="search"></span>Search</button>
           <button class="btn-secondary" id="btn-add"><span class="bi" data-icon="plus"></span>Add</button>
         </div>
       </div>
@@ -2871,6 +3129,7 @@
           <button class="btn-accent" id="btn-run"><span class="bi" data-icon="play"></span>Run</button>
           <button class="btn-secondary" id="btn-pause" title="Pause / Resume" style="padding:7px 10px;display:none" data-icon="pause"></button>
         </div>
+        <button class="btn-secondary" id="btn-retry-failed" title="Re-run only the items that failed in the last session" style="display:none;width:100%;margin-top:6px"><span class="bi" data-icon="refresh"></span>Retry failed</button>
         <div id="eta-indicator"></div>
       </div>
     </div>
@@ -2886,8 +3145,6 @@
       <button class="tab" data-tab="history">History <span class="tab-kbd">2</span></button>
       <button class="tab" data-tab="library">Library <span class="tab-kbd">3</span></button>
       <button class="tab" data-tab="stats">Stats <span class="tab-kbd">4</span></button>
-      <button class="tab" data-tab="releases">Releases <span id="releases-badge" class="tab-badge" style="display:none">0</span></button>
-      <button class="tab" data-tab="maint">Maintenance</button>
       <button class="tab" data-tab="debug">Debug <span class="tab-kbd">5</span></button>
       <span class="spacer"></span>
       <button id="log-clear">clear</button>
@@ -2939,46 +3196,6 @@
       </div>
     </div>
 
-    <!-- New Releases tab -->
-    <div class="tab-pane" id="tab-releases">
-      <div id="releases-toolbar" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);flex-shrink:0;">
-        <button class="btn-secondary" id="btn-check-releases" style="width:auto">Check now</button>
-        <span id="releases-status" style="font-family:var(--mono);font-size:10px;color:var(--fg3)"></span>
-      </div>
-      <div id="releases-content" style="overflow-y:auto;flex:1;padding:12px 14px;">
-        <div class="stat-empty">Watch artists from the Library tab to track their new releases.</div>
-      </div>
-    </div>
-
-    <!-- Maintenance tab -->
-    <div class="tab-pane" id="tab-maint" style="overflow-y:auto;">
-      <div style="padding:14px;max-width:760px;">
-        <div class="stat-card" style="margin-bottom:14px">
-          <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-            <span>Integrity Scan</span>
-            <button class="btn-secondary" id="btn-run-scan" style="width:auto">Run scan</button>
-          </div>
-          <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Finds unreadable/corrupt tracks and albums missing cover art.</div>
-          <div id="scan-results"></div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-            <span>Duplicate Finder</span>
-            <button class="btn-secondary" id="btn-find-dupes" style="width:auto">Find duplicates</button>
-          </div>
-          <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Groups byte-identical audio files so you can reclaim space.</div>
-          <div id="dupes-results"></div>
-        </div>
-        <div class="stat-card" style="margin-top:14px">
-          <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-            <span>Backup</span>
-            <button class="btn-secondary" id="btn-backup" style="width:auto">Download backup</button>
-          </div>
-          <div style="font-size:11px;color:var(--fg3);margin:4px 0 0">Saves liked songs, watchlist, sessions and settings (no credentials) as a zip.</div>
-        </div>
-      </div>
-    </div>
-
     <!-- Library Analytics tab -->
   <div class="tab-pane" id="tab-library" style="flex-direction:row;overflow:hidden;">
 
@@ -2999,6 +3216,10 @@
         <span style="font-size:13px;line-height:0;color:var(--accent)" data-icon="playlist"></span>
         <span>New Genre Playlist</span>
       </div>
+      <div id="lib-add-smart-row" title="Create a rule-based smart playlist">
+        <span style="font-size:13px;line-height:0;color:var(--accent)" data-icon="sparkle"></span>
+        <span>New Smart Playlist</span>
+      </div>
     </div>
 
     <!-- RIGHT: Main content -->
@@ -3012,7 +3233,10 @@
           <div id="lib-hero-text">
             <div id="lib-hero-name"></div>
             <div id="lib-hero-genres"></div>
-            <button id="lib-watch-btn" style="display:none">★ Watch artist</button>
+            <div id="lib-hero-actions">
+              <button id="lib-watch-btn" style="display:none">★ Watch artist</button>
+              <button id="lib-dl-missing-btn" style="display:none">⬇ Download missing</button>
+            </div>
             <div id="lib-hero-about"></div>
           </div>
           <div id="lib-hero-stats">
@@ -3033,10 +3257,21 @@
           </div>
         </div>
       </div>
-      <!-- Breadcrumb + album filter -->
+      <!-- Breadcrumb + album sort/search -->
       <div id="lib-album-toolbar">
         <div id="lib-breadcrumb"></div>
-        <input type="text" id="lib-album-filter" placeholder="Filter albums…" autocomplete="off" style="display:none">
+        <div id="lib-album-tools" style="display:none">
+          <select id="lib-album-sort" class="lib-sort-select" title="Sort albums">
+            <option value="az">A–Z</option>
+            <option value="za">Z–A</option>
+            <option value="tracks">Most tracks</option>
+            <option value="recent">Recently added</option>
+          </select>
+          <div id="lib-album-search">
+            <span class="lib-search-icon" data-icon="search"></span>
+            <input type="text" id="lib-album-filter" placeholder="Search" autocomplete="off">
+          </div>
+        </div>
       </div>
       <!-- Main content: album grid or track list -->
       <div id="lib-content">
@@ -3092,7 +3327,7 @@
         <div id="mp-prog-track">
           <div id="mp-prog-fill"></div>
         </div>
-        <span id="mp-time-tot">0:30</span>
+        <span id="mp-time-tot">0:00</span>
       </div>
     </div>
     <div id="mp-right">
@@ -3112,6 +3347,8 @@
     <div id="np-header">
       <button id="np-collapse" class="np-icon-btn" title="Collapse panel" data-icon="chevronRight"></button>
       <span id="np-header-title">Now Playing</span>
+      <span style="flex:1"></span>
+      <button id="np-lyrics-toggle" class="np-icon-btn" title="Lyrics" data-icon="list"></button>
     </div>
     <div id="np-body">
       <div id="np-empty" class="np-empty">Play a track to see it here.</div>
@@ -3122,14 +3359,24 @@
         </div>
         <div id="np-track-title">—</div>
         <div id="np-track-artist"></div>
+        <div id="np-lyrics"><div class="np-lyrics-status">Loading lyrics…</div></div>
+        <div id="np-queue" style="display:none">
+          <div class="np-section-label np-queue-head">
+            <span>Next up</span>
+            <button id="np-queue-clear" class="np-text-btn" type="button" title="Clear the rest of the queue">Clear</button>
+          </div>
+          <div id="np-queue-list"></div>
+        </div>
         <div id="np-about">
           <div class="np-section-label">About the artist</div>
-          <div id="np-about-card" title="Open this artist">
-            <div id="np-about-img"></div>
+          <div id="np-about-card">
+            <div id="np-about-img" title="Open this artist"></div>
             <div id="np-about-info">
-              <div id="np-about-name"></div>
-              <div id="np-about-fans"></div>
+              <div id="np-about-name" title="Open this artist"></div>
+              <div id="np-about-meta"></div>
               <div id="np-about-bio"></div>
+              <button id="np-about-more" type="button" style="display:none">Show more</button>
+              <a id="np-about-wiki" target="_blank" rel="noopener" style="display:none">Read full bio on Wikipedia ↗</a>
             </div>
           </div>
         </div>
@@ -3139,96 +3386,203 @@
 
   <!-- Settings modal -->
   <div id="modal-overlay">
-    <div id="modal">
-      <h2>Settings</h2>
-      <div class="modal-field">
-        <label>Bot Username</label>
-        <input type="text" id="cfg-bot" placeholder="@YourMusicBot">
+    <div id="modal" class="settings-modal">
+      <div class="settings-head">
+        <h2>Settings</h2>
+        <span id="settings-version" style="font-family:var(--mono);font-size:10px;color:var(--fg3)"></span>
       </div>
-      <div class="modal-field">
-        <label>Reply Timeout (s)</label>
-        <input type="text" id="cfg-reply-timeout">
-      </div>
-      <div class="modal-field">
-        <label>Queue Wait Timeout (s)</label>
-        <input type="text" id="cfg-queue-wait">
-      </div>
-      <div class="modal-field">
-        <label>Idle Timeout After Files (s)</label>
-        <input type="text" id="cfg-idle-timeout">
-      </div>
-      <div class="modal-field">
-        <label>Idle Check Interval (s)</label>
-        <input type="text" id="cfg-idle-check">
-      </div>
-      <div class="modal-field">
-        <label>Bot Busy Wait (s)</label>
-        <input type="text" id="cfg-busy-wait">
-      </div>
-      <div class="modal-field">
-        <label>Bot Busy Retries</label>
-        <input type="text" id="cfg-busy-retries">
-      </div>
-      <div class="modal-field">
-        <label>Max Parallel Downloads (per album)</label>
-        <input type="text" id="cfg-max-parallel" placeholder="3">
-      </div>
-      <div class="modal-field">
-        <label>Max Queue Size</label>
-        <input type="text" id="cfg-max-queue">
-      </div>
-      <div class="modal-field">
-        <label>UI Scale — drag or type (0.6–2.0)</label>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <input type="range" id="cfg-scale-range" min="0.6" max="2.0" step="0.05"
-                 style="flex:1;accent-color:var(--accent);cursor:pointer;">
-          <input type="text" id="cfg-scale-text" style="width:52px;text-align:center;" placeholder="1.0">
+      <div class="settings-main">
+        <!-- Category nav -->
+        <div class="settings-nav">
+          <button class="settings-nav-item active" data-spanel="connection"><span data-icon="link"></span>Connection</button>
+          <button class="settings-nav-item" data-spanel="downloads"><span data-icon="download"></span>Downloads</button>
+          <button class="settings-nav-item" data-spanel="interface"><span data-icon="layers"></span>Interface</button>
+          <button class="settings-nav-item" data-spanel="scrobbling"><span data-icon="radio"></span>Scrobbling</button>
+          <button class="settings-nav-item" data-spanel="maintenance"><span data-icon="refresh"></span>Maintenance</button>
+          <button class="settings-nav-item" data-spanel="about"><span data-icon="info"></span>About</button>
+        </div>
+
+        <!-- Category panels -->
+        <div class="settings-content">
+
+          <!-- Connection -->
+          <div class="settings-panel active" data-spanel="connection">
+            <div class="settings-panel-title">Connection</div>
+            <div class="settings-panel-desc">How the app talks to your Telegram music bot.</div>
+            <div class="modal-field">
+              <label>Bot Username</label>
+              <input type="text" id="cfg-bot" placeholder="@YourMusicBot">
+            </div>
+            <div class="modal-field">
+              <label>Reply Timeout (s)</label>
+              <input type="text" id="cfg-reply-timeout">
+            </div>
+            <div class="modal-field">
+              <label>Queue Wait Timeout (s)</label>
+              <input type="text" id="cfg-queue-wait">
+            </div>
+            <div class="modal-field">
+              <label>Idle Timeout After Files (s)</label>
+              <input type="text" id="cfg-idle-timeout">
+            </div>
+            <div class="modal-field">
+              <label>Idle Check Interval (s)</label>
+              <input type="text" id="cfg-idle-check">
+            </div>
+            <div class="modal-field">
+              <label>Bot Busy Wait (s)</label>
+              <input type="text" id="cfg-busy-wait">
+            </div>
+            <div class="modal-field">
+              <label>Bot Busy Retries</label>
+              <input type="text" id="cfg-busy-retries">
+            </div>
+
+            <div class="settings-panel-title" style="margin-top:18px">Spotify Search</div>
+            <div class="settings-panel-desc">Optional — lets the queue search use Spotify. Create a free app at
+              <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard ↗</a>
+              and paste its Client ID + Secret. Without these, search falls back to Deezer.</div>
+            <div class="modal-field">
+              <label>Spotify Client ID</label>
+              <input type="text" id="cfg-spotify-id" placeholder="paste your app's Client ID" autocomplete="off">
+            </div>
+            <div class="modal-field">
+              <label>Spotify Client Secret</label>
+              <input type="password" id="cfg-spotify-secret" placeholder="paste your app's Client Secret" autocomplete="off">
+            </div>
+          </div>
+
+          <!-- Downloads -->
+          <div class="settings-panel" data-spanel="downloads">
+            <div class="settings-panel-title">Downloads</div>
+            <div class="settings-panel-desc">Throughput and queue limits for bulk downloads.</div>
+            <div class="modal-field">
+              <label>Max Parallel Downloads (per album)</label>
+              <input type="text" id="cfg-max-parallel" placeholder="3">
+            </div>
+            <div class="modal-field">
+              <label>Max Queue Size</label>
+              <input type="text" id="cfg-max-queue">
+            </div>
+          </div>
+
+          <!-- Interface -->
+          <div class="settings-panel" data-spanel="interface">
+            <div class="settings-panel-title">Interface</div>
+            <div class="settings-panel-desc">Appearance and notifications.</div>
+            <div class="modal-field">
+              <label>UI Scale — drag or type (0.6–2.0)</label>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <input type="range" id="cfg-scale-range" min="0.6" max="2.0" step="0.05"
+                       style="flex:1;accent-color:var(--accent);cursor:pointer;">
+                <input type="text" id="cfg-scale-text" style="width:52px;text-align:center;" placeholder="1.0">
+              </div>
+            </div>
+            <label class="modal-toggle">
+              <input type="checkbox" id="cfg-theme-light">
+              <span>Light theme</span>
+            </label>
+            <label class="modal-toggle">
+              <input type="checkbox" id="cfg-notify">
+              <span>Desktop notifications (downloads &amp; new releases)</span>
+            </label>
+            <label class="modal-toggle">
+              <input type="checkbox" id="cfg-autoplay">
+              <span>Autoplay radio when a queue ends (related-artist previews)</span>
+            </label>
+            <label class="modal-toggle">
+              <input type="checkbox" id="cfg-show-welcome" checked>
+              <span>Show welcome screen on startup</span>
+            </label>
+          </div>
+
+          <!-- Scrobbling -->
+          <div class="settings-panel" data-spanel="scrobbling">
+            <div class="settings-panel-title">Scrobbling</div>
+            <div class="settings-panel-desc">Optionally log what you listen to to ListenBrainz or Last.fm.</div>
+            <label class="modal-toggle">
+              <input type="checkbox" id="cfg-scrobble-enabled">
+              <span>Scrobble local plays (logs what you listen to)</span>
+            </label>
+            <div class="modal-field">
+              <label>Service</label>
+              <select id="cfg-scrobble-service" style="width:100%;background:var(--bg3);color:var(--fg);border:1px solid var(--border2);border-radius:4px;padding:6px 8px;font-family:var(--mono);font-size:11px;">
+                <option value="listenbrainz">ListenBrainz</option>
+                <option value="lastfm">Last.fm</option>
+              </select>
+            </div>
+            <div class="modal-field" id="cfg-lb-wrap">
+              <label>ListenBrainz Token <span style="color:var(--fg3);font-weight:400">— from listenbrainz.org/settings</span></label>
+              <input type="text" id="cfg-listenbrainz-token" placeholder="paste your user token" autocomplete="off">
+            </div>
+            <div id="cfg-lastfm-wrap" style="display:none">
+              <div class="modal-field">
+                <label>Last.fm API Key</label>
+                <input type="text" id="cfg-lastfm-key" autocomplete="off">
+              </div>
+              <div class="modal-field">
+                <label>Last.fm Shared Secret</label>
+                <input type="text" id="cfg-lastfm-secret" autocomplete="off">
+              </div>
+              <div class="modal-field">
+                <label>Last.fm Session Key</label>
+                <input type="text" id="cfg-lastfm-sk" autocomplete="off">
+              </div>
+            </div>
+          </div>
+
+          <!-- Maintenance -->
+          <div class="settings-panel" data-spanel="maintenance">
+            <div class="settings-panel-title">Maintenance</div>
+            <div class="settings-panel-desc">Keep your library healthy and back up your data.</div>
+            <div class="stat-card" style="margin-bottom:14px">
+              <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <span>System Diagnostics</span>
+                <button class="btn-secondary" id="btn-run-health" style="width:auto">Run check</button>
+              </div>
+              <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Verifies ffmpeg, the Telegram session, your home folder and free disk space.</div>
+              <div id="health-results"></div>
+            </div>
+            <div class="stat-card" style="margin-bottom:14px">
+              <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <span>Integrity Scan</span>
+                <button class="btn-secondary" id="btn-run-scan" style="width:auto">Run scan</button>
+              </div>
+              <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Finds unreadable/corrupt tracks and albums missing cover art.</div>
+              <div id="scan-results"></div>
+            </div>
+            <div class="stat-card" style="margin-bottom:14px">
+              <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <span>Duplicate Finder</span>
+                <button class="btn-secondary" id="btn-find-dupes" style="width:auto">Find duplicates</button>
+              </div>
+              <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Groups byte-identical audio files so you can reclaim space.</div>
+              <div id="dupes-results"></div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <span>Backup</span>
+                <button class="btn-secondary" id="btn-backup" style="width:auto">Download backup</button>
+              </div>
+              <div style="font-size:11px;color:var(--fg3);margin:4px 0 0">Saves liked songs, watchlist, sessions and settings (no credentials) as a zip.</div>
+            </div>
+          </div>
+
+          <!-- About -->
+          <div class="settings-panel" data-spanel="about">
+            <div class="settings-panel-title">About</div>
+            <div class="settings-panel-desc">Version and update information.</div>
+            <div class="settings-about-row">TGDownloader <strong id="about-version">—</strong></div>
+            <div class="settings-about-row" id="about-update-row">Updates: <span id="about-update-status" style="color:var(--fg3)">—</span></div>
+            <div class="settings-about-row"><a href="https://github.com/Thurlws/TGDownloader" target="_blank" rel="noopener">Project on GitHub ↗</a></div>
+            <div style="margin-top:14px">
+              <button class="btn-secondary" id="btn-about-check-update" style="width:auto">Check for updates</button>
+            </div>
+          </div>
+
         </div>
       </div>
-      <div class="modal-section-label">Scrobbling</div>
-      <label class="modal-toggle">
-        <input type="checkbox" id="cfg-scrobble-enabled">
-        <span>Scrobble local plays (logs what you listen to)</span>
-      </label>
-      <div class="modal-field">
-        <label>Service</label>
-        <select id="cfg-scrobble-service" style="width:100%;background:var(--bg3);color:var(--fg);border:1px solid var(--border2);border-radius:4px;padding:6px 8px;font-family:var(--mono);font-size:11px;">
-          <option value="listenbrainz">ListenBrainz</option>
-          <option value="lastfm">Last.fm</option>
-        </select>
-      </div>
-      <div class="modal-field" id="cfg-lb-wrap">
-        <label>ListenBrainz Token <span style="color:var(--fg3);font-weight:400">— from listenbrainz.org/settings</span></label>
-        <input type="text" id="cfg-listenbrainz-token" placeholder="paste your user token" autocomplete="off">
-      </div>
-      <div id="cfg-lastfm-wrap" style="display:none">
-        <div class="modal-field">
-          <label>Last.fm API Key</label>
-          <input type="text" id="cfg-lastfm-key" autocomplete="off">
-        </div>
-        <div class="modal-field">
-          <label>Last.fm Shared Secret</label>
-          <input type="text" id="cfg-lastfm-secret" autocomplete="off">
-        </div>
-        <div class="modal-field">
-          <label>Last.fm Session Key</label>
-          <input type="text" id="cfg-lastfm-sk" autocomplete="off">
-        </div>
-      </div>
-      <div class="modal-section-label">Interface</div>
-      <label class="modal-toggle">
-        <input type="checkbox" id="cfg-theme-light">
-        <span>Light theme</span>
-      </label>
-      <label class="modal-toggle">
-        <input type="checkbox" id="cfg-notify">
-        <span>Desktop notifications (downloads &amp; new releases)</span>
-      </label>
-      <label class="modal-toggle">
-        <input type="checkbox" id="cfg-show-welcome" checked>
-        <span>Show welcome screen on startup</span>
-      </label>
-      <div class="modal-actions">
+      <div class="settings-foot">
         <button class="btn-secondary" id="btn-modal-cancel" style="width:auto">Cancel</button>
         <button class="btn-accent"    id="btn-modal-save"   style="width:auto">Save</button>
       </div>
@@ -3238,8 +3592,12 @@
   <!-- Deezer search modal -->
   <div id="search-overlay">
     <div id="search-modal">
-      <h2>Search Deezer <span style="font-size:10px;color:var(--fg3);font-weight:400;margin-left:6px">Ctrl+K</span></h2>
+      <h2>Search <span id="search-provider-tag" style="font-size:10px;color:var(--fg3);font-weight:400;margin-left:6px">Ctrl+K</span></h2>
       <div id="search-bar">
+        <select id="search-provider" title="Search provider">
+          <option value="deezer">Deezer</option>
+          <option value="spotify">Spotify</option>
+        </select>
         <input type="text" id="search-input" placeholder="Artist or album name…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <button id="btn-search-go">Search</button>
       </div>
@@ -3256,6 +3614,18 @@
       <div class="search-footer">
         <button id="btn-search-cancel">Close</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Library search palette ( / ) -->
+  <div id="libsearch-overlay">
+    <div id="libsearch-modal">
+      <div id="libsearch-bar">
+        <span class="lib-search-icon" data-icon="search"></span>
+        <input id="libsearch-input" placeholder="Search your library — artists, albums, playlists…" autocomplete="off" spellcheck="false">
+        <span style="font-size:9px;color:var(--fg3);font-family:var(--mono);border:1px solid var(--border2);border-radius:3px;padding:1px 4px">esc</span>
+      </div>
+      <div id="libsearch-results"></div>
     </div>
   </div>
 
@@ -3320,6 +3690,54 @@
         <div id="genre-pl-actions">
           <button class="btn-secondary" id="btn-genre-pl-cancel" style="width:auto;padding:6px 16px">Cancel</button>
           <button class="btn-secondary" id="btn-genre-pl-create" style="width:auto;padding:6px 16px">Create</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Smart playlist modal -->
+  <div id="smart-pl-overlay">
+    <div id="smart-pl-box">
+      <div id="smart-pl-header">
+        <div id="smart-pl-icon" data-icon="playlist"></div>
+        <div id="smart-pl-title">New Smart Playlist</div>
+      </div>
+      <div id="smart-pl-bodywrap">
+        <div class="genre-pl-msg-x">Build a playlist from rules. Leave a field blank to ignore it.</div>
+        <label class="genre-pl-label">Playlist name</label>
+        <input type="text" id="smart-pl-name" placeholder="My smart playlist" autocomplete="off" spellcheck="false">
+        <label class="genre-pl-label">Format</label>
+        <select id="smart-pl-format">
+          <option value="">Any format</option>
+          <option value="flac">FLAC</option>
+          <option value="mp3">MP3</option>
+          <option value="m4a">M4A / AAC</option>
+          <option value="opus">Opus</option>
+          <option value="ogg">OGG</option>
+        </select>
+        <label class="genre-pl-label">Genre contains</label>
+        <input type="text" id="smart-pl-genre" placeholder="e.g. hip hop" autocomplete="off" spellcheck="false">
+        <label class="genre-pl-label">Artist contains</label>
+        <input type="text" id="smart-pl-artist" placeholder="e.g. Kanye" autocomplete="off" spellcheck="false">
+        <div style="display:flex;gap:10px">
+          <div style="flex:1">
+            <label class="genre-pl-label">Added within (days)</label>
+            <input type="text" id="smart-pl-days" placeholder="any" autocomplete="off" inputmode="numeric">
+          </div>
+          <div style="flex:1">
+            <label class="genre-pl-label">Limit</label>
+            <input type="text" id="smart-pl-limit" placeholder="no limit" autocomplete="off" inputmode="numeric">
+          </div>
+        </div>
+        <label class="genre-pl-label">Order</label>
+        <select id="smart-pl-sort">
+          <option value="az">Artist / album</option>
+          <option value="recent">Recently added</option>
+        </select>
+        <div id="smart-pl-status"></div>
+        <div class="genre-pl-actions-x">
+          <button class="btn-secondary" id="btn-smart-pl-cancel" style="width:auto;padding:6px 16px">Cancel</button>
+          <button class="btn-secondary" id="btn-smart-pl-create" style="width:auto;padding:6px 16px">Create</button>
         </div>
       </div>
     </div>
@@ -3700,10 +4118,12 @@ function connectWS() {
     } else if (msg.type === 'status') {
       running = msg.running;
       setStatus(running ? 'running' : 'idle');
+      _updateRetryFailedBtn();
       if (running) sessionStartTime = Date.now();
     } else if (msg.type === 'done') {
       running = false;
       setStatus('idle');
+      _updateRetryFailedBtn();   // running flag changed → refresh the retry button
       const ok = msg.code === 0;
       appendLog(`\nProcess exited (code ${msg.code})\n`, ok ? 'log-success' : 'log-error');
       appendLog('─'.repeat(52) + '\n', 'log-dim');
@@ -3830,7 +4250,7 @@ function switchTab(tab) {
   document.getElementById('app').classList.toggle('queue-hidden', tab !== 'log');
 
   const clearBtn = document.getElementById('log-clear');
-  if (tab === 'stats' || tab === 'debug' || tab === 'releases' || tab === 'maint') {
+  if (tab === 'stats' || tab === 'debug' || tab === 'library') {
     // These tabs have no "clear" affordance
     clearBtn.style.visibility = 'hidden';
   } else if (tab === 'history') {
@@ -3845,7 +4265,6 @@ function switchTab(tab) {
   if (tab === 'stats')   { if (!_libStatsCache) _fetchLibStats(); renderStats(); }
   if (tab === 'debug')   loadDebugLog();
   if (tab === 'library') loadLibrary();
-  if (tab === 'releases') renderReleases();
 }
 
 
@@ -3945,12 +4364,15 @@ async function _checkForUpdate(force = false) {
   const badge   = document.getElementById('update-badge');
   const badgeTx = document.getElementById('update-badge-text');
   const status  = document.getElementById('update-status');
+  const aboutS  = document.getElementById('about-update-status');
   if (force && status) status.textContent = 'Checking…';
+  if (force && aboutS) aboutS.textContent = 'Checking…';
   let data;
   try {
     data = await (await fetch('/check-update' + (force ? '?force=1' : ''))).json();
   } catch (_) {
     if (status) status.textContent = 'Update check failed (offline?)';
+    if (aboutS) aboutS.textContent = 'Check failed (offline?)';
     return;
   }
   _updateInfo = data;
@@ -3959,9 +4381,12 @@ async function _checkForUpdate(force = false) {
                    badge.title = `Version ${data.latest} is available — you have ${data.current}. Click to view the release.`; }
     if (badgeTx) badgeTx.textContent = 'Update to v' + (data.latest || '');
     if (status)  status.textContent = `Update available: v${data.latest} (you have v${data.current})`;
+    if (aboutS)  { aboutS.innerHTML = `<a href="#" id="about-update-link" style="color:var(--accent)">Update available: v${data.latest} ↗</a>`;
+                   document.getElementById('about-update-link')?.addEventListener('click', (e) => { e.preventDefault(); _openReleasePage(); }); }
   } else {
     if (badge)  badge.style.display = 'none';
     if (status) status.textContent = data.error ? data.error : `Up to date (v${data.current})`;
+    if (aboutS) aboutS.textContent = data.error ? data.error : `Up to date (v${data.current})`;
   }
 }
 
@@ -4015,6 +4440,7 @@ document.addEventListener('DOMContentLoaded', () => {
     _libActiveArtist = null;
     _libActiveAlbum  = null;
     _libStatsCache = null;
+    _libStatsForceNext = true;   // explicit refresh → bypass the server stats cache once
     loadLibrary();
   });
 
@@ -4024,6 +4450,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('lib-album-filter')?.addEventListener('input', () => {
     if (_libActiveArtist && _libView === 'albums') _libApplyAlbumFilter();
+  });
+
+  document.getElementById('lib-album-sort')?.addEventListener('change', (e) => {
+    _libAlbumSort = e.target.value || 'az';
+    if (_libActiveArtist && _libView === 'albums') _libApplyAlbumFilter();
+  });
+
+  // Search is always visible; clicking anywhere on the box focuses the field.
+  document.getElementById('lib-album-search')?.addEventListener('click', () => {
+    document.getElementById('lib-album-filter')?.focus();
   });
 
   document.getElementById('lib-add-artist-row')?.addEventListener('click', () => _openArtistSearch());
@@ -4149,6 +4585,61 @@ document.getElementById('btn-genre-pl-cancel')?.addEventListener('click', closeG
 document.getElementById('btn-genre-pl-create')?.addEventListener('click', _createGenrePlaylist);
 document.getElementById('genre-pl-overlay')?.addEventListener('click', (e) => {
   if (e.target === document.getElementById('genre-pl-overlay')) closeGenrePlaylistModal();
+});
+
+// ── Smart playlist builder ──────────────────────────────────────────────────
+function openSmartPlaylistModal() {
+  const st = document.getElementById('smart-pl-status');
+  if (st) { st.textContent = ''; st.className = ''; }
+  ['smart-pl-name','smart-pl-genre','smart-pl-artist','smart-pl-days','smart-pl-limit'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('smart-pl-overlay')?.classList.add('open');
+  setTimeout(() => document.getElementById('smart-pl-name')?.focus(), 20);
+}
+function closeSmartPlaylistModal() {
+  document.getElementById('smart-pl-overlay')?.classList.remove('open');
+}
+async function _createSmartPlaylist() {
+  const status = document.getElementById('smart-pl-status');
+  const btn    = document.getElementById('btn-smart-pl-create');
+  const body = {
+    name:       document.getElementById('smart-pl-name').value.trim(),
+    format:     document.getElementById('smart-pl-format').value,
+    genre:      document.getElementById('smart-pl-genre').value.trim(),
+    artist:     document.getElementById('smart-pl-artist').value.trim(),
+    added_days: document.getElementById('smart-pl-days').value.trim(),
+    limit:      document.getElementById('smart-pl-limit').value.trim(),
+    sort:       document.getElementById('smart-pl-sort').value,
+  };
+  if (!body.name) { status.textContent = 'Give the playlist a name.'; status.className = 'error'; return; }
+  if (!body.format && !body.genre && !body.artist && !body.added_days) {
+    status.textContent = 'Set at least one rule.'; status.className = 'error'; return;
+  }
+  btn.disabled = true;
+  status.textContent = 'Building playlist…'; status.className = '';
+  try {
+    const resp = await fetch('/create-smart-playlist', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!data.ok) { status.textContent = data.error || 'Failed to create playlist.'; status.className = 'error'; return; }
+    status.textContent = `Created "${data.name}" — ${data.copied} track${data.copied !== 1 ? 's' : ''}.`;
+    status.className = 'success';
+    appendLog(`  Created smart playlist "${data.name}" (${data.copied} tracks)\n`, 'log-success');
+    _libStatsCache = null;
+    setTimeout(() => { closeSmartPlaylistModal(); if (activeTab === 'library') loadLibrary(); }, 900);
+  } catch (e) {
+    status.textContent = `Error: ${e}`; status.className = 'error';
+  } finally {
+    btn.disabled = false;
+  }
+}
+document.getElementById('lib-add-smart-row')?.addEventListener('click', openSmartPlaylistModal);
+document.getElementById('btn-smart-pl-cancel')?.addEventListener('click', closeSmartPlaylistModal);
+document.getElementById('btn-smart-pl-create')?.addEventListener('click', _createSmartPlaylist);
+document.getElementById('smart-pl-overlay')?.addEventListener('click', (e) => {
+  if (e.target === document.getElementById('smart-pl-overlay')) closeSmartPlaylistModal();
 });
 
 // ═══════════════════════════════════════
@@ -4333,6 +4824,7 @@ function renderQueue() {
 
   // Sync library "queued" badge state with current entries
   _syncLibQueuedState();
+  _updateRetryFailedBtn();
 
   if (!entries.length) {
     list.className = '';
@@ -5358,12 +5850,17 @@ async function _histRemoveSingle(url) {
 // ═══════════════════════════════════════
 let _libStatsCache = null;
 let _libStatsFetching = false;
+let _libStatsForceNext = false;   // one-shot: force a fresh server recompute on next fetch
 
-async function _fetchLibStats() {
+async function _fetchLibStats(force = false) {
   if (_libStatsFetching) return;
   _libStatsFetching = true;
+  if (_libStatsForceNext) { force = true; _libStatsForceNext = false; }
   try {
-    const resp = await fetch('/library-stats');
+    // The server caches the (expensive) stats payload and validates it against a
+    // cheap library signature, so this is fast unless the library actually
+    // changed. `force` bypasses that cache for an explicit user refresh.
+    const resp = await fetch('/library-stats' + (force ? '?refresh=1' : ''));
     const data = await resp.json();
     if (!data.error) {
       _libStatsCache = data;
@@ -5573,22 +6070,79 @@ function makeBarChart(rows) {
   }).join('');
 }
 
-// Cumulative library-growth line chart from [{month, cumulative}]
+// "YYYY-MM" -> "Mon ’YY" for compact axis labels
+function _fmtMonthLabel(m) {
+  const parts = String(m).split('-');
+  const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const idx = Math.max(0, Math.min(11, (parseInt(parts[1], 10) || 1) - 1));
+  return `${names[idx]} ’${String(parts[0]).slice(2)}`;
+}
+
+// Cumulative library-growth line chart from [{month, added, cumulative}].
+// Fills the (full-width) card at a fixed height: the area/line live in an SVG
+// stretched edge-to-edge via preserveAspectRatio="none" (with non-scaling
+// strokes so the line stays crisp), while all text + the endpoint dot are HTML
+// overlays so they never distort regardless of how wide the card gets.
 function makeGrowthChart(growth) {
   const vals = growth.map(g => g.cumulative);
   if (vals.length < 2) return '';
-  const w = 260, h = 56, max = Math.max(...vals), min = Math.min(...vals);
+  const H = 160;                  // fixed container height (px)
+  const padT = 14, padB = 26;     // top breathing room / bottom x-label room
+  const axisL = 38, axisR = 12;   // gutters: y-labels (left), endpoint (right)
+  const plotH = H - padT - padB;
+  const max = Math.max(...vals), min = 0;          // anchor to 0 so growth reads honestly
   const span = Math.max(max - min, 1);
-  const pts = vals.map((v, i) => {
-    const x = (i / (vals.length - 1)) * w;
-    const y = h - ((v - min) / span) * (h - 8) - 4;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-  const area = `0,${h} ${pts.join(' ')} ${w},${h}`;
-  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:56px;display:block">
-    <polygon points="${area}" fill="var(--accent)" opacity="0.12"/>
-    <polyline points="${pts.join(' ')}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round" opacity="0.9" vector-effect="non-scaling-stroke"/>
-  </svg>`;
+  const VBW = 1000;               // viewBox width — stretched to fill the plot area
+  const xAt = i => (vals.length === 1 ? 0 : (i / (vals.length - 1)) * VBW);
+  const yAt = v => padT + plotH - ((v - min) / span) * plotH;
+  const baseY = padT + plotH;
+  const pts  = vals.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`);
+  const area = `0,${baseY.toFixed(1)} ${pts.join(' ')} ${VBW},${baseY.toFixed(1)}`;
+  const uid  = 'gg' + Math.random().toString(36).slice(2, 8);
+
+  const ticks = [0, 0.5, 1];
+  // Gridlines live in the stretched SVG (horizontal lines tolerate stretching).
+  const gridLines = ticks.map(f => {
+    const y = yAt(min + f * span);
+    return `<line x1="0" y1="${y.toFixed(1)}" x2="${VBW}" y2="${y.toFixed(1)}" stroke="var(--bg4)" stroke-width="1" vector-effect="non-scaling-stroke" opacity="0.6"/>`;
+  }).join('');
+  // Y-axis value labels (HTML, in the left gutter) aligned to the gridlines.
+  const yLabels = ticks.map(f => {
+    const v = Math.round(min + f * span), y = yAt(min + f * span);
+    return `<div style="position:absolute;left:0;top:${(y - 7).toFixed(1)}px;width:${axisL - 6}px;text-align:right;font-size:9px;color:var(--fg3)">${v.toLocaleString()}</div>`;
+  }).join('');
+
+  // X-axis labels: first / middle / last month (HTML, along the bottom).
+  const labelIdx = vals.length <= 3 ? vals.map((_, i) => i)
+    : [0, Math.floor((vals.length - 1) / 2), vals.length - 1];
+  const xLabels = labelIdx.map(i => {
+    const isFirst = i === 0, isLast = i === vals.length - 1;
+    const pct = vals.length === 1 ? 0 : i / (vals.length - 1);
+    const pos = isFirst ? `left:${axisL}px`
+      : isLast ? `right:${axisR}px`
+      : `left:calc(${axisL}px + (100% - ${axisL + axisR}px) * ${pct});transform:translateX(-50%)`;
+    return `<div style="position:absolute;bottom:5px;${pos};font-size:9px;color:var(--fg3);white-space:nowrap">${escHtml(_fmtMonthLabel(growth[i].month))}</div>`;
+  }).join('');
+
+  // Endpoint dot (HTML) at the last point — right edge of the plot area.
+  const lastY = yAt(vals[vals.length - 1]);
+  const dot = `<div style="position:absolute;right:${axisR - 3}px;top:${(lastY - 3).toFixed(1)}px;width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--bg3)"></div>`;
+
+  return `<div style="position:relative;width:100%;height:${H}px;margin-top:4px">
+    ${yLabels}
+    <svg viewBox="0 0 ${VBW} ${H}" preserveAspectRatio="none"
+         style="position:absolute;left:${axisL}px;top:0;height:${H}px;width:calc(100% - ${axisL + axisR}px)">
+      <defs><linearGradient id="${uid}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.28"/>
+        <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+      </linearGradient></defs>
+      ${gridLines}
+      <polygon points="${area}" fill="url(#${uid})"/>
+      <polyline points="${pts.join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
+    </svg>
+    ${dot}
+    ${xLabels}
+  </div>`;
 }
 
 // Sum of tracks added in the trailing ~90 days (last 3 month buckets)
@@ -5621,6 +6175,49 @@ function retryEntry(idx) {
   appendLog(`Retrying [${idx + 1}]: ${e.url}\n`);
   switchTab('log');
   wsSend({ action: 'start', entries: [e] });
+}
+
+// Entries whose last session result was a failure (error or partial).
+function _failedEntries() {
+  return entries.filter(e => {
+    const r = sessionResults[e.url];
+    return r && (r.status === 'error' || r.status === 'partial');
+  });
+}
+
+// Show/enable the "Retry failed" button only when there are failures to retry.
+function _updateRetryFailedBtn() {
+  const btn = document.getElementById('btn-retry-failed');
+  if (!btn) return;
+  const n = _failedEntries().length;
+  btn.style.display  = n > 0 ? '' : 'none';
+  btn.disabled       = running;
+  btn.innerHTML      = `<span class="bi" data-icon="refresh"></span>Retry failed (${n})`;
+  _applyIcons(btn);
+}
+
+// Re-run every failed/partial entry from the last session in one click.
+function retryAllFailed() {
+  if (running) { appendLog('Cannot retry while a session is running.\n', 'log-warn'); return; }
+  const failed = _failedEntries();
+  if (!failed.length) return;
+
+  failed.forEach(e => delete sessionResults[e.url]);
+  renderQueue();
+
+  const home = document.getElementById('home-input').value.trim();
+  if (home) {
+    fetch('/config', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ home_music_folder: home }),
+    });
+  }
+
+  currentProgress = null;
+  appendLog('\n' + '─'.repeat(52) + '\n', 'log-dim');
+  appendLog(`Retrying ${failed.length} failed item${failed.length === 1 ? '' : 's'}…\n`);
+  switchTab('log');
+  wsSend({ action: 'start', entries: failed });
 }
 
 
@@ -5794,13 +6391,23 @@ async function doSearch(fromExplicit) {
   _resetSearchFocus();
   const results = document.getElementById('search-results');
   results.innerHTML = '<div class="search-status">Searching…</div>';
+  const provider = document.getElementById('search-provider')?.value || 'deezer';
 
   try {
-    const resp = await fetch(`/search?q=${encodeURIComponent(q)}`);
+    const resp = await fetch(`/search?q=${encodeURIComponent(q)}&provider=${encodeURIComponent(provider)}`);
     const data = await resp.json();
 
     if (data.error) { results.innerHTML = `<div class="search-status">Error: ${escHtml(data.error)}</div>`; return; }
     if (!data.data || !data.data.length) { results.innerHTML = '<div class="search-status">No results found.</div>'; return; }
+
+    // Spotify search fell back to Deezer (these results add Deezer links). Tell
+    // the user rather than silently swapping providers — and if it's just that
+    // the API keys aren't set up yet, point them to Settings.
+    if (provider === 'spotify' && data.fellback_to_deezer) {
+      _toast(data.spotify_unconfigured
+        ? 'Add a Spotify Client ID + Secret in Settings → Connection to search Spotify. Showing Deezer results.'
+        : `Spotify error: ${data.spotify_error || 'unavailable'} — showing Deezer results.`, 'error');
+    }
 
     const grid = document.createElement('div');
     grid.className = 'album-grid';
@@ -5818,9 +6425,23 @@ async function doSearch(fromExplicit) {
           ${tracks ? `<div class="album-tracks">${tracks}</div>` : ''}
         </div>
       `;
-      card.addEventListener('click', () => {
+      card.addEventListener('click', async () => {
+        // Deezer results have an id; Spotify results carry their own album link
+        // (the bot downloads Spotify URLs directly).
+        let url = album.id ? `https://www.deezer.com/album/${album.id}` : (album.link || '');
+        // Any result still lacking a usable link → resolve it to a Deezer album.
+        if (!url && album.artist?.name && album.title) {
+          card.style.opacity = '0.5';
+          try {
+            const rr = await fetch(`/resolve-deezer?artist=${encodeURIComponent(album.artist.name)}&album=${encodeURIComponent(album.title)}`);
+            if (rr.ok) { const rd = await rr.json(); url = rd.url || ''; }
+          } catch (_) {}
+          card.style.opacity = '';
+          if (!url) { _toast(`Couldn't find "${album.title}" on Deezer to download.`, 'error'); return; }
+        }
+        if (!url) return;
         entries.push({
-          url:        `https://www.deezer.com/album/${album.id}`,
+          url,
           artist:     album.artist.name,
           albumTitle: album.title,
           coverUrl:   album.cover_medium || album.cover_small || null,
@@ -5956,12 +6577,29 @@ function openSettings() {
     document.getElementById('cfg-lastfm-key').value         = cfg.lastfm_api_key || '';
     document.getElementById('cfg-lastfm-secret').value      = cfg.lastfm_secret || '';
     document.getElementById('cfg-lastfm-sk').value          = cfg.lastfm_session_key || '';
+    // Spotify search API credentials
+    document.getElementById('cfg-spotify-id').value         = cfg.spotify_client_id || '';
+    document.getElementById('cfg-spotify-secret').value     = cfg.spotify_client_secret || '';
     _syncScrobbleService();
     // Theme + notifications
     document.getElementById('cfg-theme-light').checked = (cfg.theme === 'light');
     document.getElementById('cfg-notify').checked = (localStorage.getItem('tgd_notify') === 'true');
+    document.getElementById('cfg-autoplay').checked = _mpAutoplayRadio;
+    // Version (head + About panel)
+    const ver = (document.getElementById('app-ver')?.textContent || '').replace(/^v/, '') || '';
+    const vEl = document.getElementById('settings-version'); if (vEl) vEl.textContent = ver ? 'v' + ver : '';
+    const aEl = document.getElementById('about-version');    if (aEl) aEl.textContent = ver ? 'v' + ver : '—';
+    _settingsShowPanel('connection');
     document.getElementById('modal-overlay').classList.add('open');
   });
+}
+
+// Settings: switch which category panel is visible
+function _settingsShowPanel(name) {
+  document.querySelectorAll('.settings-nav-item').forEach(b =>
+    b.classList.toggle('active', b.dataset.spanel === name));
+  document.querySelectorAll('.settings-panel').forEach(p =>
+    p.classList.toggle('active', p.dataset.spanel === name));
 }
 
 // Show only the relevant credential fields for the chosen scrobble service
@@ -5994,6 +6632,10 @@ function saveSettings() {
   patch.lastfm_secret      = document.getElementById('cfg-lastfm-secret').value.trim();
   patch.lastfm_session_key = document.getElementById('cfg-lastfm-sk').value.trim();
 
+  // Spotify search API credentials (raw strings)
+  patch.spotify_client_id     = document.getElementById('cfg-spotify-id').value.trim();
+  patch.spotify_client_secret = document.getElementById('cfg-spotify-secret').value.trim();
+
   // Theme
   const theme = document.getElementById('cfg-theme-light').checked ? 'light' : 'dark';
   patch.theme = theme;
@@ -6002,6 +6644,8 @@ function saveSettings() {
   // Desktop notifications (browser-local preference; request permission on enable)
   const notifyOn = document.getElementById('cfg-notify').checked;
   localStorage.setItem('tgd_notify', notifyOn ? 'true' : 'false');
+  _mpAutoplayRadio = document.getElementById('cfg-autoplay').checked;
+  localStorage.setItem('tgdl_autoplay', _mpAutoplayRadio ? '1' : '0');
   if (notifyOn && 'Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission().catch(() => {});
   }
@@ -6023,6 +6667,8 @@ function closeAllModals() {
   document.getElementById('sessions-overlay').classList.remove('open');
   document.getElementById('load-session-overlay').classList.remove('open');
   document.getElementById('genre-pl-overlay').classList.remove('open');
+  document.getElementById('smart-pl-overlay')?.classList.remove('open');
+  document.getElementById('libsearch-overlay')?.classList.remove('open');
   closeKebabMenu();
   closeCtxMenu();
 }
@@ -6056,6 +6702,7 @@ document.addEventListener('keydown', (e) => {
 
   if (!inInput) {
     if (e.ctrlKey && e.key === 'k')     { e.preventDefault(); openSearch(); }
+    if (e.key === '/' && !e.ctrlKey && !e.metaKey) { e.preventDefault(); openLibSearch(); }
     if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); runOrStop(); }
     if (e.ctrlKey && e.key === 'l')     { e.preventDefault(); clearLog(); showWelcome(); }
     if (e.ctrlKey && e.key === 's')     { e.preventDefault(); saveSession(); }
@@ -6450,6 +7097,7 @@ document.getElementById('sessions-overlay').addEventListener('click', e => {
 });
 
 document.getElementById('btn-run').addEventListener('click', runOrStop);
+document.getElementById('btn-retry-failed')?.addEventListener('click', retryAllFailed);
 
 {
   let _clearTimer = null;
@@ -6476,7 +7124,11 @@ document.getElementById('btn-run').addEventListener('click', runOrStop);
 document.getElementById('btn-settings').addEventListener('click', openSettings);
 document.getElementById('btn-modal-save').addEventListener('click', saveSettings);
 document.getElementById('cfg-scrobble-service').addEventListener('change', _syncScrobbleService);
-document.getElementById('btn-check-releases').addEventListener('click', () => checkReleases(true));
+// Settings category nav
+document.querySelectorAll('.settings-nav-item').forEach(btn =>
+  btn.addEventListener('click', () => _settingsShowPanel(btn.dataset.spanel)));
+document.getElementById('btn-about-check-update')?.addEventListener('click', () => _checkForUpdate(true));
+document.getElementById('btn-run-health')?.addEventListener('click', runDiagnostics);
 document.getElementById('btn-run-scan').addEventListener('click', runIntegrityScan);
 document.getElementById('btn-find-dupes').addEventListener('click', findDuplicates);
 document.getElementById('btn-backup').addEventListener('click', () => {
@@ -6832,27 +7484,12 @@ function showWelcome() {
     { text: '\n' },
     { text: '  HOW TO USE\n',           cls: 'welcome-head' },
     { text: '  ─────────────────────────────────────────────────\n', cls: 'welcome-dim' },
-    { text: '  1. Connect Telegram — click the TG button in the top-right corner\n', cls: 'welcome-body' },
-    { text: '     [!] A Telegram login is required before you can download.\n', cls: 'welcome-warn' },
+    { text: '  1. Connect Telegram — TG button, top-right (required)\n', cls: 'welcome-body' },
     { text: '  2. Set your home music folder (left panel)\n', cls: 'welcome-body' },
-    { text: '  3. Search Deezer or paste album URLs into the queue\n', cls: 'welcome-body' },
+    { text: '  3. Search or paste album URLs into the queue\n', cls: 'welcome-body' },
     { text: '  4. Press Run  (or Ctrl+Enter)\n', cls: 'welcome-body' },
     { text: '\n' },
-    { text: '  SHORTCUTS\n',            cls: 'welcome-head' },
-    { text: '  ─────────────────────────────────────────────────\n', cls: 'welcome-dim' },
-    { text: '  Ctrl+K      Search Deezer\n',              cls: 'welcome-body' },
-    { text: '  Ctrl+Enter  Run / Stop\n',                 cls: 'welcome-body' },
-    { text: '  Ctrl+S      Save queue as session\n',      cls: 'welcome-body' },
-    { text: '  Ctrl+L      Clear log\n',                  cls: 'welcome-body' },
-    { text: '  Ctrl+/      Show all keyboard shortcuts\n',cls: 'welcome-body' },
-    { text: '  Space       Play / Pause mini player\n',   cls: 'welcome-body' },
-    { text: '  1 / 2 / 3 / 4 / 5  Switch tabs\n',        cls: 'welcome-body' },
-    { text: '  Right-click Queue items for more options\n', cls: 'welcome-body' },
-    { text: '\n' },
-    { text: '  Downloads sort automatically into artist/album folders.\n', cls: 'welcome-dim' },
-    { text: '  Already-downloaded URLs are skipped (manifest check).\n',   cls: 'welcome-dim' },
-    { text: '  Queue is auto-saved and restored on next launch.\n',         cls: 'welcome-dim' },
-    { text: '  Debug log available in the Debug tab (tab 5).\n',            cls: 'welcome-dim' },
+    { text: '  Press Ctrl+/ for keyboard shortcuts.\n', cls: 'welcome-dim' },
     { text: '\n' },
   ];
 
@@ -6886,6 +7523,7 @@ let _libActiveArtist = null;
 let _libActiveAlbum  = null;
 let _libView         = 'albums';  // 'albums' | 'tracks'
 let _watchedIds      = new Set(); // artist_ids on the new-release watchlist
+let _watchedNames    = new Set(); // lowercased names (fallback match when id not yet known)
 let _newReleases     = [];        // cached results from /watchlist-check
 
 // ── Queue sync: grey out not-owned library cards when removed from queue ──
@@ -6921,9 +7559,9 @@ function _syncLibQueuedState() {
         if (addBtn) {
           addBtn.innerHTML = ICON.check;
           addBtn.classList.add('queued');
-          addBtn.title = 'Added to queue';
+          addBtn.title = 'In queue — click to remove';
           addBtn.style.opacity = '1';
-          addBtn.style.pointerEvents = 'none';
+          addBtn.style.pointerEvents = '';   // stay clickable so it can be deselected
         }
       });
     }
@@ -6940,6 +7578,33 @@ let _mpShuffle   = false;          // shuffle on/off
 let _mpRepeat    = 'off';          // 'off' | 'all' | 'one'
 let _mpShuffleOrder = [];          // remaining indices to play when shuffling
 let _mpScrobbleState = null;       // { isLocal, scrobbled, meta } for current track
+let _mpErrorStreak   = 0;          // consecutive failed-to-play tracks (auto-skip loop guard)
+let _mpTriedTranscode = false;     // whether we've already retried the current track via /audio-stream
+let _mpPreloadEl     = null;       // hidden <audio> used to warm the next track (near-gapless)
+let _mpPreloadedIdx  = -1;
+let _mpAutoplayRadio = true;       // continue with a Deezer-seeded radio when the queue ends
+try { _mpAutoplayRadio = localStorage.getItem('tgdl_autoplay') !== '0'; } catch (_) {}
+
+// When the queue ends, seed a "radio" of related-artist previews and keep playing.
+async function _mpStartRadio() {
+  const cur = _mpQueue[_mpIdx] || _mpQueue[_mpQueue.length - 1];
+  const artist = _primaryArtist(cur?.artist || _mpCurrentAlb?.artist || '');
+  if (!artist) return false;
+  const aid = _mpCurrentAlb?.artist_id || cur?.artist_id || '';
+  try {
+    const r = await fetch(`/radio?artist=${encodeURIComponent(artist)}${aid ? `&artist_id=${encodeURIComponent(aid)}` : ''}`);
+    if (!r.ok) return false;
+    const d = await r.json();
+    const tracks = (d.tracks || []).filter(t => t.preview_url);
+    if (!tracks.length) return false;
+    const radioAlb = { artist, album: `${artist} Radio`, is_radio: true };
+    _mpQueue = tracks;
+    _mpCurrentAlb = radioAlb;
+    _toast(`Starting radio based on ${artist}.`, 'info');
+    _mpPlayTrack(0, radioAlb);
+    return true;
+  } catch (_) { return false; }
+}
 let _likedKeys   = new Set();      // "path_hash\x00name" keys of liked songs
 const _likedAlbum = { album: 'Liked Songs', artist: '', path_hash: '', cover_url: null, is_liked: true };
 const _mpAudio   = document.getElementById('mini-audio');
@@ -7050,7 +7715,7 @@ async function loadLibrary(opts = {}) {
     document.getElementById('lib-artist-hero').style.display = 'none';
     document.getElementById('lib-breadcrumb').innerHTML = '';
     const albFilter = document.getElementById('lib-album-filter');
-    if (albFilter) albFilter.style.display = 'none';
+    if (albFilter) albFilter.closest('#lib-album-tools').style.display = 'none';
   }
 
   try {
@@ -7320,6 +7985,10 @@ function _renderLibArtistGrid() {
       return;
     }
 
+    // Pinned artists are already shown in the pinned section above — don't
+    // also list them again under ARTISTS.
+    if (_isPinned('artists', artist.name)) return;
+
     const row = document.createElement('div');
     row.className = 'lib-artist-row';
     row.dataset.artist = artist.name;
@@ -7333,10 +8002,12 @@ function _renderLibArtistGrid() {
       : `<div class="lib-artist-row-ph">${ICON.note}</div>`;
 
     const albumCount = artist.albums.length;
+    const watchStar  = _isWatched(artist)
+      ? '<span class="watch-star" title="Watching for new releases">★</span>' : '';
     row.innerHTML = `
       ${avatarHtml}
       <div class="lib-artist-row-info">
-        <div class="lib-artist-row-name" title="${escHtml(artist.name)}">${escHtml(artist.name)}</div>
+        <div class="lib-artist-row-name" title="${escHtml(artist.name)}"><span class="lib-artist-name-text">${escHtml(artist.name)}</span>${watchStar}</div>
         <div class="lib-artist-row-count">${albumCount} album${albumCount !== 1 ? 's' : ''}</div>
       </div>
       <button class="kebab-btn" title="More options">⋯</button>
@@ -7386,8 +8057,13 @@ function _renderLibArtistGrid() {
             fetch('/delete-artist', { method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ artist: artist.name }) })
               .then(r => r.json())
-              .then(d => appendLog(d.ok ? `  Deleted artist: ${artist.name}\n` : `  Delete error: ${d.error}\n`,
-                d.ok ? 'log-warn' : 'log-error'))
+              .then(d => {
+                appendLog(d.ok ? `  Deleted artist: ${artist.name}\n` : `  Delete error: ${d.error}\n`,
+                  d.ok ? 'log-warn' : 'log-error');
+                // Re-scan so the library reflects what's actually on disk
+                _libStatsCache = null;
+                if (activeTab === 'library') loadLibrary();
+              })
               .catch(() => appendLog(`  Delete request failed\n`, 'log-warn'));
           });
             }
@@ -7550,8 +8226,9 @@ async function _selectLibArtist(artist, scroll) {
   // Home overview — its own dashboard view, no album grid / discography
   if (artist.is_home_group) {
     _libView = 'home';
+    // Home overview has no album grid — hide the whole sort/search toolbar group.
     const af = document.getElementById('lib-album-filter');
-    if (af) af.style.display = 'none';
+    if (af) af.closest('#lib-album-tools').style.display = 'none';
     document.getElementById('lib-artist-hero').style.display = 'none';
     const bc = document.getElementById('lib-breadcrumb');
     if (bc) bc.innerHTML = '';
@@ -7562,7 +8239,7 @@ async function _selectLibArtist(artist, scroll) {
 
   // Show album filter
   const albFilter = document.getElementById('lib-album-filter');
-  if (albFilter) { albFilter.style.display = ''; albFilter.value = ''; }
+  if (albFilter) { albFilter.closest('#lib-album-tools').style.display = 'flex'; albFilter.value = ''; }
 
   // Apply filter to local albums
   const filter = (albFilter?.value || '').trim().toLowerCase();
@@ -7584,7 +8261,7 @@ async function _selectLibArtist(artist, scroll) {
     const bc = document.getElementById('lib-breadcrumb');
     if (bc) bc.innerHTML = '';
     document.getElementById('lib-artist-sidebar')?.classList.remove('sidebar-hidden');
-    if (albFilter) albFilter.style.display = 'none';
+    if (albFilter) albFilter.closest('#lib-album-tools').style.display = 'none';
     await _renderLikedSongs(artist);
     return;
   }
@@ -7662,8 +8339,73 @@ async function _loadWatchlist() {
   try {
     const r = await fetch('/watchlist');
     const d = await r.json();
-    _watchedIds = new Set((d.artists || []).map(a => String(a.artist_id)));
+    _watchedIds   = new Set((d.artists || []).map(a => String(a.artist_id)));
+    _watchedNames = new Set((d.artists || []).map(a => (a.name || '').toLowerCase()));
+    _refreshWatchStars();
   } catch (_) {}
+}
+
+// True if this library artist is on the new-release watchlist
+function _isWatched(artist) {
+  if (!artist) return false;
+  const aid = String(artist.artist_id || '');
+  return (aid && _watchedIds.has(aid)) || _watchedNames.has((artist.name || '').toLowerCase());
+}
+
+// Sync the ★ markers on the artist sidebar rows with the current watchlist
+function _refreshWatchStars() {
+  (_libArtistList || []).forEach(a => {
+    if (a.is_home_group || a.is_liked_group || a.is_playlist_group) return;
+    const row = document.querySelector(`.lib-artist-row[data-artist="${(a.name || '').replace(/"/g, '\\"')}"]`);
+    if (!row) return;
+    const nameEl = row.querySelector('.lib-artist-row-name');
+    if (!nameEl) return;
+    const has = !!nameEl.querySelector('.watch-star');
+    const want = _isWatched(a);
+    if (want && !has) {
+      const s = document.createElement('span');
+      s.className = 'watch-star'; s.title = 'Watching for new releases'; s.textContent = '★';
+      nameEl.appendChild(s);
+    } else if (!want && has) {
+      nameEl.querySelector('.watch-star').remove();
+    }
+  });
+}
+
+// Show a "Download missing (N)" button when the artist has not-yet-downloaded
+// albums in its Deezer discography; queues them all in one click.
+function _updateDlMissingBtn(artist) {
+  const btn = document.getElementById('lib-dl-missing-btn');
+  if (!btn) return;
+  const missing = (artist && artist._notOwned) || [];
+  const showable = artist && !artist.is_playlist_group && !artist.is_liked_group
+    && !artist.is_home_group && missing.length > 0;
+  if (!showable) { btn.style.display = 'none'; return; }
+  btn.style.display = '';
+  btn.disabled = false;
+  btn.textContent = `⬇ Download missing (${missing.length})`;
+  btn.onclick = () => {
+    const albums = (artist._notOwned || []);
+    if (!albums.length) return;
+    let added = 0;
+    albums.forEach(dAlb => {
+      if (!dAlb.id) return;
+      entries.push({
+        url: `https://www.deezer.com/album/${dAlb.id}`,
+        artist: artist.name || '',
+        albumTitle: dAlb.title || '',
+        coverUrl: dAlb.cover_medium || dAlb.cover_small || null,
+        nbTracks: dAlb.nb_tracks || null,
+        isPlaylist: false, playlistName: '',
+      });
+      added++;
+    });
+    renderQueue();
+    btn.disabled = true;
+    btn.textContent = `✓ Added ${added} to queue`;
+    _toast(`Queued ${added} missing album${added !== 1 ? 's' : ''} by ${artist.name}. Open the Log tab and hit Run.`, 'success');
+    appendLog(`Queued ${added} missing album(s) for ${artist.name}.\n`, 'log-ok');
+  };
 }
 
 function _updateWatchBtn(artist) {
@@ -7698,8 +8440,11 @@ async function _toggleWatch(artist) {
     });
     const d = await r.json();
     if (!d.error) {
-      if (watching) _watchedIds.delete(aid); else _watchedIds.add(aid);
+      const lname = (artist.name || '').toLowerCase();
+      if (watching) { _watchedIds.delete(aid); _watchedNames.delete(lname); }
+      else          { _watchedIds.add(aid);    _watchedNames.add(lname); }
       if (!watching) appendLog(`Watching ${artist.name} for new releases.\n`, 'log-ok');
+      _refreshWatchStars();
     }
   } catch (_) {}
   if (btn) btn.disabled = false;
@@ -7707,7 +8452,7 @@ async function _toggleWatch(artist) {
 }
 
 function _updateReleasesBadge() {
-  const badge = document.getElementById('releases-badge');
+  const badge = document.getElementById('home-releases-count');
   if (!badge) return;
   const n = _newReleases.length;
   badge.textContent = n;
@@ -7715,37 +8460,31 @@ function _updateReleasesBadge() {
 }
 
 async function checkReleases(manual) {
-  const statusEl = document.getElementById('releases-status');
   if (!_watchedIds.size && !manual) return;   // nothing to check on silent runs
-  if (statusEl) statusEl.textContent = 'Checking…';
+  const el = document.getElementById('home-releases');
+  if (manual && el) el.innerHTML = '<div class="stat-empty" style="padding:14px 0">Checking…</div>';
   try {
     const r = await fetch('/watchlist-check');
     const d = await r.json();
     _newReleases = d.new_releases || [];
     _updateReleasesBadge();
-    if (statusEl) {
-      statusEl.textContent = d.checked
-        ? `${d.checked} artist${d.checked === 1 ? '' : 's'} watched · ${_newReleases.length} new`
-        : 'No artists watched yet.';
-    }
-    if (activeTab === 'releases') renderReleases();
+    renderReleases();
     if (_newReleases.length && typeof _notify === 'function') {
       _notify('New releases available', `${_newReleases.length} new album${_newReleases.length === 1 ? '' : 's'} from artists you watch`);
     }
   } catch (_) {
-    if (statusEl) statusEl.textContent = 'Check failed.';
+    if (el) el.innerHTML = '<div class="stat-empty" style="padding:14px 0;color:var(--red)">Check failed.</div>';
   }
 }
 
 function renderReleases() {
-  const el = document.getElementById('releases-content');
-  if (!el) return;
-  if (!_watchedIds.size) {
-    el.innerHTML = '<div class="stat-empty">Watch artists from the Library tab to track their new releases.</div>';
-    return;
-  }
+  const el = document.getElementById('home-releases');
+  if (!el) return;   // only present on the Library Home view
+  _updateReleasesBadge();
   if (!_newReleases.length) {
-    el.innerHTML = '<div class="stat-empty">No new releases. Hit “Check now” to refresh.</div>';
+    el.innerHTML = `<div class="stat-empty" style="padding:14px 0">${_watchedIds.size
+      ? 'No new releases from your watched artists. Hit “Check now” to refresh.'
+      : 'Watch an artist from their page (★) to track their new releases here.'}</div>`;
     return;
   }
   el.innerHTML = _newReleases.map((rel, i) => {
@@ -7797,6 +8536,66 @@ function _markReleaseSeen(rel) {
 }
 
 // ── Maintenance: integrity scan + duplicate finder ────────────────────────
+let _lastScanCorrupt = [];
+
+// Re-queue the albums that contain corrupt/unreadable files so the user can
+// re-download fresh copies (which overwrite the broken ones in place).
+function _recoverCorrupt() {
+  if (!_lastScanCorrupt.length) return;
+  const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  // Corrupt paths look like "<Artists>/<Artist>/<Album>/<file>"
+  const wantAlbums = new Map();   // key artist|album → {artist, album}
+  _lastScanCorrupt.forEach(p => {
+    const parts = String(p).split(/[\\/]/);
+    if (parts.length >= 4) {
+      const artist = parts[parts.length - 3];
+      const album  = parts[parts.length - 2];
+      wantAlbums.set(norm(artist) + '|' + norm(album), { artist, album });
+    }
+  });
+  let added = 0, missing = 0;
+  wantAlbums.forEach(({ artist, album }) => {
+    const alb = (_libAllAlbums || []).find(a =>
+      !a.is_playlist && norm(a.artist) === norm(artist) && norm(a.album) === norm(album));
+    const albId = alb && (alb._album_id || (alb.deezer_url && (alb.deezer_url.match(/\/album\/(\d+)/) || [])[1]));
+    const url = alb && (alb.deezer_url || (albId ? `https://www.deezer.com/album/${albId}` : ''));
+    if (url) {
+      entries.push({ url, artist: alb.artist, albumTitle: alb.album,
+        coverUrl: alb.cover_url || null, nbTracks: alb.track_count || null });
+      added++;
+    } else { missing++; }
+  });
+  if (added) {
+    renderQueue();
+    _toast(`Queued ${added} album${added !== 1 ? 's' : ''} to re-download. Open the Log tab and hit Run.`, 'success');
+    appendLog(`Re-downloading ${added} album(s) with corrupt files.\n`, 'log-ok');
+  }
+  if (missing) _toast(`${missing} affected album(s) had no Deezer link to re-download.`, 'info');
+}
+
+async function runDiagnostics() {
+  const el  = document.getElementById('health-results');
+  const btn = document.getElementById('btn-run-health');
+  el.innerHTML = '<div style="font-family:var(--mono);font-size:10px;color:var(--fg3)">Checking…</div>';
+  if (btn) btn.disabled = true;
+  try {
+    const d = await (await fetch('/health')).json();
+    const rows = (d.checks || []).map(c => `
+      <div class="stat-row" style="margin-top:6px;align-items:flex-start">
+        <span style="color:${c.ok ? 'var(--accent)' : 'var(--red)'}">${c.ok ? '✓' : '✕'} ${escHtml(c.label)}</span>
+        <span style="color:var(--fg3);font-family:var(--mono);font-size:10px;text-align:right;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(c.detail)}">${escHtml(c.detail)}</span>
+      </div>`).join('');
+    const banner = d.ok
+      ? '<div class="stat-row" style="color:var(--accent)">✓ Everything looks good.</div>'
+      : '<div class="stat-row" style="color:var(--yellow)">Some checks need attention:</div>';
+    el.innerHTML = banner + rows;
+  } catch (e) {
+    el.innerHTML = `<div style="color:var(--red);font-size:11px">Diagnostics failed: ${escHtml(String(e))}</div>`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 async function runIntegrityScan() {
   const el  = document.getElementById('scan-results');
   const btn = document.getElementById('btn-run-scan');
@@ -7811,11 +8610,16 @@ async function runIntegrityScan() {
            items.map(p => `<div style="padding:1px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(p)}">${escHtml(p)}</div>`).join('')}</div>`
       : '';
     const clean = !d.corrupt.length && !d.missing_cover.length;
+    _lastScanCorrupt = d.corrupt || [];
+    const recoverBtn = d.corrupt.length
+      ? `<button class="btn-secondary" style="width:auto;margin-top:8px" onclick="_recoverCorrupt()">↻ Re-download affected albums</button>`
+      : '';
     el.innerHTML = `
       <div class="stat-row"><span>Albums scanned</span><strong>${d.scanned_albums.toLocaleString()}</strong></div>
       <div class="stat-row"><span>Tracks scanned</span><strong>${d.scanned_files.toLocaleString()}</strong></div>
       ${clean ? '<div class="stat-row" style="margin-top:6px;color:var(--accent)">✓ No issues found.</div>' : ''}
       ${section('Corrupt / unreadable', d.corrupt, 'var(--red)')}
+      ${recoverBtn}
       ${section('Missing cover art', d.missing_cover, 'var(--yellow)')}`;
   } catch (e) {
     el.innerHTML = `<div style="color:var(--red);font-size:11px">Scan failed: ${escHtml(String(e))}</div>`;
@@ -7884,6 +8688,8 @@ async function _deleteDupe(gi, fi) {
 function _renderLibHero(artist) {
   const hero = document.getElementById('lib-artist-hero');
   hero.style.display = 'block';
+  const isPlaylists = !!artist.is_playlist_group;
+  hero.classList.toggle('is-playlists', isPlaylists);
 
   const meta      = artist._meta || {};
   const bgUrl     = meta.picture_xl || meta.picture_big || artist.cover_url || '';
@@ -7900,23 +8706,36 @@ function _renderLibHero(artist) {
   const av = document.getElementById('lib-hero-avatar');
   const ph = document.getElementById('lib-hero-ph');
 
-  bg.style.backgroundImage = bgUrl ? `url(${JSON.stringify(bgUrl)})` : '';
+  bg.style.backgroundImage = isPlaylists ? '' : (bgUrl ? `url(${JSON.stringify(bgUrl)})` : '');
 
-  if (avatarUrl) {
+  if (isPlaylists) {
+    // Distinct collection look — a playlist tile, not an artist avatar
+    av.style.display = 'none';
+    ph.style.display = 'flex';
+    ph.innerHTML = ICON.playlist;
+  } else if (avatarUrl) {
     av.src = avatarUrl; av.style.display = 'block'; ph.style.display = 'none';
   } else {
     av.style.display = 'none'; ph.style.display = 'flex';
+    ph.innerHTML = ICON.note;
   }
 
   document.getElementById('lib-hero-name').textContent = artist.name;
 
-  // Genres line: fans · genres
+  // Subtitle line: for playlists show counts; for artists show fans
   const genresEl = document.getElementById('lib-hero-genres');
   if (genresEl) {
-    const parts = [];
-    if (fans) parts.push(fans);
-    genresEl.textContent = parts.join(' · ');
-    genresEl.style.display = parts.length ? '' : 'none';
+    if (isPlaylists) {
+      const n = artist.albums.length;
+      const tracks = artist.albums.reduce((s, a) => s + (a.track_count || 0), 0);
+      genresEl.textContent = `${n} playlist${n !== 1 ? 's' : ''}` + (tracks ? ` · ${tracks} tracks` : '');
+      genresEl.style.display = '';
+    } else {
+      const parts = [];
+      if (fans) parts.push(fans);
+      genresEl.textContent = parts.join(' · ');
+      genresEl.style.display = parts.length ? '' : 'none';
+    }
   }
 
   const aboutEl = document.getElementById('lib-hero-about');
@@ -7928,31 +8747,30 @@ function _renderLibHero(artist) {
   _updateWatchBtn(artist);
 
   // Stats: IN LIBRARY / TOTAL ALBUMS / TO DOWNLOAD
-  const notOwned = (artist._discog || []).filter(d => {
+  const _norm = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const ownedNorm = new Set(artist.albums.map(a => _norm(a.album)));
+  const notOwnedList = (artist._discog || []).filter(d => {
     const t = (d.record_type || '').toLowerCase();
     if (t && t !== 'album') return false;
-    const _norm = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const ownedNorm = new Set(artist.albums.map(a => _norm(a.album)));
     return !ownedNorm.has(_norm(d.title || ''));
-  }).length;
+  });
+  artist._notOwned = notOwnedList;   // used by the "Download missing" button
+  const notOwned = notOwnedList.length;
   const totalNum = totalAlbs ?? (localAlbs + notOwned);
+  _updateDlMissingBtn(artist);
 
   const statOwned   = document.getElementById('lib-stat-owned');
   const statTotal   = document.getElementById('lib-stat-total');
   const statMissing = document.getElementById('lib-stat-missing');
   const seps = hero.querySelectorAll('.lib-hero-stat-sep');
+  const statsWrap = document.getElementById('lib-hero-stats');
   if (artist.is_playlist_group) {
-    // Only the count is meaningful for playlists; hide album-discography stats
-    if (statOwned) {
-      statOwned.querySelector('.lib-hero-stat-num').textContent = localAlbs;
-      const lbl = statOwned.querySelector('.lib-hero-stat-label');
-      if (lbl) lbl.textContent = 'PLAYLISTS';
-    }
-    if (statTotal)   statTotal.style.display   = 'none';
-    if (statMissing) statMissing.style.display = 'none';
-    seps.forEach(s => s.style.display = 'none');
+    // Counts live in the subtitle now — hide the artist-style stat boxes entirely
+    if (statsWrap) statsWrap.style.display = 'none';
+    if (aboutEl)   aboutEl.style.display = 'none';
     return;
   }
+  if (statsWrap) statsWrap.style.display = '';
   if (statTotal)   statTotal.style.display   = '';
   if (statMissing) statMissing.style.display = '';
   seps.forEach(s => s.style.display = '');
@@ -7976,14 +8794,16 @@ function _renderLibBreadcrumb() {
   const rootLabel  = _libActiveArtist?.is_playlist_group ? 'Playlists' : 'Albums';
 
   if (_libView === 'albums') {
-    bc.innerHTML = `<span class="lib-crumb active">${rootLabel}</span>`;
-    if (albFilter) albFilter.style.display = '';
+    // Root view: no "Albums"/"Playlists" crumb — the hero + the "In Your Library"
+    // section header already convey context. Keep the crumb only in track view.
+    bc.innerHTML = '';
+    if (albFilter) albFilter.closest('#lib-album-tools').style.display = 'flex';
     document.getElementById('lib-artist-sidebar')?.classList.remove('sidebar-hidden');
   } else {
     bc.innerHTML = `<span class="lib-crumb" id="bc-back">${rootLabel}</span>
       <span class="lib-crumb-sep">›</span>
       <span class="lib-crumb active">${escHtml(_libActiveAlbum?.album || '')}</span>`;
-    if (albFilter) albFilter.style.display = 'none';
+    if (albFilter) albFilter.closest('#lib-album-tools').style.display = 'none';
     document.getElementById('lib-artist-sidebar')?.classList.add('sidebar-hidden');
     document.getElementById('bc-back')?.addEventListener('click', () => {
       _libView        = 'albums';
@@ -8002,9 +8822,36 @@ function _renderLibBreadcrumb() {
 }
 
 // ── Album grid — owned + full discography ──────────────────────────────────
+let _libAlbumSort = 'az';   // az | za | tracks | recent
+function _sortAlbums(list) {
+  const byName = (a, b) => (a.album || '').localeCompare(b.album || '', undefined, { sensitivity: 'base' });
+  switch (_libAlbumSort) {
+    case 'za':     return list.sort((a, b) => byName(b, a));
+    case 'tracks': return list.sort((a, b) => (b.track_count || 0) - (a.track_count || 0) || byName(a, b));
+    case 'recent': return list.sort((a, b) => (b.mtime || 0) - (a.mtime || 0) || byName(a, b));
+    default:       return list.sort(byName);
+  }
+}
+
 function _renderLibAlbums(ownedAlbums, discog) {
   const content = document.getElementById('lib-content');
   content.innerHTML = '';
+
+  // Put the "In Your Library" header on the toolbar row — the same line as the
+  // A–Z / search controls — so the separator visibly runs from the header across
+  // to those controls. (The controls live in #lib-album-tools, to the right of
+  // the breadcrumb.) The matching owned section header inside the scroll area is
+  // therefore suppressed below to avoid showing it twice.
+  const _bc = document.getElementById('lib-breadcrumb');
+  if (_bc && _libView === 'albums') {
+    _bc.innerHTML = ownedAlbums.length
+      ? `<div class="lib-discog-section" data-type="owned" style="padding:0;width:100%">
+           <span class="lib-discog-section-label">In Your Library</span>
+           <span class="lib-discog-count">${ownedAlbums.length}</span>
+           <span class="lib-discog-sep"></span>
+         </div>`
+      : '';
+  }
 
   // Build a set of normalised owned album titles for matching
   const _norm = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -8169,8 +9016,13 @@ function _renderLibAlbums(ownedAlbums, discog) {
             fetch('/delete-album', { method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ album_dir: alb.album_dir }) })
               .then(r => r.json())
-              .then(d => appendLog(d.ok ? `  Deleted album: ${alb.album}\n` : `  Delete error: ${d.error}\n`,
-                d.ok ? 'log-warn' : 'log-error'))
+              .then(d => {
+                appendLog(d.ok ? `  Deleted ${alb.is_playlist ? 'playlist' : 'album'}: ${alb.album}\n` : `  Delete error: ${d.error}\n`,
+                  d.ok ? 'log-warn' : 'log-error');
+                // Re-scan so sidebar counts / Playlists group / Home stats update
+                _libStatsCache = null;
+                if (activeTab === 'library') loadLibrary();
+              })
               .catch(() => appendLog(`  Delete request failed (server may not support it yet)\n`, 'log-warn'));
             // Re-render
             const f = (document.getElementById('lib-album-filter')?.value || '').trim().toLowerCase();
@@ -8186,26 +9038,28 @@ function _renderLibAlbums(ownedAlbums, discog) {
       // Drag to reorder owned albums
       _attachAlbumDrag(card, alb, () => card.closest('.lib-album-grid'));
     } else {
-      // Not-owned: + button to add to queue
+      // Not-owned: + button toggles the album in/out of the download queue
       const addBtn = card.querySelector('.lib-add-btn');
-      // Restore queued state if album was already added this session
       const _thisAlbId = String(alb.id || '');
       if (_thisAlbId) card.dataset.albumId = _thisAlbId;
-      if (_thisAlbId && _libQueuedAlbumIds.has(_thisAlbId)) {
-        card.classList.remove('not-owned');
-        if (addBtn) {
-          addBtn.innerHTML = ICON.check;
-          addBtn.classList.add('queued');
-          addBtn.title = 'Added to queue';
-          addBtn.style.opacity = '1';
-          addBtn.style.pointerEvents = 'none';
-        }
-      }
-      if (addBtn) {
-        addBtn.addEventListener('click', ev => {
-          ev.stopPropagation();
-          const deezerUrl = `https://www.deezer.com/album/${alb.id}`;
-          const artistName = _libActiveArtist?.name || alb.artist_name || '';
+      const deezerUrl  = `https://www.deezer.com/album/${alb.id}`;
+      const artistName = _libActiveArtist?.name || alb.artist_name || '';
+
+      // Paint the card's queued / not-queued state. The button stays clickable
+      // in both states so the album can be deselected right here, without
+      // having to open the Log tab and remove it from the queue manually.
+      const _setAlbQueued = (on) => {
+        card.classList.toggle('not-owned', !on);
+        if (!addBtn) return;
+        addBtn.classList.toggle('queued', on);
+        addBtn.innerHTML = on ? ICON.check : ICON.plus;
+        addBtn.title     = on ? 'In queue — click to remove' : 'Add to queue';
+        addBtn.style.opacity = on ? '1' : '';
+        addBtn.style.pointerEvents = '';
+      };
+
+      const _albAdd = () => {
+        if (!entries.some(e => e.url === deezerUrl)) {
           entries.push({
             url:        deezerUrl,
             artist:     artistName,
@@ -8213,37 +9067,53 @@ function _renderLibAlbums(ownedAlbums, discog) {
             coverUrl:   alb.cover_medium || alb.cover_small || null,
             nbTracks:   alb.nb_tracks || null,
           });
-          renderQueue();
-          // Persist across artist switches
-          if (_thisAlbId) _libQueuedAlbumIds.add(_thisAlbId);
-          // Animate: button pop + card glow flash
+        }
+        if (_thisAlbId) _libQueuedAlbumIds.add(_thisAlbId);
+        renderQueue();
+      };
+      const _albRemove = () => {
+        for (let i = entries.length - 1; i >= 0; i--) {
+          if (entries[i].url === deezerUrl) entries.splice(i, 1);
+        }
+        if (_thisAlbId) _libQueuedAlbumIds.delete(_thisAlbId);
+        renderQueue();
+      };
+
+      // Restore queued state if this album was already added earlier this session
+      if (_thisAlbId && _libQueuedAlbumIds.has(_thisAlbId)) _setAlbQueued(true);
+
+      if (addBtn) {
+        // When already queued, reveal an ✕ on hover to signal "click to remove"
+        addBtn.addEventListener('mouseenter', () => {
+          if (addBtn.classList.contains('queued')) addBtn.innerHTML = ICON.close;
+        });
+        addBtn.addEventListener('mouseleave', () => {
+          if (addBtn.classList.contains('queued')) addBtn.innerHTML = ICON.check;
+        });
+        addBtn.addEventListener('click', ev => {
+          ev.stopPropagation();
+          if (addBtn.classList.contains('queued')) {   // deselect
+            _albRemove();
+            _setAlbQueued(false);
+            return;
+          }
+          _albAdd();
+          // Animate: button pop + card glow flash, then settle into queued state
           addBtn.classList.add('popping');
           card.classList.add('queue-flash');
           addBtn.addEventListener('animationend', () => addBtn.classList.remove('popping'), { once: true });
           card.addEventListener('animationend', () => card.classList.remove('queue-flash'), { once: true });
-          // Promote after pop animation completes
-          setTimeout(() => {
-            card.classList.remove('not-owned');
-            addBtn.innerHTML = ICON.check;
-            addBtn.classList.add('queued');
-            addBtn.title = 'Added to queue';
-            addBtn.style.opacity = '1';
-            addBtn.style.pointerEvents = 'none';
-          }, 220);
+          setTimeout(() => _setAlbQueued(true), 220);
         });
       }
-      // Not-owned kebab menu
+      // Not-owned kebab menu — offer add or remove depending on current state
       if (kb) kb.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        const deezerUrl = `https://www.deezer.com/album/${alb.id}`;
-        const artistName = _libActiveArtist?.name || '';
+        const queued = entries.some(e => e.url === deezerUrl);
         openKebabMenu(ev.currentTarget, [
-          { label: 'Add to queue', icon: ICON.plus, action: () => {
-            entries.push({ url: deezerUrl, artist: artistName,
-              albumTitle: alb.title || alb.album || '',
-              coverUrl: alb.cover_medium || null, nbTracks: alb.nb_tracks || null });
-            renderQueue();
-          }},
+          queued
+            ? { label: 'Remove from queue', icon: ICON.close, action: () => { _albRemove();  _setAlbQueued(false); } }
+            : { label: 'Add to queue',      icon: ICON.plus,  action: () => { _albAdd();     _setAlbQueued(true);  } },
         ]);
       });
     }
@@ -8251,11 +9121,11 @@ function _renderLibAlbums(ownedAlbums, discog) {
   }
 
   // ── Owned section ───────────────────────────────────────────────────────
+  // (Header lives on the toolbar row now — see the breadcrumb block above.)
   if (ownedAlbums.length) {
-    content.appendChild(makeSection('In Your Library', ownedAlbums.length, null, 'owned'));
     const ownedGrid = document.createElement('div');
     ownedGrid.className = 'lib-album-grid';
-    ownedAlbums.forEach(alb => ownedGrid.appendChild(makeCard(alb, true)));
+    _sortAlbums(ownedAlbums.slice()).forEach(alb => ownedGrid.appendChild(makeCard(alb, true)));
     content.appendChild(ownedGrid);
   } else {
     const empty = document.createElement('div');
@@ -8264,34 +9134,34 @@ function _renderLibAlbums(ownedAlbums, discog) {
     content.appendChild(empty);
   }
 
-  // ── Not owned section (from Deezer discography) ─────────────────────────
+  // ── Not owned sections (from Deezer discography), grouped by type ───────
   if (discog && discog.length) {
-    const notOwned = discog.filter(dAlb => {
-      // Only show album-type entries (skip singles/compilations if desired)
-      const t = (dAlb.record_type || '').toLowerCase();
-      if (t && t !== 'album') return false;
-      return !ownedNorm.has(_norm(dAlb.title || ''));
+    // Honour the album-search box across albums, EPs and singles alike.
+    const _dzFilter = (document.getElementById('lib-album-filter')?.value || '').trim().toLowerCase();
+    const notOwned = discog.filter(dAlb =>
+      !ownedNorm.has(_norm(dAlb.title || '')) &&
+      (!_dzFilter || (dAlb.title || '').toLowerCase().includes(_dzFilter)));
+    const ofType = (types) => notOwned.filter(d => types.includes((d.record_type || 'album').toLowerCase()));
+    const shapeDz = (dAlb) => ({
+      album:        dAlb.title,
+      artist:       _libActiveArtist?.name || '',
+      cover_url:    dAlb.cover_medium || dAlb.cover_small || '',
+      cover_medium: dAlb.cover_medium || '',
+      cover_small:  dAlb.cover_small  || '',
+      nb_tracks:    dAlb.nb_tracks,
+      id:           dAlb.id,
     });
-
-    if (notOwned.length) {
-      content.appendChild(makeSection('Not Yet Downloaded', notOwned.length, null, 'missing'));
-      const noGrid = document.createElement('div');
-      noGrid.className = 'lib-album-grid';
-      notOwned.forEach(dAlb => {
-        // Shape the Deezer object to look like a local album object
-        const shaped = {
-          album:        dAlb.title,
-          artist:       _libActiveArtist?.name || '',
-          cover_url:    dAlb.cover_medium || dAlb.cover_small || '',
-          cover_medium: dAlb.cover_medium || '',
-          cover_small:  dAlb.cover_small  || '',
-          nb_tracks:    dAlb.nb_tracks,
-          id:           dAlb.id,
-        };
-        noGrid.appendChild(makeCard(shaped, false));
-      });
-      content.appendChild(noGrid);
-    }
+    const renderGroup = (label, list) => {
+      if (!list.length) return;
+      content.appendChild(makeSection(label, list.length, null, 'missing'));
+      const grid = document.createElement('div');
+      grid.className = 'lib-album-grid';
+      list.forEach(dAlb => grid.appendChild(makeCard(shapeDz(dAlb), false)));
+      content.appendChild(grid);
+    };
+    renderGroup('Albums',             ofType(['album', '']));
+    renderGroup('EPs',                ofType(['ep']));
+    renderGroup('Singles',            ofType(['single']));
   } else if (discog === null
              && !_libActiveArtist?.is_playlist_group
              && !_libActiveArtist?.is_liked_group) {
@@ -8341,15 +9211,6 @@ async function _renderHomeView() {
     if (recent.length >= 12) break;
   }
 
-  const stat = (label, val, icon) => `
-    <div class="home-stat">
-      <div class="home-stat-icon">${icon}</div>
-      <div class="home-stat-text">
-        <div class="home-stat-val">${val}</div>
-        <div class="home-stat-label">${label}</div>
-      </div>
-    </div>`;
-
   const card = (r, idx) => {
     const src   = r.alb ? (r.alb.cover_url || (r.alb.path_hash ? `/cover/${r.alb.path_hash}` : '')) : '';
     const phIco = r.isPl ? ICON.playlist : ICON.note;
@@ -8395,6 +9256,7 @@ async function _renderHomeView() {
   if (regularAlbums.length) subBits.push(`${regularAlbums.length} album${regularAlbums.length !== 1 ? 's' : ''}`);
   if (artistCount)          subBits.push(`${artistCount} artist${artistCount !== 1 ? 's' : ''}`);
   if (playlistAlbums.length) subBits.push(`${playlistAlbums.length} playlist${playlistAlbums.length !== 1 ? 's' : ''}`);
+  if (likedCount)           subBits.push(`${likedCount} liked song${likedCount !== 1 ? 's' : ''}`);
 
   content.innerHTML = `
     <div class="home-hero">
@@ -8406,17 +9268,27 @@ async function _renderHomeView() {
         <div class="home-hero-sub">${subBits.length ? escHtml(subBits.join('  ·  ')) : 'Add some music to get started'}</div>
       </div>
     </div>
-    <div class="home-stats">
-      ${stat('Albums',      regularAlbums.length,  ICON.note)}
-      ${stat('Artists',     artistCount,           ICON.group)}
-      ${stat('Playlists',   playlistAlbums.length, ICON.playlist)}
-      ${stat('Liked Songs', likedCount,            ICON.heartFilled)}
+    <div class="home-section-label home-releases-head">
+      <span>New releases<span id="home-releases-count" class="home-count-badge" style="display:none"></span></span>
+      <button class="btn-secondary" id="btn-home-check-releases" style="width:auto">Check now</button>
     </div>
+    <div id="home-releases"><div class="stat-empty" style="padding:14px 0">Loading…</div></div>
+    <div class="home-section-label" style="margin-top:22px">Recommended for you</div>
+    <div id="home-recs"></div>
     ${recent.length ? `
       <div class="home-section-label">Recently downloaded</div>
       <div class="lib-album-grid home-recent-grid">${recent.map((r, i) => card(r, i)).join('')}</div>
     ` : '<div class="stat-empty">No downloads yet — add some music from the Log tab.</div>'}
   `;
+
+  // Releases section: always shown. Render cached results, refresh the watchlist
+  // (so the count is right), then check for new releases in the background.
+  document.getElementById('btn-home-check-releases')?.addEventListener('click', () => checkReleases(true));
+  renderReleases();
+  _loadWatchlist().then(() => { renderReleases(); checkReleases(false); });
+
+  // Recommended for you — seeded from the library's most-stocked artists
+  _renderHomeRecs();
 
   content.querySelectorAll('.home-recent-card').forEach(el => {
     el.addEventListener('click', () => {
@@ -8432,6 +9304,56 @@ async function _renderHomeView() {
       }
     });
   });
+}
+
+// ── Recommended for you (Home) ──────────────────────────────────────────────
+let _homeRecsCache = null;
+async function _renderHomeRecs() {
+  const el = document.getElementById('home-recs');
+  if (!el) return;
+  const seeds = (_libArtistList || [])
+    .filter(a => !a.is_home_group && !a.is_liked_group && !a.is_playlist_group)
+    .sort((a, b) => (b.albums?.length || 0) - (a.albums?.length || 0))
+    .slice(0, 4).map(a => a.name);
+  if (!seeds.length) { el.innerHTML = '<div class="stat-empty" style="padding:10px 0">Add some artists to get recommendations.</div>'; return; }
+  if (_homeRecsCache) { _paintHomeRecs(el, _homeRecsCache); return; }
+  el.innerHTML = '<div class="stat-empty" style="padding:14px 0">Finding music you might like…</div>';
+  try {
+    const r = await fetch('/recommendations?seeds=' + encodeURIComponent(seeds.join('|')));
+    const d = await r.json();
+    const norm  = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const owned = new Set((_libAllAlbums || []).filter(a => !a.is_playlist).map(a => norm(a.album)));
+    const recs  = (d.albums || []).filter(a => !owned.has(norm(a.title))).slice(0, 12);
+    _homeRecsCache = recs;
+    _paintHomeRecs(el, recs);
+  } catch (_) {
+    el.innerHTML = '<div class="stat-empty" style="padding:10px 0">Couldn’t load recommendations.</div>';
+  }
+}
+function _paintHomeRecs(el, recs) {
+  if (!recs.length) { el.innerHTML = '<div class="stat-empty" style="padding:10px 0">No recommendations right now.</div>'; return; }
+  el.className = 'lib-album-grid home-recent-grid';
+  el.innerHTML = recs.map((a, i) => `
+    <div class="lib-album-card not-owned" data-ri="${i}">
+      <div class="lib-cover-wrap">
+        ${a.cover ? `<img class="lib-cover" src="${escHtml(a.cover)}" loading="lazy" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="lib-cover-ph" style="display:none">${ICON.note}</div>`
+                  : `<div class="lib-cover-ph">${ICON.note}</div>`}
+        <button class="lib-add-btn rec-add" data-ri="${i}" title="Add to download queue">${ICON.plus}</button>
+      </div>
+      <div class="lib-album-info">
+        <div class="lib-album-title" title="${escHtml(a.title)}">${escHtml(a.title)}</div>
+        <div class="lib-album-artist" title="${escHtml(a.artist)}">${escHtml(a.artist)}</div>
+      </div>
+    </div>`).join('');
+  el.querySelectorAll('.rec-add').forEach(btn => btn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const a = recs[+btn.dataset.ri]; if (!a) return;
+    entries.push({ url: a.link || `https://www.deezer.com/album/${a.id}`, artist: a.artist,
+      albumTitle: a.title, coverUrl: a.cover || null, nbTracks: a.nb_tracks || null });
+    renderQueue();
+    btn.innerHTML = ICON.check; btn.disabled = true;
+    _toast(`Queued "${a.title}" by ${a.artist}.`, 'success');
+  }));
 }
 
 // ── Open album → track list ────────────────────────────────────────────────
@@ -8736,7 +9658,7 @@ function _renderLibTracks(tracks, alb, opts) {
     infoDiv.innerHTML = `
       <div style="font-size:15px;font-weight:700;color:var(--fg);letter-spacing:-0.01em">${titleHtml}</div>
       <div style="font-size:11px;color:var(--accent);font-family:var(--mono);margin-top:3px">${escHtml(alb.artist)}</div>
-      <div style="font-size:10px;color:var(--fg3);font-family:var(--mono);margin-top:2px">${meta}</div>
+      ${opts.hideMeta ? '' : `<div style="font-size:10px;color:var(--fg3);font-family:var(--mono);margin-top:2px">${meta}</div>`}
     `;
     // Export-as-m3u — only for local folders (those backed by a path_hash)
     if (alb.path_hash) {
@@ -8775,6 +9697,11 @@ function _renderLibTracks(tracks, alb, opts) {
   const listDiv = document.createElement('div');
   listDiv.className = 'lib-track-list-wrap' + (opts.showAlbum ? ' cols-playlist' : '')
     + (showThumb ? '' : ' no-thumb');
+
+  // Drag-to-reorder is enabled only inside a real playlist folder (not Liked
+  // Songs, which has no path_hash and is ordered by date added).
+  const reorderable = !!(alb && alb.is_playlist && alb.path_hash);
+  let _plDragFrom = -1;
 
   // Column header row (Spotify-style) — for playlists with album/date columns
   if (opts.showAlbum) {
@@ -8917,9 +9844,73 @@ function _renderLibTracks(tracks, alb, opts) {
       _openTrackCtx(row, tracks, alb, opts, { x: ev.clientX, y: ev.clientY });
     });
 
-    // Staggered entrance animation
-    row.style.animationDelay = `${i * 28}ms`;
-    row.classList.add('track-enter');
+    // ── Drag-to-reorder (playlists only) ──
+    if (reorderable) {
+      row.draggable = true;
+      row.classList.add('reorderable');
+      const _clearDropMarks = () => listDiv.querySelectorAll('.drop-before, .drop-after')
+        .forEach(r => r.classList.remove('drop-before', 'drop-after'));
+
+      row.addEventListener('dragstart', (ev) => {
+        _plDragFrom = i;
+        ev.dataTransfer.effectAllowed = 'move';
+        try { ev.dataTransfer.setData('text/plain', String(i)); } catch (_) {}
+        requestAnimationFrame(() => row.classList.add('dragging-track'));
+      });
+      row.addEventListener('dragend', () => {
+        row.classList.remove('dragging-track');
+        _clearDropMarks();
+      });
+      row.addEventListener('dragover', (ev) => {
+        if (_plDragFrom < 0) return;
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = 'move';
+        const rect  = row.getBoundingClientRect();
+        const after = (ev.clientY - rect.top) > rect.height / 2;
+        _clearDropMarks();
+        row.classList.add(after ? 'drop-after' : 'drop-before');
+      });
+      row.addEventListener('drop', (ev) => {
+        ev.preventDefault();
+        _clearDropMarks();
+        const from = _plDragFrom; _plDragFrom = -1;
+        if (from < 0 || from === i) return;
+        const rect  = row.getBoundingClientRect();
+        const after = (ev.clientY - rect.top) > rect.height / 2;
+        let to = i + (after ? 1 : 0);
+        if (from < to) to -= 1;          // account for the removed source
+        if (to === from || to < 0) return;
+
+        const moved = tracks.splice(from, 1)[0];
+        tracks.splice(to, 0, moved);
+        tracks.forEach((t, k) => { t.track_num = k + 1; });   // renumber locally
+
+        // Keep the active playback queue + highlight consistent
+        if (_mpCurrentAlb === alb) {
+          const playing = _mpQueue[_mpIdx];
+          _mpQueue = tracks;
+          if (playing) { const ni = tracks.indexOf(playing); if (ni >= 0) _mpIdx = ni; }
+        }
+        // Re-render in place: no entrance animation, preserve scroll position
+        const _sc = document.getElementById('lib-content')?.scrollTop || 0;
+        _renderLibTracks(tracks, alb, { ...opts, _skipAnim: true });
+        const _c = document.getElementById('lib-content');
+        if (_c) _c.scrollTop = _sc;
+
+        // Persist the new order (rewrites track-number tags on disk)
+        fetch('/playlist-reorder', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path_hash: alb.path_hash, names: tracks.map(t => t.name).filter(Boolean) }),
+        }).then(r => r.json()).then(d => { if (d && d.error) _toast(d.error, 'error'); })
+          .catch(() => _toast('Could not save the new order.', 'error'));
+      });
+    }
+
+    // Staggered entrance animation (skipped on in-place re-renders like reorder)
+    if (!opts._skipAnim) {
+      row.style.animationDelay = `${i * 28}ms`;
+      row.classList.add('track-enter');
+    }
     listDiv.appendChild(row);
   });
 
@@ -8951,6 +9942,7 @@ async function _renderLikedSongs(artist) {
   _renderLibTracks(tracks, _likedAlbum, {
     showArtist: true,
     headerIcon: 'heartFilled',
+    hideMeta: true,   // the artist line already shows "N songs" — avoid duplicate count
     emptyMsg: 'No liked songs yet. Tap the heart on any track to add it here.',
   });
 }
@@ -8989,6 +9981,100 @@ function _libApplyFilter() {
 // ═══════════════════════════════════════
 let _npOpen = false;
 let _npArtistKey = null;   // last artist whose "About" card was loaded
+let _npLyricsMode   = false;
+let _npLyricsData   = null;   // parsed [{t, text}] for synced LRC, else null
+let _npLyricsKey    = null;   // track key currently loaded
+let _npLyricsActive = -1;     // index of highlighted synced line
+
+// Parse LRC synced lyrics into [{t: seconds, text}], sorted by time.
+function _npParseLrc(lrc) {
+  const out = [];
+  const re = /\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g;
+  (lrc || '').split(/\r?\n/).forEach(line => {
+    const stamps = []; let m; re.lastIndex = 0;
+    while ((m = re.exec(line)) !== null) {
+      const frac = m[3] ? parseInt((m[3] + '000').slice(0, 3), 10) / 1000 : 0;
+      stamps.push((+m[1]) * 60 + (+m[2]) + frac);
+    }
+    const text = line.replace(re, '').trim();
+    stamps.forEach(t => out.push({ t, text }));
+  });
+  out.sort((a, b) => a.t - b.t);
+  return out;
+}
+
+async function _npLoadLyrics(track, alb) {
+  const box = document.getElementById('np-lyrics');
+  if (!box || !track) return;
+  const title  = track.title || track.name || '';
+  const artist = track.artist || alb?.artist || '';
+  const key = (artist + '\x00' + title).toLowerCase();
+  if (_npLyricsKey === key && box.children.length) return;   // already loaded
+  _npLyricsKey = key; _npLyricsData = null; _npLyricsActive = -1;
+  box.innerHTML = '<div class="np-lyrics-status">Loading lyrics…</div>';
+  if (!title || !artist) { box.innerHTML = '<div class="np-lyrics-status">No lyrics for this track.</div>'; return; }
+  try {
+    const params = new URLSearchParams({ artist, title });
+    const album = track.album || (alb && !alb.is_liked && !alb.is_playlist ? alb.album : '');
+    if (album) params.set('album', album);
+    if (track.duration) params.set('duration', String(Math.round(track.duration)));
+    const r = await fetch('/lyrics?' + params.toString());
+    if (_npLyricsKey !== key) return;
+    if (!r.ok) { box.innerHTML = '<div class="np-lyrics-status">No lyrics found for this track.</div>'; return; }
+    const d = await r.json();
+    if (_npLyricsKey !== key) return;
+    if (d.synced) {
+      _npLyricsData = _npParseLrc(d.synced);
+      box.innerHTML = '';
+      _npLyricsData.forEach((ln, i) => {
+        const el = document.createElement('div');
+        el.className = 'np-lyric-line synced'; el.dataset.i = i;
+        el.textContent = ln.text || '♪';
+        el.addEventListener('click', () => {
+          try { _mpAudio.currentTime = ln.t; if (!_mpPlaying) _mpAudio.play().catch(() => {}); } catch (_) {}
+        });
+        box.appendChild(el);
+      });
+      _npLyricsActive = -1; _npSyncLyrics();
+    } else if (d.plain) {
+      box.innerHTML = `<div class="np-lyrics-plain">${escHtml(d.plain)}</div>`;
+    } else {
+      box.innerHTML = '<div class="np-lyrics-status">No lyrics found for this track.</div>';
+    }
+  } catch (_) {
+    if (_npLyricsKey === key) box.innerHTML = '<div class="np-lyrics-status">Could not load lyrics.</div>';
+  }
+}
+
+// Highlight + auto-scroll the current synced lyric line (called from timeupdate).
+function _npSyncLyrics() {
+  if (!_npLyricsMode || !_npLyricsData || !_npLyricsData.length) return;
+  const t = _mpAudio.currentTime;
+  let idx = -1;
+  for (let i = 0; i < _npLyricsData.length; i++) {
+    if (_npLyricsData[i].t <= t + 0.15) idx = i; else break;
+  }
+  if (idx === _npLyricsActive) return;
+  _npLyricsActive = idx;
+  const box = document.getElementById('np-lyrics');
+  if (!box) return;
+  box.querySelectorAll('.np-lyric-line').forEach(el => el.classList.toggle('active', +el.dataset.i === idx));
+  const activeEl = box.querySelector('.np-lyric-line.active');
+  if (activeEl) activeEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+function _npLyricsToggle() {
+  _npLyricsMode = !_npLyricsMode;
+  document.getElementById('np-content')?.classList.toggle('np-lyrics-mode', _npLyricsMode);
+  document.getElementById('np-lyrics-toggle')?.classList.toggle('active', _npLyricsMode);
+  const titleEl = document.getElementById('np-header-title');
+  if (titleEl) titleEl.textContent = _npLyricsMode ? 'Lyrics' : 'Now Playing';
+  if (_npLyricsMode) {
+    if (!_npOpen) _npToggle();
+    const track = _mpQueue[_mpIdx];
+    if (track) _npLoadLyrics(track, _mpCurrentAlb);
+  }
+}
 
 function _npApply() {
   document.getElementById('app')?.classList.toggle('np-open', _npOpen);
@@ -9006,6 +10092,33 @@ function _npCollapse() {
   _npApply();
 }
 
+// Extract the primary (first credited) artist from a multi-artist string like
+// "Kanye West, Lupe Fiasco" or "DOOM feat. Ghostface" → "Kanye West" / "DOOM".
+// Deliberately does NOT split on "&"/"and" so band names ("Simon & Garfunkel",
+// "Earth, Wind & Fire") survive the first comma only when there's a feat/`,` AND
+// the whole string fails to resolve (handled by callers trying full first).
+function _primaryArtist(name) {
+  if (!name) return '';
+  let s = String(name)
+    .replace(/\s*[\(\[]?\s*(feat\.?|ft\.?|featuring|with)\b[\s\S]*$/i, '')  // drop "feat. …" tail
+    .split(/\s*[,;\/]\s*|\s+x\s+/i)[0]                                      // first of , ; / or " x "
+    .trim();
+  return s || String(name).trim();
+}
+
+// Resolve the best cover for a single track. In a playlist the folder/album
+// cover is a collage, so use the per-FILE embedded art (/track-cover) rather
+// than the folder cover (/cover/<hash>).
+function _trackCoverSrc(track, alb) {
+  if (track.cover_url) return track.cover_url;
+  const trackPh = track.path_hash || alb?.path_hash || '';
+  if (trackPh && track.name)
+    return `/track-cover?path_hash=${encodeURIComponent(trackPh)}&name=${encodeURIComponent(track.name)}`;
+  if (alb?.cover_url) return alb.cover_url;
+  if (trackPh) return `/cover/${trackPh}`;
+  return '';
+}
+
 // Refresh the panel with the currently-playing track (+ its artist card)
 function _npUpdate(track, alb) {
   const content = document.getElementById('np-content');
@@ -9014,8 +10127,7 @@ function _npUpdate(track, alb) {
   if (!track) { content.style.display = 'none'; empty.style.display = ''; return; }
   empty.style.display = 'none'; content.style.display = '';
 
-  const trackPh  = track.path_hash || alb?.path_hash || '';
-  const coverSrc = track.cover_url || alb?.cover_url || (trackPh ? `/cover/${trackPh}` : '');
+  const coverSrc = _trackCoverSrc(track, alb);
   const img = document.getElementById('np-cover');
   const ph  = document.getElementById('np-cover-ph');
   if (coverSrc) {
@@ -9027,6 +10139,75 @@ function _npUpdate(track, alb) {
   const artistName = track.artist || alb?.artist || '';
   document.getElementById('np-track-artist').textContent = artistName;
   _npLoadArtist(artistName);
+  _npRenderQueue();
+  if (_npLyricsMode) _npLoadLyrics(track, alb);
+}
+
+// Render the "Next up" queue list (upcoming tracks after the current index).
+function _npRenderQueue() {
+  const wrap = document.getElementById('np-queue');
+  const list = document.getElementById('np-queue-list');
+  if (!wrap || !list) return;
+  const upcoming = [];
+  for (let i = _mpIdx + 1; i < _mpQueue.length && upcoming.length < 2; i++) upcoming.push(i);
+  if (_mpIdx < 0 || !upcoming.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  list.innerHTML = '';
+  let dragFrom = -1;
+  const clearMarks = () => list.querySelectorAll('.drop-before, .drop-after')
+    .forEach(r => r.classList.remove('drop-before', 'drop-after'));
+
+  upcoming.forEach(absIdx => {
+    const t   = _mpQueue[absIdx];
+    const tph = t.path_hash || _mpCurrentAlb?.path_hash || '';
+    const thumbSrc = t.cover_url
+      || (tph && t.name ? `/track-cover?path_hash=${encodeURIComponent(tph)}&name=${encodeURIComponent(t.name)}` : '');
+    const thumb = thumbSrc
+      ? `<img src="${escHtml(thumbSrc)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><span class="ico" style="display:none">${ICON.note}</span>`
+      : `<span class="ico">${ICON.note}</span>`;
+
+    const row = document.createElement('div');
+    row.className = 'np-q-row';
+    row.dataset.abs = absIdx;
+    row.innerHTML = `
+      <div class="np-q-thumb">${thumb}</div>
+      <div class="np-q-info">
+        <div class="np-q-title" title="${escHtml(t.title || t.name || '')}">${escHtml(t.title || t.name || '')}</div>
+        <div class="np-q-artist">${escHtml(t.artist || _mpCurrentAlb?.artist || '')}</div>
+      </div>`;
+
+    row.addEventListener('click', () => _mpPlayTrack(absIdx, _mpCurrentAlb));
+
+    // Drag to reorder upcoming tracks within the live queue
+    row.draggable = true;
+    row.addEventListener('dragstart', ev => {
+      dragFrom = absIdx; ev.dataTransfer.effectAllowed = 'move';
+      requestAnimationFrame(() => row.classList.add('dragging'));
+    });
+    row.addEventListener('dragend', () => { row.classList.remove('dragging'); clearMarks(); });
+    row.addEventListener('dragover', ev => {
+      if (dragFrom < 0) return;
+      ev.preventDefault();
+      const r = row.getBoundingClientRect();
+      const after = (ev.clientY - r.top) > r.height / 2;
+      clearMarks(); row.classList.add(after ? 'drop-after' : 'drop-before');
+    });
+    row.addEventListener('drop', ev => {
+      ev.preventDefault(); clearMarks();
+      const from = dragFrom; dragFrom = -1;
+      if (from < 0 || from === absIdx) return;
+      const r = row.getBoundingClientRect();
+      const after = (ev.clientY - r.top) > r.height / 2;
+      let to = absIdx + (after ? 1 : 0);
+      if (from < to) to -= 1;
+      if (to === from) return;
+      const moved = _mpQueue.splice(from, 1)[0];
+      _mpQueue.splice(to, 0, moved);
+      _npRenderQueue();
+    });
+
+    list.appendChild(row);
+  });
 }
 
 // Load the "About the artist" card via Deezer (search → meta for bio/fans).
@@ -9040,18 +10221,34 @@ async function _npLoadArtist(name) {
   if (_npArtistKey === clean) { about.style.display = ''; return; }
   _npArtistKey = clean;
   about.style.display = '';
+  about.classList.remove('np-bio-expanded');
   // Reset card while loading
   document.getElementById('np-about-img').style.backgroundImage = '';
   document.getElementById('np-about-name').textContent = clean;
-  document.getElementById('np-about-fans').textContent = '';
-  document.getElementById('np-about-bio').textContent  = '';
+  document.getElementById('np-about-meta').textContent = '';
+  const bioEl  = document.getElementById('np-about-bio');
+  const moreEl = document.getElementById('np-about-more');
+  const wikiEl = document.getElementById('np-about-wiki');
+  bioEl.textContent = ''; moreEl.style.display = 'none'; wikiEl.style.display = 'none';
 
   try {
-    let meta = null;
-    const sr = await fetch(`/artist-search?q=${encodeURIComponent(clean)}`);
-    const sd = await sr.json();
-    const hit = (sd.data && sd.data[0]) || null;
-    meta = hit;
+    // Deezer lookup — try the full credit first, then just the primary artist
+    // (so multi-artist tags like "Kanye West, Lupe Fiasco" don't return junk).
+    const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const primary = _primaryArtist(clean);
+    const candidates = [clean]; if (primary && primary !== clean) candidates.push(primary);
+    let hit = null;
+    for (const q of candidates) {
+      const sr = await fetch(`/artist-search?q=${encodeURIComponent(q)}`);
+      const sd = await sr.json();
+      const top = (sd.data && sd.data[0]) || null;
+      if (!top) continue;
+      // Accept when the result reasonably matches the query we sent
+      const nq = norm(q), nh = norm(top.name);
+      if (nh && (nq.includes(nh) || nh.includes(nq) || q === primary)) { hit = top; break; }
+      if (!hit) hit = top;   // remember the first result as a last resort
+    }
+    let meta = hit;
     if (hit && hit.id) {
       try {
         const mr = await fetch(`/artist-meta/${hit.id}`);
@@ -9065,39 +10262,176 @@ async function _npLoadArtist(name) {
     const pic = meta.picture_xl || meta.picture_big || meta.picture_medium || meta.picture_small || '';
     document.getElementById('np-about-img').style.backgroundImage = pic ? `url(${JSON.stringify(pic)})` : '';
     document.getElementById('np-about-name').textContent = meta.name || clean;
-    document.getElementById('np-about-fans').textContent = _fmtFans(meta.nb_fan) || '';
-    const cleanBio = (meta.biography || '').replace(/<[^>]*>/g, ' ').replace(/\s{2,}/g, ' ').trim();
-    const bioEl = document.getElementById('np-about-bio');
-    bioEl.textContent = cleanBio;
-    bioEl.style.display = cleanBio ? '' : 'none';
     document.getElementById('np-about-card').dataset.artist = meta.name || clean;
+
+    // Meta line: fans · N albums
+    const metaParts = [];
+    const fans = _fmtFans(meta.nb_fan);
+    if (fans) metaParts.push(fans);
+    if (meta.nb_album) metaParts.push(`${meta.nb_album} album${meta.nb_album === 1 ? '' : 's'}`);
+    document.getElementById('np-about-meta').textContent = metaParts.join(' · ');
+
+    // Bio: Wikipedia (Deezer has none). Falls back to Deezer biography if present.
+    let bio = (meta.biography || '').replace(/<[^>]*>/g, ' ').replace(/\s{2,}/g, ' ').trim();
+    let wikiUrl = '';
+    try {
+      const br = await fetch(`/artist-bio?name=${encodeURIComponent(meta.name || clean)}`);
+      const bd = await br.json();
+      if (_npArtistKey !== clean) return;
+      if (bd && bd.bio) { bio = bd.bio; wikiUrl = bd.url || ''; }
+    } catch (_) {}
+
+    bioEl.textContent = bio;
+    bioEl.style.display = bio ? '' : 'none';
+    // Offer "Show more" only when the text is actually clamped
+    requestAnimationFrame(() => {
+      if (_npArtistKey !== clean) return;
+      const clamped = bioEl.scrollHeight - bioEl.clientHeight > 4;
+      moreEl.style.display = (bio && clamped) ? '' : 'none';
+    });
+    if (wikiUrl) { wikiEl.href = wikiUrl; wikiEl.style.display = ''; }
   } catch (_) {
     if (_npArtistKey === clean) about.style.display = 'none';
   }
 }
 
-// Open the artist behind the "About" card in the Library tab, if present.
+// Open an artist in the Library tab, if present (matches full or primary name).
 function _npOpenArtist(name) {
   if (!name) return;
   switchTab('library');
   const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const wanted = [norm(name), norm(_primaryArtist(name))];
   const target = (_libArtistList || []).find(a =>
-    !a.is_home_group && !a.is_liked_group && !a.is_playlist_group && norm(a.name) === norm(name));
+    !a.is_home_group && !a.is_liked_group && !a.is_playlist_group && wanted.includes(norm(a.name)));
   if (target) _selectLibArtist(target, true);
-  else _toast(`${name} isn't in your library yet.`, 'info');
+  else _toast(`${_primaryArtist(name) || name} isn't in your library yet.`, 'info');
 }
+
+// ═══════════════════════════════════════
+//  LIBRARY SEARCH PALETTE  ( / )
+// ═══════════════════════════════════════
+let _lsResults = [];
+let _lsActive  = -1;
+
+function openLibSearch() {
+  const ov  = document.getElementById('libsearch-overlay');
+  const inp = document.getElementById('libsearch-input');
+  if (!ov || !inp) return;
+  ov.classList.add('open');
+  inp.value = '';
+  _renderLibSearch('');
+  setTimeout(() => inp.focus(), 20);
+  // Make sure library data is available to search
+  if (!_libAllAlbums || !_libAllAlbums.length) loadLibrary({ keepView: true });
+}
+function closeLibSearch() {
+  document.getElementById('libsearch-overlay')?.classList.remove('open');
+}
+
+function _lsRow(idx, cover, title, sub) {
+  const thumb = cover
+    ? `<img class="ls-thumb" src="${escHtml(cover)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="ls-thumb-ph" style="display:none">${ICON.note}</div>`
+    : `<div class="ls-thumb-ph">${ICON.note}</div>`;
+  return `<div class="ls-item" data-idx="${idx}">${thumb}
+    <div class="ls-info"><div class="ls-title">${escHtml(title)}</div><div class="ls-sub">${escHtml(sub)}</div></div></div>`;
+}
+
+function _renderLibSearch(q) {
+  const box = document.getElementById('libsearch-results');
+  if (!box) return;
+  q = (q || '').trim().toLowerCase();
+  const has = s => (s || '').toLowerCase().includes(q);
+  _lsResults = [];
+  if (!q) { box.innerHTML = '<div class="ls-empty">Type to search your artists, albums and playlists.</div>'; return; }
+
+  const artists = (_libArtistList || []).filter(a =>
+    !a.is_home_group && !a.is_liked_group && !a.is_playlist_group && has(a.name)).slice(0, 6);
+  const albums = (_libAllAlbums || []).filter(a => !a.is_playlist && (has(a.album) || has(a.artist))).slice(0, 14);
+  const playlists = (_libAllAlbums || []).filter(a => a.is_playlist && has(a.album)).slice(0, 6);
+
+  let html = '';
+  if (artists.length) {
+    html += '<div class="ls-group-label">Artists</div>';
+    artists.forEach(a => {
+      const idx = _lsResults.length; _lsResults.push({ type: 'artist', ref: a });
+      html += _lsRow(idx, a.cover_url || '', a.name, `${a.albums.length} album${a.albums.length !== 1 ? 's' : ''}`);
+    });
+  }
+  if (albums.length) {
+    html += '<div class="ls-group-label">Albums</div>';
+    albums.forEach(a => {
+      const idx = _lsResults.length; _lsResults.push({ type: 'album', ref: a });
+      const cover = a.cover_url || (a.path_hash ? `/cover/${a.path_hash}` : '');
+      html += _lsRow(idx, cover, a.album, a.artist);
+    });
+  }
+  if (playlists.length) {
+    html += '<div class="ls-group-label">Playlists</div>';
+    playlists.forEach(a => {
+      const idx = _lsResults.length; _lsResults.push({ type: 'playlist', ref: a });
+      const cover = a.cover_url || (a.path_hash ? `/cover/${a.path_hash}` : '');
+      html += _lsRow(idx, cover, a.album, `${a.track_count || ''} tracks`);
+    });
+  }
+  box.innerHTML = html || '<div class="ls-empty">No matches in your library.</div>';
+  _lsActive = _lsResults.length ? 0 : -1;
+  _lsHighlight();
+  box.querySelectorAll('.ls-item').forEach(el =>
+    el.addEventListener('click', () => _lsOpen(+el.dataset.idx)));
+}
+
+function _lsHighlight() {
+  const box = document.getElementById('libsearch-results');
+  if (!box) return;
+  box.querySelectorAll('.ls-item').forEach(el =>
+    el.classList.toggle('active', +el.dataset.idx === _lsActive));
+  const active = box.querySelector('.ls-item.active');
+  if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+function _lsOpen(idx) {
+  const r = _lsResults[idx];
+  if (!r) return;
+  closeLibSearch();
+  switchTab('library');
+  if (r.type === 'artist') {
+    _selectLibArtist(r.ref, true);
+  } else if (r.type === 'album') {
+    const grp = (_libArtistList || []).find(a => !a.is_playlist_group && a.name === r.ref.artist);
+    if (grp) Promise.resolve(_selectLibArtist(grp, true)).then(() => _openLibAlbum(r.ref));
+    else _openLibAlbum(r.ref);
+  } else if (r.type === 'playlist') {
+    const grp = (_libArtistList || []).find(a => a.is_playlist_group);
+    if (grp) Promise.resolve(_selectLibArtist(grp, true)).then(() => _openLibAlbum(r.ref));
+    else _openLibAlbum(r.ref);
+  }
+}
+
+document.getElementById('libsearch-input')?.addEventListener('input', (e) => _renderLibSearch(e.target.value));
+document.getElementById('libsearch-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { e.preventDefault(); closeLibSearch(); return; }
+  if (e.key === 'ArrowDown') { e.preventDefault(); if (_lsResults.length) { _lsActive = (_lsActive + 1) % _lsResults.length; _lsHighlight(); } }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); if (_lsResults.length) { _lsActive = (_lsActive - 1 + _lsResults.length) % _lsResults.length; _lsHighlight(); } }
+  else if (e.key === 'Enter') { e.preventDefault(); if (_lsActive >= 0) _lsOpen(_lsActive); }
+});
+document.getElementById('libsearch-overlay')?.addEventListener('click', (e) => {
+  if (e.target === document.getElementById('libsearch-overlay')) closeLibSearch();
+});
 
 // ═══════════════════════════════════════
 //  MINI PLAYER
 // ═══════════════════════════════════════
 
-function _mpPlayTrack(idx, alb) {
+function _mpPlayTrack(idx, alb, autoplay = true) {
   const track = _mpQueue[idx];
   if (!track) return;
 
   _mpIdx        = idx;
-  _mpPlaying    = true;
+  _mpPlaying    = autoplay;
   _mpCurrentAlb = alb;   // lock the album for this playback session
+  _mpTriedTranscode = false;   // fresh track — allow one transcode retry if needed
+  _mpPreloadedIdx = -1;        // re-evaluate which track to preload next
+  _mpHighlightRow(idx);        // instant visual feedback (before async cover/now-playing work)
 
   // A track may carry its own path_hash (e.g. Liked Songs span many albums);
   // otherwise fall back to the album's path_hash.
@@ -9109,20 +10443,32 @@ function _mpPlayTrack(idx, alb) {
     : (track.preview_url || '');
   _mpAudio.src = localSrc;
   _mpAudio.volume = parseFloat(document.getElementById('mp-vol-range')?.value || '1');
-  _mpAudio.play().catch(() => {});
+  if (autoplay) _mpAudio.play().catch(() => {});
+
+  // Reset the scrubber so we don't briefly flash the old/preview duration (0:30)
+  const _f = document.getElementById('mp-prog-fill');
+  const _c = document.getElementById('mp-time-cur');
+  const _t = document.getElementById('mp-time-tot');
+  if (_f) _f.style.width = '0%';
+  if (_c) _c.textContent = '0:00';
+  if (_t) _t.textContent = '0:00';
 
   // Show player
   document.getElementById('mini-player').classList.remove('hidden');
 
-  // Cover
-  const coverSrc = track.cover_url || alb?.cover_url || (trackPh ? `/cover/${trackPh}` : '');
+  // Cover — per-file embedded art (playlists carry a collage folder cover)
+  const coverSrc = _trackCoverSrc(track, alb);
   const coverImg = document.getElementById('mp-cover-img');
   const coverPh  = document.getElementById('mp-cover-ph');
   if (coverSrc) {
+    // If the art 404s (e.g. a restored track whose folder moved), reveal the
+    // placeholder note icon instead of leaving a blank/broken image.
+    coverImg.onerror = () => { coverImg.style.display = 'none'; coverPh.style.display = 'block'; };
     coverImg.src          = coverSrc;
     coverImg.style.display = 'block';
     coverPh.style.display  = 'none';
   } else {
+    coverImg.onerror = null;
     coverImg.style.display = 'none';
     coverPh.style.display  = 'block';
   }
@@ -9156,6 +10502,56 @@ function _mpPlayTrack(idx, alb) {
     },
   };
   if (_isLocalTrack) _sendScrobble('now_playing');
+  _mpSaveState();
+}
+
+// ── Persist / restore playback across restarts ──────────────────────────────
+let _mpPendingSeek = null;      // seconds to seek to once metadata loads (restore)
+let _mpLastSaveAt  = 0;
+let _mpKnownDur    = 0;         // last known track duration (survives preload="none")
+
+let _mpRestoring = false;   // suppress saves while we restore (avoid clobbering time)
+
+function _mpSaveState() {
+  if (_mpRestoring) return;
+  try {
+    if (_mpIdx < 0 || !_mpQueue.length) { localStorage.removeItem('tgdl_player'); return; }
+    const liveDur = (isFinite(_mpAudio.duration) && _mpAudio.duration > 0) ? _mpAudio.duration : _mpKnownDur;
+    localStorage.setItem('tgdl_player', JSON.stringify({
+      queue:   _mpQueue,
+      idx:     _mpIdx,
+      album:   _mpCurrentAlb,
+      time:    _mpAudio.currentTime || _mpPendingSeek || 0,
+      dur:     liveDur || 0,
+      shuffle: _mpShuffle,
+      repeat:  _mpRepeat,
+    }));
+  } catch (_) {}
+}
+
+function _mpRestoreState() {
+  let data;
+  try { data = JSON.parse(localStorage.getItem('tgdl_player') || 'null'); } catch (_) { return; }
+  if (!data || !Array.isArray(data.queue) || !data.queue.length) return;
+  if (typeof data.idx !== 'number' || data.idx < 0 || data.idx >= data.queue.length) return;
+  _mpRestoring  = true;
+  _mpQueue      = data.queue;
+  _mpCurrentAlb = data.album || null;
+  _mpShuffle    = !!data.shuffle;
+  _mpRepeat     = data.repeat || 'off';
+  _mpShuffleOrder = [];
+  _mpPendingSeek = data.time || 0;
+  _mpKnownDur    = data.dur || 0;
+  try {
+    _mpPlayTrack(data.idx, _mpCurrentAlb, false);   // load paused; user presses play to resume
+    _mpUpdateModeButtons();
+    // The audio element is preload="none", so loadedmetadata won't fire until
+    // the user hits play. Paint the persisted position + duration now so the
+    // scrubber reflects where playback will resume from (instead of 0:00).
+    _mpRenderProgress(_mpPendingSeek, _mpKnownDur);
+  } finally {
+    _mpRestoring = false;
+  }
 }
 
 // Fire-and-forget scrobble submission to the backend (which forwards to
@@ -9201,17 +10597,33 @@ function _mpStop() {
   _mpHighlightRow(-1);
 }
 
+// Format seconds as m:ss for the player scrubber labels.
+function _mpFmtTime(s) {
+  s = Math.max(0, Math.floor(s || 0));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+// Paint the scrubber (fill + current/total labels) from explicit values.
+// Used by timeupdate, by loadedmetadata, and — crucially — by restore: the
+// audio element is preload="none", so on startup there is no live media
+// position or duration yet, and we must render the persisted ones ourselves.
+function _mpRenderProgress(cur, dur) {
+  dur = dur || 0;
+  const pct   = dur > 0 ? Math.min(100, (cur / dur) * 100) : 0;
+  const fill  = document.getElementById('mp-prog-fill');
+  const curEl = document.getElementById('mp-time-cur');
+  const totEl = document.getElementById('mp-time-tot');
+  if (fill)  fill.style.width = pct + '%';
+  if (curEl) curEl.textContent = _mpFmtTime(cur);
+  if (totEl && dur > 0) totEl.textContent = _mpFmtTime(dur);
+}
+
 // Audio event listeners
 _mpAudio.addEventListener('timeupdate', () => {
   const dur  = _mpAudio.duration || 30;
   const cur  = _mpAudio.currentTime;
-  const pct  = dur > 0 ? (cur / dur) * 100 : 0;
-  const fill = document.getElementById('mp-prog-fill');
-  const curEl = document.getElementById('mp-time-cur');
-  const totEl = document.getElementById('mp-time-tot');
-  if (fill)  fill.style.width = pct + '%';
-  if (curEl) curEl.textContent = `${Math.floor(cur / 60)}:${String(Math.floor(cur % 60)).padStart(2, '0')}`;
-  if (totEl) totEl.textContent = `${Math.floor(dur / 60)}:${String(Math.floor(dur % 60)).padStart(2, '0')}`;
+  if (isFinite(_mpAudio.duration) && _mpAudio.duration > 0) _mpKnownDur = _mpAudio.duration;
+  _mpRenderProgress(cur, dur);
 
   // Scrobble once the track passes the standard threshold (≥50% played, or
   // ≥4 min). Local files only; _sendScrobble guards on that.
@@ -9220,10 +10632,142 @@ _mpAudio.addEventListener('timeupdate', () => {
     st.scrobbled = true;
     _sendScrobble('scrobble');
   }
+
+  // Persist playback position at most every ~5s
+  const now = Date.now();
+  if (now - _mpLastSaveAt > 5000) { _mpLastSaveAt = now; _mpSaveState(); }
+
+  // Near-gapless: warm the next track into the browser cache before this one ends
+  if (_mpPlaying && dur > 0 && (dur - cur) < 20 && _mpRepeat !== 'one') {
+    const next = (_mpIdx + 1 < _mpQueue.length) ? _mpIdx + 1 : (_mpRepeat === 'all' ? 0 : -1);
+    if (next >= 0 && next !== _mpPreloadedIdx) {
+      const t  = _mpQueue[next];
+      const ph = t && (t.path_hash || _mpCurrentAlb?.path_hash);
+      const url = (ph && t.name)
+        ? `/audio-file?path_hash=${encodeURIComponent(ph)}&name=${encodeURIComponent(t.name)}`
+        : (t?.preview_url || '');
+      if (url) {
+        if (!_mpPreloadEl) _mpPreloadEl = new Audio();
+        _mpPreloadEl.preload = 'auto';
+        _mpPreloadEl.src = url;
+        try { _mpPreloadEl.load(); } catch (_) {}
+        _mpPreloadedIdx = next;
+      }
+    }
+  }
+
+  _npSyncLyrics();
 });
 
-_mpAudio.addEventListener('play',  () => { _mpPlaying = true;  _mpUpdatePlayBtn(); });
-_mpAudio.addEventListener('pause', () => { _mpPlaying = false; _mpUpdatePlayBtn(); });
+// Apply a pending restore-seek once the media duration is known
+_mpAudio.addEventListener('loadedmetadata', () => {
+  if (isFinite(_mpAudio.duration) && _mpAudio.duration > 0) _mpKnownDur = _mpAudio.duration;
+  if (_mpPendingSeek != null) {
+    const seek = _mpPendingSeek;
+    _mpPendingSeek = null;
+    try { _mpAudio.currentTime = seek; } catch (_) {}
+    // Refresh labels now that the real duration is known (paused media may not
+    // fire a timeupdate on its own).
+    _mpRenderProgress(seek, _mpAudio.duration || _mpKnownDur);
+  }
+});
+
+_mpAudio.addEventListener('play',  () => { _mpPlaying = true;  _mpUpdatePlayBtn(); _mpSaveState(); });
+_mpAudio.addEventListener('pause', () => { _mpPlaying = false; _mpUpdatePlayBtn(); _mpSaveState(); });
+window.addEventListener('beforeunload', () => _mpSaveState());
+// A track that actually starts producing audio clears the error streak.
+_mpAudio.addEventListener('playing', () => {
+  _mpErrorStreak = 0;
+  // A transcoded local file is full quality — drop the "converting/preview" note.
+  const src = _mpAudio.currentSrc || _mpAudio.src || '';
+  if (src.indexOf('/audio-stream') !== -1) {
+    const note = document.getElementById('mp-preview-note');
+    if (note) { note.textContent = ''; note.style.display = 'none'; }
+  }
+});
+
+// Move on after a failed track: streak-guarded skip to the next playable one.
+function _mpSkipAfterError(track, reason) {
+  _mpErrorStreak++;
+  if (_mpErrorStreak > _mpQueue.length) {
+    _mpErrorStreak = 0;
+    _mpPlaying = false; _mpUpdatePlayBtn(); _mpHighlightRow(-1);
+    _toast("Couldn't play these tracks — the files may have moved or been removed.", 'error');
+    return;
+  }
+  const next = _mpPickNext(true);
+  if (next >= 0) {
+    // Only surface the first failure; stay quiet while we hunt for the next
+    // playable track so a fully-stale queue doesn't spam a toast per track.
+    if (reason && _mpErrorStreak === 1) _toast(reason, 'info');
+    _mpPlayTrack(next, _mpCurrentAlb);
+  } else {
+    _mpPlaying = false; _mpUpdatePlayBtn(); _mpHighlightRow(-1);
+  }
+}
+
+// The current source failed. Figure out WHY (missing file vs. the browser not
+// being able to decode it — e.g. 24-bit/hi-res FLAC) and recover accordingly:
+// transcode the file server-side, fall back to the preview, or skip.
+_mpAudio.addEventListener('error', () => {
+  if (!_mpQueue.length || _mpIdx < 0) return;
+  const track = _mpQueue[_mpIdx];
+  if (!track) return;
+  // A restored / paused session only preloads its source — the user hasn't
+  // pressed play yet. Don't cascade through the whole queue throwing errors
+  // (that's the "File not found" toast storm on launch). Wait for an explicit
+  // play; the error will re-fire then, with recovery handled normally.
+  if (!_mpPlaying) return;
+  const src = _mpAudio.currentSrc || _mpAudio.src || '';
+  const note = document.getElementById('mp-preview-note');
+
+  // The transcoded stream itself failed → ffmpeg missing or transcode error.
+  if (src.indexOf('/audio-stream') !== -1) {
+    fetch(src, { headers: { Range: 'bytes=0-1' } }).then(r => {
+      const msg = (r.status === 501)
+        ? `Install ffmpeg to play "${track.title || track.name}" (needs transcoding).`
+        : `Couldn't play "${track.title || track.name}".`;
+      if (track.preview_url) {
+        _mpAudio.src = track.preview_url; _mpAudio.play().catch(() => {});
+        if (note) { note.textContent = '30s preview · Deezer'; note.style.display = ''; }
+      } else {
+        _mpSkipAfterError(track, msg);
+      }
+    }).catch(() => _mpSkipAfterError(track, `Couldn't play "${track.title || track.name}".`));
+    return;
+  }
+
+  // A local file failed — probe whether it's served at all.
+  if (src.indexOf('/audio-file') !== -1) {
+    if (_mpTriedTranscode) { _mpSkipAfterError(track); return; }
+    _mpTriedTranscode = true;
+    console.warn('[playback] local file failed:', track.name,
+                 'audio.error.code =', _mpAudio.error && _mpAudio.error.code);
+    fetch(src, { headers: { Range: 'bytes=0-1' } }).then(r => {
+      if (r.status === 404) {
+        // The file isn't where we expect it on disk.
+        _mpSkipAfterError(track, `File not found on disk: ${track.title || track.name}`);
+        return;
+      }
+      // Served fine but the browser couldn't decode it → transcode via ffmpeg.
+      const ph = track.path_hash || _mpCurrentAlb?.path_hash || '';
+      if (ph && track.name) {
+        if (note) { note.textContent = 'Converting for playback…'; note.style.display = ''; }
+        _mpAudio.src = `/audio-stream?path_hash=${encodeURIComponent(ph)}&name=${encodeURIComponent(track.name)}`;
+        _mpAudio.play().catch(() => {});
+      } else if (track.preview_url) {
+        _mpAudio.src = track.preview_url; _mpAudio.play().catch(() => {});
+        if (note) { note.textContent = '30s preview · Deezer'; note.style.display = ''; }
+      } else {
+        _mpSkipAfterError(track);
+      }
+    }).catch(() => _mpSkipAfterError(track));
+    return;
+  }
+
+  // A preview URL (or unknown source) failed → just skip.
+  _mpSkipAfterError(track);
+});
 
 _mpAudio.addEventListener('ended', () => {
   _mpPlaying = false;
@@ -9235,6 +10779,11 @@ _mpAudio.addEventListener('ended', () => {
   const next = _mpPickNext(true);   // true = auto-advance (allows repeat-all wrap)
   if (next >= 0) {
     _mpPlayTrack(next, _mpCurrentAlb);
+    return;
+  }
+  // Queue ended — optionally continue with a related-artist radio (once).
+  if (_mpAutoplayRadio && !_mpCurrentAlb?.is_radio) {
+    _mpStartRadio().then(ok => { if (!ok) { _mpUpdatePlayBtn(); _mpHighlightRow(-1); } });
     return;
   }
   _mpUpdatePlayBtn();
@@ -9306,14 +10855,20 @@ document.getElementById('mp-prog-track')?.addEventListener('click', ev => {
 
 // Controls
 document.getElementById('mp-play-btn')?.addEventListener('click', () => {
-  if (_mpAudio.src) {
-    if (_mpPlaying) {
-      _mpAudio.pause();
-      // _mpPlaying will be set false by the 'pause' event handler
-    } else {
-      _mpAudio.play().catch(() => {});
-      // _mpPlaying will be set true by the 'play' event handler
-    }
+  if (_mpPlaying) {
+    _mpAudio.pause();
+    // _mpPlaying will be set false by the 'pause' event handler
+    return;
+  }
+  // A restored session preloads its source but never loaded it; if the element
+  // has no usable source or already errored (e.g. the file moved, or preload=none
+  // means nothing was fetched yet), (re)load the current track fresh — that runs
+  // the full recovery path (transcode / single skip). Otherwise just resume.
+  if (_mpIdx >= 0 && _mpQueue[_mpIdx] && (!_mpAudio.src || _mpAudio.error || _mpAudio.readyState === 0)) {
+    _mpPlayTrack(_mpIdx, _mpCurrentAlb, true);
+  } else if (_mpAudio.src) {
+    _mpAudio.play().catch(() => {});
+    // _mpPlaying will be set true by the 'play' event handler
   }
 });
 
@@ -9354,11 +10909,13 @@ document.getElementById('mp-shuffle')?.addEventListener('click', () => {
   _mpShuffle = !_mpShuffle;
   _mpShuffleOrder = [];   // reset bag so it reshuffles from the current point
   _mpUpdateModeButtons();
+  _mpSaveState();
 });
 
 document.getElementById('mp-repeat')?.addEventListener('click', () => {
   _mpRepeat = _mpRepeat === 'off' ? 'all' : _mpRepeat === 'all' ? 'one' : 'off';
   _mpUpdateModeButtons();
+  _mpSaveState();
 });
 
 document.getElementById('mp-like')?.addEventListener('click', () => {
@@ -9385,15 +10942,61 @@ document.getElementById('mp-close')?.addEventListener('click', () => {
   _mpCurrentAlb = null;
   _mpQueue = [];
   document.getElementById('mini-player').classList.add('hidden');
+  try { localStorage.removeItem('tgdl_player'); } catch (_) {}
 });
+
+// Restore the last playback session (paused) on startup
+_mpRestoreState();
 
 // ── Now Playing panel wiring ──
 try { _npOpen = localStorage.getItem('tgdl_np_open') === '1'; } catch (_) {}
 _npApply();
 document.getElementById('mp-np-toggle')?.addEventListener('click', _npToggle);
 document.getElementById('np-collapse')?.addEventListener('click', _npCollapse);
-document.getElementById('np-about-card')?.addEventListener('click', (ev) => {
-  _npOpenArtist(ev.currentTarget.dataset.artist || '');
+document.getElementById('np-lyrics-toggle')?.addEventListener('click', _npLyricsToggle);
+
+// Make the currently-playing artist / title clickable → navigate to them.
+function _openCurrentArtist() {
+  const t = _mpQueue[_mpIdx];
+  const name = t?.artist || _mpCurrentAlb?.artist || '';
+  if (name) _npOpenArtist(name);
+}
+function _openCurrentAlbum() {
+  const t = _mpQueue[_mpIdx];
+  if (!t) return;
+  const alb = _mpCurrentAlb;
+  if (alb && !alb.is_radio && alb.path_hash) {
+    switchTab('library');
+    const grp = alb.is_playlist
+      ? (_libArtistList || []).find(a => a.is_playlist_group)
+      : (_libArtistList || []).find(a => !a.is_playlist_group && a.name === (alb.artist || t.artist));
+    if (grp) Promise.resolve(_selectLibArtist(grp, true)).then(() => _openLibAlbum(alb));
+    else _openLibAlbum(alb);
+  } else {
+    _openCurrentArtist();   // radio/preview — fall back to the artist
+  }
+}
+document.getElementById('mp-artist-name')?.addEventListener('click', _openCurrentArtist);
+document.getElementById('np-track-artist')?.addEventListener('click', _openCurrentArtist);
+document.getElementById('mp-title')?.addEventListener('click', _openCurrentAlbum);
+document.getElementById('np-track-title')?.addEventListener('click', _openCurrentAlbum);
+// Open the artist from the image or name; "Show more" expands the bio.
+['np-about-img', 'np-about-name'].forEach(id => {
+  document.getElementById(id)?.addEventListener('click', () => {
+    _npOpenArtist(document.getElementById('np-about-card')?.dataset.artist || '');
+  });
+});
+document.getElementById('np-about-more')?.addEventListener('click', () => {
+  const about = document.getElementById('np-about');
+  const expanded = about.classList.toggle('np-bio-expanded');
+  document.getElementById('np-about-more').textContent = expanded ? 'Show less' : 'Show more';
+});
+// Clear the rest of the queue (everything after the current track)
+document.getElementById('np-queue-clear')?.addEventListener('click', () => {
+  if (_mpIdx >= 0 && _mpQueue.length > _mpIdx + 1) {
+    _mpQueue = _mpQueue.slice(0, _mpIdx + 1);
+    _npRenderQueue();
+  }
 });
 
 // Suppress the native browser context menu app-wide — the app uses its own
