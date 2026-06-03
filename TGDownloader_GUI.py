@@ -172,11 +172,13 @@ SETUP_WIZARD_HTML  = BUNDLE_DIR / "setup_wizard.html"
 SESSIONS_FILE      = DATA_DIR   / "tg_sessions.json"
 _ALBUM_ID_CACHE_FILE = DATA_DIR / "album_id_cache.json"  # persists album search results
 LIKED_SONGS_FILE   = DATA_DIR   / "liked_songs.json"     # persists "Liked Songs" library
+_TRANSCODE_DIR     = DATA_DIR   / "tg_transcode_cache"   # cached MP3 transcodes for in-app playback
+_LIB_STATS_CACHE_FILE = DATA_DIR / "library_stats_cache.json"  # persisted /library-stats payload
 
 # ── Auto-update (notify-only) ─────────────────────────────────────────────────
 # The GUI polls GitHub Releases for a newer tag and shows a banner. It never
 # downloads or replaces files — the user updates manually from the release page.
-APP_VERSION  = "1.1.0"                        # bump this when you cut a new release
+APP_VERSION  = "1.2.0"                        # bump this when you cut a new release
 GITHUB_REPO  = "Thurlws/TGDownloader"         # owner/repo the update check targets
 
 # Backend process command
@@ -740,6 +742,8 @@ _local_cover_cache:   dict[str, tuple]        = {}   # path_hash → (bytes, mim
 _track_cover_cache:   dict[str, "tuple | None"] = {} # path_hash\x00name → (bytes, mime)|None
 _artist_cache:        dict[str, dict]         = {}   # deezer artist_id → artist metadata
 _album_artist_id:     dict[str, str]          = {}   # deezer album_id  → artist_id
+_bio_cache:           dict[str, dict]         = {}   # lowercased artist name → wikipedia bio dict
+_lyrics_cache:        dict[str, dict]         = {}   # (artist,title) → {synced, plain} lyrics
 _album_search_cache:  dict[str, str]          = {}   # "artist|album" → deezer album_id (or "" if not found)
 
 # Load persisted album-ID cache so repeat library loads don't re-search Deezer
@@ -778,6 +782,444 @@ def _deezer_artist_meta(artist_id: str) -> dict:
     except Exception as exc:
         logger.debug("Artist meta fetch failed for id=%s: %s", artist_id, exc)
     return {"error": f"Artist {artist_id} not found"}
+
+
+def _wikipedia_bio(name: str) -> dict:
+    """Best-effort artist biography from Wikipedia (Deezer has none).
+
+    Searches for the most relevant page (biased toward musicians/bands), then
+    returns its plain-text summary extract plus the canonical page URL and a
+    thumbnail. Results are cached per artist name to avoid repeat lookups.
+    """
+    key = (name or "").strip().lower()
+    if not key:
+        return {"error": "empty name"}
+    if key in _bio_cache:
+        return _bio_cache[key]
+
+    headers = {"User-Agent": "TGDownloader/6 (local music library app)"}
+
+    def _summary(title: str) -> dict:
+        """Return the Wikipedia REST summary for a page title, or {}."""
+        try:
+            sum_url = (
+                "https://en.wikipedia.org/api/rest_v1/page/summary/"
+                + url_quote(title.replace(" ", "_"))
+            )
+            req = urllib.request.Request(sum_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception:
+            return {}
+
+    def _looks_musical(md: dict) -> bool:
+        """Heuristic: is this summary about a musician/band, not a song/album?"""
+        desc = (md.get("description") or "").lower()
+        extract = (md.get("extract") or "").lower()
+        bad = ("song", "album", "single", "ep by", "soundtrack", "film", "movie")
+        good = ("band", "musician", "rapper", "singer", "songwriter", "duo",
+                "trio", "group", "producer", "dj", "record producer",
+                "hip hop", "recording artist")
+        if any(b in desc for b in bad):
+            return False
+        if any(g in desc for g in good):
+            return True
+        # No description hint — accept unless the extract opens like a song/album
+        return not extract.startswith(('"', "the album", "is a song", "is a studio"))
+
+    def _accept(md: dict) -> "dict | None":
+        if not md or md.get("type") == "disambiguation":
+            return None
+        extract = (md.get("extract") or "").strip()
+        if not extract or not _looks_musical(md):
+            return None
+        return {
+            "bio":       extract,
+            "title":     md.get("title") or "",
+            "url":       ((md.get("content_urls") or {}).get("desktop") or {}).get("page", ""),
+            "thumbnail": (md.get("thumbnail") or {}).get("source", ""),
+        }
+
+    result: dict = {"error": "no match"}
+    try:
+        # 1) Try the page that exactly matches the artist name (most reliable —
+        #    "De La Soul", "Eazy-E", "Radiohead" all resolve straight to the act).
+        got = _accept(_summary(name))
+        if not got:
+            # 2) Fall back to a music-biased search, checking the top hits.
+            search_url = (
+                "https://en.wikipedia.org/w/api.php?action=query&list=search&format=json"
+                f"&srlimit=5&srsearch={url_quote(name + ' band OR musician OR rapper OR singer')}"
+            )
+            req = urllib.request.Request(search_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                sd = json.loads(resp.read().decode("utf-8"))
+            for hit in ((sd.get("query") or {}).get("search") or []):
+                got = _accept(_summary(hit.get("title", "")))
+                if got:
+                    break
+        if got:
+            result = got
+    except Exception as exc:
+        logger.debug("Wikipedia bio fetch failed for %s: %s", name, exc)
+        result = {"error": str(exc)}
+
+    _bio_cache[key] = result
+    return result
+
+
+def _deezer_radio(name: str, artist_id: str = "") -> dict:
+    """Build a 'radio' queue of Deezer 30s previews seeded from an artist and
+    their related artists' top tracks. Used to auto-continue when a queue ends."""
+    headers = {"User-Agent": "TGDownloader/6"}
+    aid = (artist_id or "").strip()
+    if not aid and name:
+        try:
+            su = f"https://api.deezer.com/search/artist?q={url_quote(name)}&limit=1&output=json"
+            with urllib.request.urlopen(urllib.request.Request(su, headers=headers), timeout=10) as r:
+                hit = (json.loads(r.read().decode("utf-8")).get("data") or [{}])[0]
+            aid = str(hit.get("id") or "")
+        except Exception:
+            aid = ""
+    if not aid:
+        return {"error": "artist not found"}
+
+    tracks: list = []
+    seen: set = set()
+
+    def _add_top(a_id, limit):
+        try:
+            tu = f"https://api.deezer.com/artist/{a_id}/top?limit={limit}&output=json"
+            with urllib.request.urlopen(urllib.request.Request(tu, headers=headers), timeout=10) as r:
+                data = json.loads(r.read().decode("utf-8"))
+        except Exception:
+            return
+        for t in (data.get("data") or []):
+            prev = t.get("preview")
+            if not prev:
+                continue
+            key = (t.get("title", "").lower(), (t.get("artist") or {}).get("name", "").lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            tracks.append({
+                "title":       t.get("title", ""),
+                "artist":      (t.get("artist") or {}).get("name", ""),
+                "album":       (t.get("album") or {}).get("title", ""),
+                "preview_url": prev,
+                "cover_url":   (t.get("album") or {}).get("cover_medium")
+                               or (t.get("album") or {}).get("cover_small") or "",
+                "duration":    t.get("duration", 30),
+                "duration_str": _fmt_duration(int(t.get("duration", 30) or 30)),
+            })
+
+    _add_top(aid, 8)
+    try:
+        ru = f"https://api.deezer.com/artist/{aid}/related?limit=6&output=json"
+        with urllib.request.urlopen(urllib.request.Request(ru, headers=headers), timeout=10) as r:
+            related = json.loads(r.read().decode("utf-8")).get("data") or []
+    except Exception:
+        related = []
+    for ra in related:
+        if ra.get("id"):
+            _add_top(ra["id"], 4)
+
+    import random as _rnd
+    _rnd.shuffle(tracks)
+    return {"tracks": tracks[:40]}
+
+
+def _ffmpeg_exe() -> "str | None":
+    """Path to a usable ffmpeg binary, or None. Cached after first lookup."""
+    global _FFMPEG_PATH
+    try:
+        return _FFMPEG_PATH
+    except NameError:
+        pass
+    import shutil as _sh
+    found = _sh.which("ffmpeg")
+    globals()["_FFMPEG_PATH"] = found
+    return found
+
+
+def _transcode_to_mp3(src: "Path") -> "Path | None":
+    """Transcode an audio file to a browser-playable MP3 (cached on disk).
+    Used as a fallback when the browser's <audio> can't decode the original
+    (e.g. 24-bit / hi-res FLAC, or exotic codecs). Returns the output path,
+    or None if ffmpeg is unavailable or the transcode failed."""
+    ff = _ffmpeg_exe()
+    if not ff:
+        return None
+    try:
+        import hashlib
+        st  = src.stat()
+        key = hashlib.sha1(f"{src.resolve()}|{st.st_mtime_ns}|{st.st_size}".encode("utf-8")).hexdigest()
+        _TRANSCODE_DIR.mkdir(parents=True, exist_ok=True)
+        out = _TRANSCODE_DIR / (key + ".mp3")
+        if out.exists() and out.stat().st_size > 0:
+            return out
+        tmp = out.with_name(out.stem + ".part.mp3")
+        cmd = [ff, "-y", "-vn", "-i", str(src), "-map", "0:a:0",
+               "-c:a", "libmp3lame", "-q:a", "2", str(tmp)]
+        proc = subprocess.run(cmd, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL, timeout=180)
+        if proc.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
+            tmp.replace(out)
+            return out
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except Exception:
+            pass
+    except Exception as exc:
+        logger.debug("Transcode failed for %s: %s", src, exc)
+    return None
+
+
+def _send_file_with_range(h, file_path: "Path", mime: str) -> None:
+    """Stream a file to the client with HTTP Range support (so the browser can
+    seek). Shared by /audio-file (transcoded) playback."""
+    file_size = file_path.stat().st_size
+    range_header = h.headers.get("Range", "")
+    start, end = 0, file_size - 1
+    if range_header.startswith("bytes="):
+        try:
+            parts = range_header[6:].split("-")
+            start = int(parts[0]) if parts[0] else 0
+            end   = int(parts[1]) if len(parts) > 1 and parts[1] else file_size - 1
+            end   = min(end, file_size - 1)
+        except (ValueError, IndexError):
+            start, end = 0, file_size - 1
+    length = end - start + 1
+    h.send_response(206 if range_header else 200)
+    h.send_header("Content-Type", mime)
+    h.send_header("Content-Length", str(length))
+    h.send_header("Accept-Ranges", "bytes")
+    h.send_header("Cache-Control", "no-cache")
+    if range_header:
+        h.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+    h.end_headers()
+    try:
+        with open(file_path, "rb") as f:
+            f.seek(start)
+            remaining = length
+            while remaining > 0:
+                chunk = f.read(min(65536, remaining))
+                if not chunk:
+                    break
+                h.wfile.write(chunk)
+                remaining -= len(chunk)
+    except (BrokenPipeError, ConnectionResetError):
+        pass
+
+
+def _resolve_in_dir(album_dir: "Path", filename: str) -> "Path | None":
+    """Resolve `filename` inside `album_dir` (path-traversal guarded), with a
+    Unicode-NFC / case-insensitive fallback when the exact name misses."""
+    if not album_dir or not filename:
+        return None
+    base = album_dir.resolve()
+    file_path = (album_dir / filename).resolve()
+    try:
+        file_path.relative_to(base)
+    except ValueError:
+        return None
+    if file_path.is_file():
+        return file_path
+    try:
+        import unicodedata as _ud
+        want = _ud.normalize("NFC", filename).casefold()
+        for f in album_dir.iterdir():
+            if f.is_file() and _ud.normalize("NFC", f.name).casefold() == want:
+                return f.resolve()
+    except Exception:
+        pass
+    return None
+
+
+def _rebuild_path_hash_map() -> None:
+    """Populate _path_hash_map (path_hash → album/playlist dir) by scanning the
+    music library directly.
+
+    The map is normally filled lazily as a side effect of /library-albums, but
+    playback can request a hash before the frontend has ever loaded the library
+    tab — most notably the persist-restore on startup, which sets up a paused
+    player (and later /audio-file, /audio-stream, /track-cover) using hashes
+    saved in a previous session. Without this, those requests 404 purely because
+    the map is empty, even though the files exist on disk."""
+    try:
+        import hashlib as _hl
+        from pathlib import Path as _P
+        m    = _tgd_import()
+        cfg  = m.load_config()
+        home = cfg.get("home_music_folder")
+        if not home:
+            return
+        home_path = _P(home)
+        if not home_path.exists():
+            return
+        AUDIO_EXT = {".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac",
+                     ".wav", ".aif", ".aiff", ".wma", ".ape", ".wv"}
+
+        def _add(d: "_P") -> None:
+            try:
+                if not any(f.is_file() and f.suffix.lower() in AUDIO_EXT
+                           for f in d.iterdir()):
+                    return
+            except Exception:
+                return
+            ph = _hl.sha256(str(d.resolve()).encode()).hexdigest()[:16]
+            _path_hash_map[ph] = d
+
+        artists_root = home_path / ARTISTS_DIRNAME
+        if artists_root.is_dir():
+            for artist_dir in artists_root.iterdir():
+                if not artist_dir.is_dir() or artist_dir.name.startswith("."):
+                    continue
+                for album_dir in artist_dir.iterdir():
+                    if album_dir.is_dir():
+                        _add(album_dir)
+
+        playlists_root = home_path / PLAYLISTS_DIRNAME
+        if playlists_root.is_dir():
+            for pl_dir in playlists_root.iterdir():
+                if pl_dir.is_dir() and not pl_dir.name.startswith("."):
+                    _add(pl_dir)
+    except Exception:
+        pass
+
+
+def _lookup_album_dir(ph: str):
+    """Resolve a path_hash to its dir, rebuilding the map once if it's missing
+    (e.g. playback began before the library was ever scanned this session)."""
+    ph = (ph or "").strip()
+    d = _path_hash_map.get(ph)
+    if d is None and ph:
+        _rebuild_path_hash_map()
+        d = _path_hash_map.get(ph)
+    return d
+
+
+def _deezer_recommendations(seed_names: list) -> dict:
+    """Album recommendations seeded from the user's library: for a few seed
+    artists, pull Deezer related artists and their top albums. Returns album
+    cards (downloadable via their Deezer link)."""
+    headers = {"User-Agent": "TGDownloader/6"}
+    seeds = [s for s in (seed_names or []) if s][:4]
+    if not seeds:
+        return {"albums": []}
+
+    out: list = []
+    seen: set = set()
+
+    def _resolve_id(name):
+        try:
+            su = f"https://api.deezer.com/search/artist?q={url_quote(name)}&limit=1&output=json"
+            with urllib.request.urlopen(urllib.request.Request(su, headers=headers), timeout=10) as r:
+                hit = (json.loads(r.read().decode("utf-8")).get("data") or [{}])[0]
+            return str(hit.get("id") or "")
+        except Exception:
+            return ""
+
+    def _add_albums(a_id, limit):
+        try:
+            au = f"https://api.deezer.com/artist/{a_id}/albums?limit={limit}&output=json"
+            with urllib.request.urlopen(urllib.request.Request(au, headers=headers), timeout=10) as r:
+                data = json.loads(r.read().decode("utf-8"))
+        except Exception:
+            return
+        for al in (data.get("data") or []):
+            if (al.get("record_type") or "album").lower() != "album":
+                continue
+            key = (al.get("title", "").lower(), (al.get("artist") or {}).get("name", "").lower())
+            if not al.get("id") or key in seen:
+                continue
+            seen.add(key)
+            out.append({
+                "title":  al.get("title", ""),
+                "artist": (al.get("artist") or {}).get("name", ""),
+                "id":     al.get("id"),
+                "cover":  al.get("cover_medium") or al.get("cover_small") or "",
+                "link":   al.get("link") or f"https://www.deezer.com/album/{al.get('id')}",
+                "nb_tracks": al.get("nb_tracks"),
+            })
+
+    for name in seeds:
+        aid = _resolve_id(name)
+        if not aid:
+            continue
+        try:
+            ru = f"https://api.deezer.com/artist/{aid}/related?limit=4&output=json"
+            with urllib.request.urlopen(urllib.request.Request(ru, headers=headers), timeout=10) as r:
+                related = json.loads(r.read().decode("utf-8")).get("data") or []
+        except Exception:
+            related = []
+        for ra in related:
+            if ra.get("id"):
+                _add_albums(ra["id"], 3)
+
+    import random as _rnd
+    _rnd.shuffle(out)
+    return {"albums": out[:12]}
+
+
+def _fetch_lyrics(artist: str, title: str, album: str = "", duration: str = "") -> dict:
+    """Fetch lyrics from LRCLIB (free, no key). Returns {synced, plain} where
+    `synced` is LRC-timestamped text (may be empty) and `plain` is the plain
+    lyrics. Tries an exact get first, then a fuzzy search. Cached per track."""
+    artist = (artist or "").strip()
+    title  = (title or "").strip()
+    if not artist or not title:
+        return {"error": "missing artist/title"}
+    key = f"{artist.lower()}\x00{title.lower()}"
+    if key in _lyrics_cache:
+        return _lyrics_cache[key]
+
+    headers = {"User-Agent": "TGDownloader/6 (https://github.com/Thurlws/TGDownloader)"}
+    result: dict = {"error": "not found"}
+
+    def _shape(d: dict) -> "dict | None":
+        synced = (d.get("syncedLyrics") or "").strip()
+        plain  = (d.get("plainLyrics")  or "").strip()
+        if not synced and not plain:
+            return None
+        return {"synced": synced, "plain": plain,
+                "title": d.get("trackName") or title, "artist": d.get("artistName") or artist}
+
+    try:
+        # 1) Exact get (best — uses album + duration to disambiguate)
+        q = f"track_name={url_quote(title)}&artist_name={url_quote(artist)}"
+        if album:
+            q += f"&album_name={url_quote(album)}"
+        if str(duration).isdigit():
+            q += f"&duration={int(duration)}"
+        try:
+            req = urllib.request.Request("https://lrclib.net/api/get?" + q, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                shaped = _shape(json.loads(resp.read().decode("utf-8")))
+                if shaped:
+                    result = shaped
+        except urllib.error.HTTPError:
+            pass
+
+        # 2) Fuzzy search fallback
+        if "error" in result:
+            req = urllib.request.Request(
+                f"https://lrclib.net/api/search?track_name={url_quote(title)}&artist_name={url_quote(artist)}",
+                headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                hits = json.loads(resp.read().decode("utf-8"))
+            for h in (hits or []):
+                shaped = _shape(h)
+                if shaped:
+                    result = shaped
+                    break
+    except Exception as exc:
+        logger.debug("Lyrics fetch failed for %s - %s: %s", artist, title, exc)
+        result = {"error": str(exc)}
+
+    _lyrics_cache[key] = result
+    return result
 
 
 # ══════════════════════════════════════════════
@@ -1014,6 +1456,37 @@ def _split_genres(raw_values: "list") -> "list[str]":
     return list(seen.values())
 
 
+def _library_stats_signature(home_path: Path, artists_root: Path) -> str:
+    """A cheap fingerprint of the library's current state, used to validate the
+    persisted /library-stats cache. Combines the manifest file's mtime+size with
+    every album directory's mtime — enough to catch downloads, additions and
+    deletions without the expensive full-tree walk + per-file tag reads that the
+    stats compute itself performs. Returns a short hex digest."""
+    import hashlib as _hl
+    parts: list = []
+    try:
+        mp = home_path / ".tgdownloader" / "manifest.json"
+        if mp.exists():
+            st = mp.stat()
+            parts.append(f"m:{int(st.st_mtime)}:{st.st_size}")
+    except Exception:
+        pass
+    try:
+        if artists_root.is_dir():
+            for artist_dir in sorted(artists_root.iterdir()):
+                if not artist_dir.is_dir() or artist_dir.name.startswith("."):
+                    continue
+                for album_dir in sorted(artist_dir.iterdir()):
+                    if album_dir.is_dir():
+                        try:
+                            parts.append(f"{artist_dir.name}/{album_dir.name}:{int(album_dir.stat().st_mtime)}")
+                        except Exception:
+                            pass
+    except Exception:
+        pass
+    return _hl.sha1("|".join(parts).encode("utf-8")).hexdigest()
+
+
 def _scan_genres(home_path: Path) -> "dict[str, list[dict]]":
     """Walk every artist/album/track in the library and group local audio files
     by their genre tag (read via Mutagen).  Returns { genre: [ {path, artist,
@@ -1141,6 +1614,118 @@ def _create_genre_playlist(home_path: Path, genre: str, name: str) -> dict:
         "total":     len(matches),
         "directory": str(pl_dir),
     }
+
+
+def _scan_all_tracks(home_path: Path) -> "list[dict]":
+    """Flat scan of every library track with the metadata needed for smart
+    playlists: {path, artist, album, title, genres, track_num, ext, mtime}."""
+    from mutagen import File as _MF
+    out: list = []
+    scan_root = home_path / ARTISTS_DIRNAME
+    if not scan_root.is_dir():
+        scan_root = home_path
+    for artist_dir in sorted(scan_root.iterdir()):
+        if not artist_dir.is_dir() or artist_dir.name.startswith("."):
+            continue
+        if artist_dir.name in (PLAYLISTS_DIRNAME, ARTISTS_DIRNAME):
+            continue
+        for album_dir in sorted(artist_dir.iterdir()):
+            if not album_dir.is_dir():
+                continue
+            for f in sorted(album_dir.iterdir()):
+                if not f.is_file() or f.suffix.lower() not in _GENRE_AUDIO_EXT:
+                    continue
+                title = None; genres = []; track_num = None
+                try:
+                    audio = _MF(f, easy=True)
+                except Exception:
+                    audio = None
+                if audio:
+                    t_tag = audio.get("title")
+                    if t_tag:
+                        title = str(t_tag[0])
+                    g_tag = audio.get("genre")
+                    if g_tag:
+                        genres = _split_genres(g_tag)
+                    tn = audio.get("tracknumber")
+                    if tn:
+                        try:
+                            track_num = int(str(tn[0]).split("/")[0])
+                        except Exception:
+                            pass
+                try:
+                    mtime = f.stat().st_mtime
+                except Exception:
+                    mtime = 0
+                out.append({
+                    "path": str(f), "artist": artist_dir.name, "album": album_dir.name,
+                    "title": title or f.stem, "genres": genres, "track_num": track_num,
+                    "ext": f.suffix.lower().lstrip("."), "mtime": mtime,
+                })
+    return out
+
+
+def _create_smart_playlist(home_path: Path, name: str, opts: dict) -> dict:
+    """Materialise a playlist folder from rule-based filters over the library:
+    format / genre / artist substrings, "added within N days", sort + limit."""
+    import shutil, time
+
+    tracks = _scan_all_tracks(home_path)
+    fmt    = (opts.get("format") or "").lower().lstrip(".")
+    genre  = (opts.get("genre")  or "").lower().strip()
+    artist = (opts.get("artist") or "").lower().strip()
+    try:    added_days = int(opts.get("added_days") or 0)
+    except Exception: added_days = 0
+    try:    limit = int(opts.get("limit") or 0)
+    except Exception: limit = 0
+    cutoff = (time.time() - added_days * 86400) if added_days > 0 else None
+
+    def _ok(t):
+        if fmt and t["ext"] != fmt:
+            return False
+        if genre and not any(genre in g.lower() for g in t["genres"]):
+            return False
+        if artist and artist not in t["artist"].lower():
+            return False
+        if cutoff is not None and t["mtime"] < cutoff:
+            return False
+        return True
+
+    matches = [t for t in tracks if _ok(t)]
+    if opts.get("sort") == "recent":
+        matches.sort(key=lambda t: t["mtime"], reverse=True)
+    else:
+        matches.sort(key=lambda t: (t["artist"].lower(), t["album"].lower(),
+                                    t["track_num"] if t["track_num"] is not None else 9999,
+                                    t["title"].lower()))
+    if limit > 0:
+        matches = matches[:limit]
+    if not matches:
+        return {"error": "No tracks matched those rules."}
+
+    pl_name = _sanitise_dirname(name or "Smart Playlist")
+    pl_dir  = home_path / PLAYLISTS_DIRNAME / pl_name
+    try:
+        pl_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        return {"error": f"Could not create playlist folder: {exc}"}
+
+    pad = max(2, len(str(len(matches))))
+    copied = 0
+    for i, t in enumerate(matches, start=1):
+        src = Path(t["path"])
+        if not src.exists():
+            continue
+        dest = pl_dir / f"{str(i).zfill(pad)} - {src.name}"
+        try:
+            shutil.copy2(src, dest)
+            _set_track_number(dest, i)
+            copied += 1
+        except Exception as exc:
+            logger.debug("smart playlist copy failed: %s", exc)
+
+    return {"ok": True, "name": pl_name, "copied": copied, "total": len(matches),
+            "directory": str(pl_dir)}
 
 
 def _resolve_track_sources(tracks: list) -> list:
@@ -1291,6 +1876,32 @@ def _remove_tracks_from_playlist(path_hash: str, names: list) -> dict:
             pass
 
     return {"ok": True, "removed": removed}
+
+
+def _reorder_playlist_tracks(path_hash: str, names: list) -> dict:
+    """Persist a new track order for a playlist by rewriting each file's
+    track-number tag (1..N) to match the given filename order. Playlist track
+    listing already sorts by track number, so this fixes the order on disk."""
+    pl_dir = _path_hash_map.get((path_hash or "").strip())
+    if not pl_dir or not pl_dir.is_dir():
+        return {"error": "Playlist not found — try refreshing the library."}
+
+    base = pl_dir.resolve()
+    ordered = 0
+    for i, nm in enumerate(names or [], start=1):
+        nm = (nm or "").strip()
+        if not nm:
+            continue
+        target = (pl_dir / nm).resolve()
+        try:
+            target.relative_to(base)
+        except ValueError:
+            continue
+        if target.is_file():
+            _set_track_number(target, i)
+            ordered += 1
+
+    return {"ok": True, "ordered": ordered}
 
 
 # ══════════════════════════════════════════════
@@ -1600,6 +2211,118 @@ def _deezer_search(raw_query: str) -> dict:
     req = urllib.request.Request(api_url, headers={"User-Agent": "TGDownloader/6"})
     with urllib.request.urlopen(req, timeout=10) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+# Spotify access token via the official Client Credentials flow. Needs a free
+# Spotify Developer app — the user pastes its Client ID + Secret into Settings
+# (stored as spotify_client_id / spotify_client_secret in the main config).
+# Tokens last ~1h and are cached here. This replaced the keyless web-player
+# token, which Spotify locked behind a rotating TOTP signature in 2025.
+_spotify_token_cache: dict = {"token": "", "exp": 0.0}
+
+_SPOTIFY_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+               "AppleWebKit/537.36 (KHTML, like Gecko) "
+               "Chrome/120.0 Safari/537.36")
+
+
+def _spotify_credentials() -> "tuple[str, str] | tuple[None, None]":
+    """Return (client_id, client_secret) from config, or (None, None) if unset."""
+    try:
+        cfg    = _tgd_import().load_config()
+        cid    = (cfg.get("spotify_client_id") or "").strip()
+        secret = (cfg.get("spotify_client_secret") or "").strip()
+        if cid and secret:
+            return cid, secret
+    except Exception:
+        pass
+    return None, None
+
+
+def _spotify_access_token() -> str:
+    """Return a cached Spotify app token, fetching a fresh one via the Client
+    Credentials flow when missing or within 30s of expiry. Raises if the API
+    credentials aren't configured or Spotify rejects them."""
+    now = time.time()
+    if _spotify_token_cache["token"] and _spotify_token_cache["exp"] - 30 > now:
+        return _spotify_token_cache["token"]
+
+    cid, secret = _spotify_credentials()
+    if not (cid and secret):
+        raise RuntimeError("Spotify API credentials not configured")
+
+    auth = b64encode(f"{cid}:{secret}".encode("utf-8")).decode("ascii")
+    req = urllib.request.Request(
+        "https://accounts.spotify.com/api/token",
+        data=b"grant_type=client_credentials",
+        headers={"Authorization": f"Basic {auth}",
+                 "Content-Type": "application/x-www-form-urlencoded",
+                 "User-Agent": _SPOTIFY_UA},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    tok = data.get("access_token", "")
+    if not tok:
+        raise RuntimeError("Spotify returned no access token")
+    _spotify_token_cache["token"] = tok
+    _spotify_token_cache["exp"]   = now + float(data.get("expires_in") or 3600)
+    return tok
+
+
+def _spotify_search(raw_query: str) -> dict:
+    """Album search via the official Spotify Web API, shaped like Deezer results
+    so the UI renders identically. Each result carries its real Spotify album URL
+    in `link` — the download bot accepts Spotify links directly, so no Deezer
+    resolution is needed. Falls back to Deezer search if Spotify is unreachable
+    or its API credentials aren't configured; the returned dict flags which case
+    so the UI can prompt the user appropriately."""
+    unconfigured = _spotify_credentials() == (None, None)
+    try:
+        token = _spotify_access_token()
+        # Spotify caps Client-Credentials (app-only) search at limit=10; anything
+        # higher 400s with "Invalid limit".
+        api_url = ("https://api.spotify.com/v1/search"
+                   f"?q={url_quote(raw_query)}&type=album&limit=10")
+        req = urllib.request.Request(
+            api_url, headers={"Authorization": f"Bearer {token}",
+                              "User-Agent": _SPOTIFY_UA})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        detail = str(exc)
+        # urllib HTTPError stringifies to just "HTTP Error 400: Bad Request"; the
+        # real reason (e.g. {"error":"invalid_client"}) is in the response body.
+        body = getattr(exc, "read", None)
+        if callable(body):
+            try:
+                detail = f"{detail} — {body().decode('utf-8', 'replace')[:300]}"
+            except Exception:
+                pass
+        logger.warning("Spotify search failed (%s) — falling back to Deezer", detail)
+        fb = _deezer_search(raw_query)
+        fb["fellback_to_deezer"] = True       # these are Deezer links, not Spotify
+        fb["spotify_unconfigured"] = unconfigured  # creds missing vs. request failed
+        fb["spotify_error"] = detail
+        return fb
+
+    out = []
+    for a in data.get("albums", {}).get("items", []):
+        images = a.get("images") or []
+        cover_big   = images[0].get("url", "")  if images else ""
+        cover_small = images[-1].get("url", "") if images else cover_big
+        artists = ", ".join(ar.get("name", "") for ar in a.get("artists", []) if ar.get("name"))
+        out.append({
+            "id":           None,
+            "link":         (a.get("external_urls") or {}).get("spotify")
+                            or f"https://open.spotify.com/album/{a.get('id','')}",
+            "title":        a.get("name", ""),
+            "artist":       {"name": artists},
+            "cover_small":  cover_small,
+            "cover_medium": cover_big,
+            "nb_tracks":    a.get("total_tracks"),
+            "_provider":    "spotify",
+        })
+    return {"data": out}
 
 
 def _deezer_search_album_id(artist: str, album: str) -> "str | None":
@@ -2373,6 +3096,65 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": str(exc)})
             return
 
+        if path == "/health":
+            # Lightweight, read-only environment check for the diagnostics panel.
+            # Each item: {ok: bool, label, detail}. Never raises — every probe is
+            # individually guarded so one failure can't blank the whole report.
+            checks: list = []
+
+            def _add(ok, label, detail=""):
+                checks.append({"ok": bool(ok), "label": label, "detail": str(detail)})
+
+            # ffmpeg (needed for in-app playback of undecodable files)
+            try:
+                ff = _ffmpeg_exe()
+                _add(bool(ff), "ffmpeg",
+                     ff if ff else "Not found — hi-res/exotic tracks can't play in-app")
+            except Exception as exc:
+                _add(False, "ffmpeg", str(exc))
+
+            # Telegram session (required before any download works)
+            try:
+                sess = DATA_DIR / "tg_audio_session.session"
+                _add(sess.exists(), "Telegram session",
+                     "Connected" if sess.exists() else "Not connected — use the TG button")
+            except Exception as exc:
+                _add(False, "Telegram session", str(exc))
+
+            # Home music folder: set / exists / writable
+            home_path = None
+            try:
+                cfg  = _tgd_import().load_config()
+                home = cfg.get("home_music_folder") or ""
+                if not home:
+                    _add(False, "Home folder", "Not set")
+                else:
+                    from pathlib import Path as _P
+                    home_path = _P(home)
+                    if not home_path.exists():
+                        _add(False, "Home folder", f"Missing: {home}")
+                    else:
+                        writable = os.access(home_path, os.W_OK)
+                        _add(writable, "Home folder",
+                             home if writable else f"Not writable: {home}")
+            except Exception as exc:
+                _add(False, "Home folder", str(exc))
+
+            # Free disk space on the home folder's drive
+            try:
+                import shutil as _sh
+                target = home_path if (home_path and home_path.exists()) else DATA_DIR
+                usage  = _sh.disk_usage(str(target))
+                gb_free = usage.free / 1_073_741_824
+                _add(gb_free >= 1.0, "Free disk space",
+                     f"{gb_free:.1f} GB free" + ("" if gb_free >= 1.0 else " — running low"))
+            except Exception as exc:
+                _add(False, "Free disk space", str(exc))
+
+            ok_all = all(c["ok"] for c in checks)
+            self._send_json(200, {"ok": ok_all, "checks": checks})
+            return
+
         if path == "/library-scan":
             try:
                 m    = _tgd_import()
@@ -2485,7 +3267,8 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     cfg = json.loads((DATA_DIR / "tg_audio_config.json").read_text("utf-8"))
                     for secret in ("api_id", "api_hash", "listenbrainz_token",
-                                   "lastfm_api_key", "lastfm_secret", "lastfm_session_key"):
+                                   "lastfm_api_key", "lastfm_secret", "lastfm_session_key",
+                                   "spotify_client_id", "spotify_client_secret"):
                         cfg.pop(secret, None)
                     zf.writestr("tg_audio_config.json", json.dumps(cfg, indent=2))
                 except Exception:
@@ -2511,14 +3294,35 @@ class Handler(BaseHTTPRequestHandler):
                     k, v = part.split("=", 1)
                     params[unquote_plus(k)] = unquote_plus(v)
             query = params.get("q", "").strip()
+            provider = (params.get("provider", "") or "deezer").lower()
             if not query:
                 self._send_json(400, {"error": "Missing query parameter 'q'"})
                 return
             try:
-                self._send_json(200, _deezer_search(query))
+                self._send_json(200, _spotify_search(query) if provider == "spotify" else _deezer_search(query))
             except Exception as exc:
-                logger.warning("Deezer search failed: %s", exc)
+                logger.warning("%s search failed: %s", provider, exc)
                 self._send_json(500, {"error": str(exc)})
+            return
+
+        # Resolve an album (by artist + title) to a downloadable Deezer album.
+        if path == "/resolve-deezer":
+            qs = urlparse(self.path).query
+            params = {}
+            for part in qs.split("&"):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    params[unquote_plus(k)] = unquote_plus(v)
+            artist = params.get("artist", "").strip()
+            album  = params.get("album", "").strip()
+            if not album:
+                self._send_json(400, {"error": "Missing album"})
+                return
+            aid = _deezer_search_album_id(artist, album)
+            if aid:
+                self._send_json(200, {"id": aid, "url": f"https://www.deezer.com/album/{aid}"})
+            else:
+                self._send_json(404, {"error": "Not found on Deezer"})
             return
 
         if path == "/debug-log":
@@ -2582,6 +3386,24 @@ class Handler(BaseHTTPRequestHandler):
 
                 m.migrate_artists_layout(home_path)   # ensure Artists/ layout
                 artists_root = home_path / ARTISTS_DIRNAME
+
+                # Serve from the persisted cache when the library is unchanged.
+                # The signature only stats the manifest + album dirs (cheap),
+                # whereas a full recompute walks every file twice and reads tags
+                # from each (slow — this is what made the first load drag).
+                from urllib.parse import parse_qs as _parse_qs
+                _q = _parse_qs(urlparse(self.path).query)
+                force_refresh = _q.get("refresh", ["0"])[0] in ("1", "true", "yes")
+                signature = _library_stats_signature(home_path, artists_root)
+                if not force_refresh:
+                    try:
+                        if _LIB_STATS_CACHE_FILE.exists():
+                            cached = json.loads(_LIB_STATS_CACHE_FILE.read_text(encoding="utf-8"))
+                            if cached.get("signature") == signature and isinstance(cached.get("data"), dict):
+                                self._send_json(200, cached["data"])
+                                return
+                    except Exception:
+                        logger.debug("library-stats cache read failed", exc_info=True)
 
                 AUDIO_EXT = {".mp3",".flac",".ogg",".opus",".m4a",".aac",
                              ".wav",".aif",".aiff",".wma",".ape",".wv"}
@@ -2670,7 +3492,7 @@ class Handler(BaseHTTPRequestHandler):
                     key=lambda x: x["count"], reverse=True
                 )
 
-                self._send_json(200, {
+                payload = {
                     "total_files":           total_files,
                     "total_bytes":           total_bytes,
                     "artist_count":          len(artist_stats),
@@ -2682,7 +3504,15 @@ class Handler(BaseHTTPRequestHandler):
                     "growth":                growth,
                     "top_genres":            top_genres,
                     "formats":               formats,
-                })
+                }
+                # Persist for instant first-load next time (validated by signature).
+                try:
+                    _LIB_STATS_CACHE_FILE.write_text(
+                        json.dumps({"signature": signature, "data": payload}),
+                        encoding="utf-8")
+                except Exception:
+                    logger.debug("library-stats cache write failed", exc_info=True)
+                self._send_json(200, payload)
             except Exception as exc:
                 logger.exception("Error in /library-stats")
                 self._send_json(500, {"error": str(exc)})
@@ -2771,6 +3601,10 @@ class Handler(BaseHTTPRequestHandler):
                             if mm:
                                 album_id = mm.group(1)
 
+                        try:
+                            _mtime = album_dir.stat().st_mtime
+                        except Exception:
+                            _mtime = 0
                         albums_list.append({
                             "artist":      artist_dir.name,
                             "album":       album_dir.name,
@@ -2781,6 +3615,7 @@ class Handler(BaseHTTPRequestHandler):
                             "in_manifest": in_manifest,
                             "path_hash":   ph,
                             "is_playlist": False,
+                            "mtime":       _mtime,
                             "_album_id":   album_id,
                         })
 
@@ -2930,7 +3765,7 @@ class Handler(BaseHTTPRequestHandler):
             if ph in _local_cover_cache:
                 img_bytes, mime = _local_cover_cache[ph]
             else:
-                album_dir = _path_hash_map.get(ph)
+                album_dir = _lookup_album_dir(ph)
                 if not album_dir:
                     self.send_error(404)
                     return
@@ -2958,7 +3793,7 @@ class Handler(BaseHTTPRequestHandler):
                     params[unquote_plus(k)] = unquote_plus(v)
             ph       = params.get("path_hash", "")
             filename = params.get("name", "")
-            album_dir = _path_hash_map.get(ph)
+            album_dir = _lookup_album_dir(ph)
             if not album_dir or not filename:
                 self.send_error(404)
                 return
@@ -3000,6 +3835,61 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": "Invalid artist id"})
             return
 
+        # ── Artist biography (Wikipedia — Deezer provides none) ──────────
+        if path == "/artist-bio":
+            qs = urlparse(self.path).query
+            params = {}
+            for part in qs.split("&"):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    params[unquote_plus(k)] = unquote_plus(v)
+            name = params.get("name", "").strip()
+            if not name:
+                self._send_json(400, {"error": "Missing 'name'"})
+                return
+            data = _wikipedia_bio(name)
+            self._send_json(200 if "error" not in data else 404, data)
+            return
+
+        # ── Album recommendations (seeded from library artists) ──────────
+        if path == "/recommendations":
+            qs = urlparse(self.path).query
+            params = {}
+            for part in qs.split("&"):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    params[unquote_plus(k)] = unquote_plus(v)
+            seeds = [s for s in (params.get("seeds", "").split("|")) if s.strip()]
+            self._send_json(200, _deezer_recommendations(seeds))
+            return
+
+        # ── Autoplay radio (Deezer related-artist previews) ──────────────
+        if path == "/radio":
+            qs = urlparse(self.path).query
+            params = {}
+            for part in qs.split("&"):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    params[unquote_plus(k)] = unquote_plus(v)
+            data = _deezer_radio(params.get("artist", ""), params.get("artist_id", ""))
+            self._send_json(200 if "error" not in data else 404, data)
+            return
+
+        # ── Song lyrics (LRCLIB) ─────────────────────────────────────────
+        if path == "/lyrics":
+            qs = urlparse(self.path).query
+            params = {}
+            for part in qs.split("&"):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    params[unquote_plus(k)] = unquote_plus(v)
+            data = _fetch_lyrics(
+                params.get("artist", ""), params.get("title", ""),
+                params.get("album", ""),  params.get("duration", ""),
+            )
+            self._send_json(200 if "error" not in data else 404, data)
+            return
+
         # ── Album track listing (local files + Deezer preview URLs) ──────
         if path == "/album-tracks":
             qs = urlparse(self.path).query
@@ -3026,6 +3916,35 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         # ── Local audio file streaming ─────────────────────────────────────
+        # ── Transcoded stream (fallback for files the browser can't decode) ──
+        if path == "/audio-stream":
+            qs = urlparse(self.path).query
+            params = {}
+            for part in qs.split("&"):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    params[unquote_plus(k)] = unquote_plus(v)
+            ph       = params.get("path_hash", "")
+            filename = params.get("name", "")
+            album_dir = _lookup_album_dir(ph)
+            if not album_dir or not filename:
+                self.send_error(404)
+                return
+            src = _resolve_in_dir(album_dir, filename)
+            if not src:
+                self.send_error(404)
+                return
+            if not _ffmpeg_exe():
+                # 501 → the frontend tells the user to install ffmpeg
+                self.send_error(501, "ffmpeg not installed")
+                return
+            out = _transcode_to_mp3(src)
+            if not out:
+                self.send_error(500, "transcode failed")
+                return
+            _send_file_with_range(self, out, "audio/mpeg")
+            return
+
         if path == "/audio-file":
             qs = urlparse(self.path).query
             params: dict[str, str] = {}
@@ -3038,7 +3957,7 @@ class Handler(BaseHTTPRequestHandler):
             if not ph or not filename:
                 self.send_error(400)
                 return
-            album_dir = _path_hash_map.get(ph)
+            album_dir = _lookup_album_dir(ph)
             if not album_dir:
                 self.send_error(404)
                 return
@@ -3049,8 +3968,24 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(403)
                 return
             if not file_path.exists() or not file_path.is_file():
-                self.send_error(404)
-                return
+                # Fall back to a tolerant match: Unicode normalisation (NFC/NFD)
+                # and case differences can make an exact path miss a real file.
+                import unicodedata as _ud
+                def _norm(s: str) -> str:
+                    return _ud.normalize("NFC", s).casefold()
+                want = _norm(filename)
+                match = None
+                try:
+                    for f in album_dir.iterdir():
+                        if f.is_file() and _norm(f.name) == want:
+                            match = f
+                            break
+                except Exception:
+                    match = None
+                if match is None:
+                    self.send_error(404)
+                    return
+                file_path = match.resolve()
             ext = file_path.suffix.lower()
             mime_map = {
                 ".mp3":  "audio/mpeg",  ".flac": "audio/flac",
@@ -3385,6 +4320,21 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": str(exc)})
             return
 
+        if path == "/create-smart-playlist":
+            try:
+                m    = _tgd_import()
+                cfg  = m.load_config()
+                home = cfg.get("home_music_folder")
+                if not home or not Path(home).exists():
+                    self._send_json(400, {"error": "No home music folder configured"})
+                    return
+                result = _create_smart_playlist(Path(home), (body.get("name") or "").strip(), body or {})
+                self._send_json(200 if result.get("ok") else 400, result)
+            except Exception as exc:
+                logger.exception("Error in /create-smart-playlist")
+                self._send_json(500, {"error": str(exc)})
+            return
+
         # ── Add selected tracks to a playlist (new or existing) ───────────
         if path == "/playlist-add-tracks":
             name   = (body.get("name") or "").strip()
@@ -3422,6 +4372,20 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200 if result.get("ok") else 400, result)
             except Exception as exc:
                 logger.exception("Error in /playlist-remove-tracks")
+                self._send_json(500, {"error": str(exc)})
+            return
+
+        if path == "/playlist-reorder":
+            ph    = (body.get("path_hash") or "").strip()
+            names = body.get("names") or []
+            if not ph or not names:
+                self._send_json(400, {"error": "Missing path_hash or names"})
+                return
+            try:
+                result = _reorder_playlist_tracks(ph, names)
+                self._send_json(200 if result.get("ok") else 400, result)
+            except Exception as exc:
+                logger.exception("Error in /playlist-reorder")
                 self._send_json(500, {"error": str(exc)})
             return
 

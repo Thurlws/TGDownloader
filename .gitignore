@@ -8,6 +8,7 @@ tg_audio_session.session-journal
 # ── Runtime data (generated locally, not needed in repo) ──────────────────
 hash_cache.json
 album_id_cache.json
+library_stats_cache.json
 liked_songs.json
 watchlist.json
 tg_sessions.json
@@ -15,8 +16,9 @@ bot_initialized.flag
 tgdownloader_debug.log
 pause.flag
 
-# ── Temp download directories ─────────────────────────────────────────────
+# ── Temp download directories & runtime caches ───────────────────────────
 tg_tmp_downloads/
+tg_transcode_cache/
 
 # ── Python ────────────────────────────────────────────────────────────────
 __pycache__/

@@ -170,7 +170,7 @@ All settings are accessible via **Settings** in the app. The config file is `tg_
 
 | Shortcut | Action |
 |---|---|
-| `Ctrl+K` | Search Deezer |
+| `Ctrl+K` | Search |
 | `Ctrl+Enter` | Run / Stop |
 | `Ctrl+S` | Save queue as session |
 | `Ctrl+L` | Clear log |
