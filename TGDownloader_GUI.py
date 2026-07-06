@@ -53,6 +53,8 @@ from pathlib import Path
 from socketserver import ThreadingMixIn
 from urllib.parse import urlparse, quote as url_quote, unquote_plus
 
+import tgd_common
+
 
 # ── App-window launcher ───────────────────────────────────────────────────────
 # Opens the GUI in a chromium "app" window (no address bar, no tabs, no toolbar)
@@ -178,7 +180,7 @@ _LIB_STATS_CACHE_FILE = DATA_DIR / "library_stats_cache.json"  # persisted /libr
 # ── Auto-update (notify-only) ─────────────────────────────────────────────────
 # The GUI polls GitHub Releases for a newer tag and shows a banner. It never
 # downloads or replaces files — the user updates manually from the release page.
-APP_VERSION  = "1.2.0"                        # bump this when you cut a new release
+APP_VERSION  = tgd_common.__version__         # single-sourced in tgd_common.py
 GITHUB_REPO  = "Thurlws/TGDownloader"         # owner/repo the update check targets
 
 # Backend process command
@@ -192,6 +194,37 @@ HTTP_PORT = 7842
 LOCK_PORT = 7843   # single-instance sentinel — we bind this; nobody else does
 
 logger = logging.getLogger("gui_server")
+
+
+# ── Request-origin guard ──────────────────────────────────────────────────────
+# The server only binds 127.0.0.1, but that alone does not stop the browser
+# from being used as a proxy: any web page can fire cross-origin requests at
+# http://127.0.0.1:7842 (CSRF — responses are unreadable, but state-changing
+# endpoints like /delete-file still execute), WebSockets are exempt from the
+# same-origin policy entirely, and DNS rebinding defeats IP-based trust while
+# keeping the Host header attacker-controlled.  Rejecting foreign Host/Origin
+# values closes all three.  Same-origin requests from our own GUI carry either
+# no Origin header (plain GETs) or one of the allowed values.
+
+_ALLOWED_HOSTS = {
+    f"127.0.0.1:{HTTP_PORT}", f"localhost:{HTTP_PORT}", f"[::1]:{HTTP_PORT}",
+    "127.0.0.1", "localhost", "[::1]",
+}
+_ALLOWED_ORIGINS = {
+    f"http://127.0.0.1:{HTTP_PORT}", f"http://localhost:{HTTP_PORT}",
+    f"http://[::1]:{HTTP_PORT}",
+}
+
+
+def _is_local_request(host: "str | None", origin: "str | None") -> bool:
+    """Pure predicate: is this Host/Origin pair from our own local GUI?"""
+    host = (host or "").strip().lower()
+    if host and host not in _ALLOWED_HOSTS:
+        return False
+    origin = (origin or "").strip().lower()
+    if origin and origin not in _ALLOWED_ORIGINS:
+        return False
+    return True
 
 
 # ── Update check ──────────────────────────────────────────────────────────────
@@ -260,24 +293,13 @@ def _check_for_update(force: bool = False) -> dict:
 
 
 def _load_api_credentials() -> "tuple[int | None, str | None]":
-    """Read API_ID and API_HASH from tg_audio_config.json.
+    """(api_id, api_hash) or (None, None) if not yet configured.
 
-    Returns (api_id, api_hash) or (None, None) if not yet configured.
     Called at startup AND before each Telegram operation so credentials set
-    via the wizard take effect without restarting the server.
+    via the wizard take effect without restarting the server.  Delegates to
+    tgd_common so the keyring overlay (use_keyring) is honoured.
     """
-    cfg_path = DATA_DIR / "tg_audio_config.json"
-    if not cfg_path.exists():
-        return None, None
-    try:
-        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-        api_id   = cfg.get("api_id")
-        api_hash = cfg.get("api_hash", "")
-        if api_id and api_hash:
-            return int(api_id), str(api_hash)
-    except Exception:
-        pass
-    return None, None
+    return tgd_common.get_api_credentials()
 
 
 def _credentials_configured() -> bool:
@@ -285,12 +307,7 @@ def _credentials_configured() -> bool:
     api_id, api_hash = _load_api_credentials()
     if not (api_id and api_hash and len(str(api_hash)) == 32):
         return False
-    cfg_path = DATA_DIR / "tg_audio_config.json"
-    try:
-        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-        return bool(cfg.get("bot_username", "").strip())
-    except Exception:
-        return False
+    return bool(tgd_common.load_config().get("bot_username", "").strip())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -467,25 +484,18 @@ def _has_quality_btns(msg) -> bool:
 
 async def _tg_get_quality() -> dict:
     """Read quality setting from local config (no bot comms)."""
-    cfg_path = DATA_DIR / "tg_audio_config.json"
     try:
-        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-        return {"quality": cfg.get("target_quality", "FLAC")}
+        return {"quality": tgd_common.load_config().get("target_quality", "FLAC")}
     except Exception as exc:
         return {"error": str(exc)}
 
 
 async def _tg_set_quality(target: str) -> dict:
     """Write quality setting to local config (no bot comms)."""
-    cfg_path = DATA_DIR / "tg_audio_config.json"
     try:
-        cfg = {}
-        if cfg_path.exists():
-            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        cfg = tgd_common.load_config()
         cfg["target_quality"] = target
-        cfg_path.write_text(
-            json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        tgd_common.save_config(cfg)
         return {"ok": True, "quality": target}
     except Exception as exc:
         return {"error": str(exc)}
@@ -931,15 +941,7 @@ def _deezer_radio(name: str, artist_id: str = "") -> dict:
 
 def _ffmpeg_exe() -> "str | None":
     """Path to a usable ffmpeg binary, or None. Cached after first lookup."""
-    global _FFMPEG_PATH
-    try:
-        return _FFMPEG_PATH
-    except NameError:
-        pass
-    import shutil as _sh
-    found = _sh.which("ffmpeg")
-    globals()["_FFMPEG_PATH"] = found
-    return found
+    return tgd_common.ffmpeg_exe()
 
 
 def _transcode_to_mp3(src: "Path") -> "Path | None":
@@ -976,20 +978,46 @@ def _transcode_to_mp3(src: "Path") -> "Path | None":
     return None
 
 
-def _send_file_with_range(h, file_path: "Path", mime: str) -> None:
-    """Stream a file to the client with HTTP Range support (so the browser can
-    seek). Shared by /audio-file (transcoded) playback."""
-    file_size = file_path.stat().st_size
-    range_header = h.headers.get("Range", "")
+def _parse_range_header(range_header: str, file_size: int) -> "tuple[int, int] | None":
+    """Parse a single-range ``bytes=`` header into an inclusive (start, end).
+
+    Handles suffix ranges (``bytes=-500`` = last 500 bytes), which the old
+    inline parser silently misread as "from byte 0".  Returns None when the
+    range is unsatisfiable (caller should answer 416).  A malformed header is
+    treated as "no range" per RFC 7233 and yields the full span."""
     start, end = 0, file_size - 1
     if range_header.startswith("bytes="):
+        spec = range_header[6:].split(",")[0].strip()
+        s, _, e = spec.partition("-")
         try:
-            parts = range_header[6:].split("-")
-            start = int(parts[0]) if parts[0] else 0
-            end   = int(parts[1]) if len(parts) > 1 and parts[1] else file_size - 1
-            end   = min(end, file_size - 1)
-        except (ValueError, IndexError):
-            start, end = 0, file_size - 1
+            if not s:
+                n = int(e)              # suffix range: last n bytes
+                if n <= 0:
+                    return None
+                start = max(0, file_size - n)
+            else:
+                start = int(s)
+                if e:
+                    end = min(int(e), file_size - 1)
+            if start > end or start >= file_size:
+                return None
+        except ValueError:
+            return 0, file_size - 1     # malformed → serve the whole file
+    return start, end
+
+
+def _send_file_with_range(h, file_path: "Path", mime: str) -> None:
+    """Stream a file to the client with HTTP Range support (so the browser can
+    seek). Shared by /audio-stream (transcoded) and /audio-file playback."""
+    file_size = file_path.stat().st_size
+    range_header = h.headers.get("Range", "")
+    span = _parse_range_header(range_header, file_size)
+    if span is None:
+        h.send_response(416)
+        h.send_header("Content-Range", f"bytes */{file_size}")
+        h.end_headers()
+        return
+    start, end = span
     length = end - start + 1
     h.send_response(206 if range_header else 200)
     h.send_header("Content-Type", mime)
@@ -1492,7 +1520,6 @@ def _scan_genres(home_path: Path) -> "dict[str, list[dict]]":
     by their genre tag (read via Mutagen).  Returns { genre: [ {path, artist,
     album, title, track_num} ] }.  Files with no genre tag are skipped."""
     from mutagen import File as _MF
-    import re as _re
 
     genres: "dict[str, list[dict]]" = {}
     scan_root = home_path / ARTISTS_DIRNAME
@@ -2825,12 +2852,26 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _reject_foreign(self) -> bool:
+        """CSRF / DNS-rebinding guard — see _is_local_request. True = rejected."""
+        if _is_local_request(self.headers.get("Host"), self.headers.get("Origin")):
+            return False
+        logger.warning(
+            "Rejected non-local request: host=%r origin=%r path=%s",
+            self.headers.get("Host"), self.headers.get("Origin"), self.path,
+        )
+        self.send_error(403, "Forbidden: non-local request")
+        return True
+
     # ── GET ────────────────────────────────────────────────────────────────
 
     def do_GET(self):
+        if self._reject_foreign():
+            return
         path = urlparse(self.path).path
 
-        # WebSocket upgrade
+        # WebSocket upgrade (covered by the origin guard above — browsers
+        # always send Origin on WebSocket handshakes)
         if self.headers.get("Upgrade", "").lower() == "websocket":
             key = self.headers.get("Sec-WebSocket-Key", "")
             handle_ws(self.connection, key)
@@ -3961,32 +4002,12 @@ class Handler(BaseHTTPRequestHandler):
             if not album_dir:
                 self.send_error(404)
                 return
-            file_path = (album_dir / filename).resolve()
-            try:
-                file_path.relative_to(album_dir.resolve())
-            except ValueError:
-                self.send_error(403)
+            # Traversal-guarded resolve with Unicode-NFC / case fallback,
+            # then the shared Range-aware streamer (same path as /audio-stream).
+            file_path = _resolve_in_dir(album_dir, filename)
+            if not file_path:
+                self.send_error(404)
                 return
-            if not file_path.exists() or not file_path.is_file():
-                # Fall back to a tolerant match: Unicode normalisation (NFC/NFD)
-                # and case differences can make an exact path miss a real file.
-                import unicodedata as _ud
-                def _norm(s: str) -> str:
-                    return _ud.normalize("NFC", s).casefold()
-                want = _norm(filename)
-                match = None
-                try:
-                    for f in album_dir.iterdir():
-                        if f.is_file() and _norm(f.name) == want:
-                            match = f
-                            break
-                except Exception:
-                    match = None
-                if match is None:
-                    self.send_error(404)
-                    return
-                file_path = match.resolve()
-            ext = file_path.suffix.lower()
             mime_map = {
                 ".mp3":  "audio/mpeg",  ".flac": "audio/flac",
                 ".ogg":  "audio/ogg",   ".opus": "audio/ogg",
@@ -3995,48 +4016,24 @@ class Handler(BaseHTTPRequestHandler):
                 ".aiff": "audio/aiff",  ".wma":  "audio/x-ms-wma",
                 ".ape":  "audio/ape",   ".wv":   "audio/wavpack",
             }
-            mime      = mime_map.get(ext, "audio/mpeg")
-            file_size = file_path.stat().st_size
-            # Range request support so the browser can seek freely
-            range_header = self.headers.get("Range", "")
-            start, end = 0, file_size - 1
-            if range_header.startswith("bytes="):
-                try:
-                    parts = range_header[6:].split("-")
-                    start = int(parts[0]) if parts[0] else 0
-                    end   = int(parts[1]) if len(parts) > 1 and parts[1] else file_size - 1
-                    end   = min(end, file_size - 1)
-                except (ValueError, IndexError):
-                    start, end = 0, file_size - 1
-            length = end - start + 1
-            self.send_response(206 if range_header else 200)
-            self.send_header("Content-Type", mime)
-            self.send_header("Content-Length", length)
-            self.send_header("Accept-Ranges", "bytes")
-            self.send_header("Cache-Control", "no-cache")
-            if range_header:
-                self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
-            self.end_headers()
-            try:
-                with open(file_path, "rb") as f:
-                    f.seek(start)
-                    remaining = length
-                    while remaining > 0:
-                        chunk = f.read(min(65536, remaining))
-                        if not chunk:
-                            break
-                        self.wfile.write(chunk)
-                        remaining -= len(chunk)
-            except (BrokenPipeError, ConnectionResetError):
-                pass
+            mime = mime_map.get(file_path.suffix.lower(), "audio/mpeg")
+            _send_file_with_range(self, file_path, mime)
             return
 
         self.send_error(404)
 
     def do_POST(self):
+        if self._reject_foreign():
+            return
         path   = urlparse(self.path).path
         length = int(self.headers.get("Content-Length", 0))
-        body   = json.loads(self.rfile.read(length)) if length else {}
+        try:
+            body = json.loads(self.rfile.read(length)) if length else {}
+            if not isinstance(body, dict):
+                raise ValueError("body must be a JSON object")
+        except (ValueError, UnicodeDecodeError) as exc:
+            self._send_json(400, {"error": f"Invalid JSON body: {exc}"})
+            return
 
         if path == "/setup":
             api_id      = body.get("api_id")
@@ -4053,21 +4050,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": "bot_username must start with @ and be at least 5 characters"})
                 return
 
-            cfg_path = DATA_DIR / "tg_audio_config.json"
-            cfg = {}
-            if cfg_path.exists():
-                try:
-                    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
-            cfg["api_id"]      = int(api_id)
-            cfg["api_hash"]    = api_hash
-            cfg["bot_username"] = bot_username
+            # Through tgd_common so the keyring overlay (use_keyring) applies
+            # to api_hash the same way it does for every other secret.
             try:
-                cfg_path.write_text(
-                    json.dumps(cfg, indent=2, ensure_ascii=False),
-                    encoding="utf-8",
-                )
+                cfg = tgd_common.load_config()
+                cfg["api_id"]       = int(api_id)
+                cfg["api_hash"]     = api_hash
+                cfg["bot_username"] = bot_username
+                tgd_common.save_config(cfg)
                 logger.info("Setup wizard complete: credentials and bot saved")
                 self._send_json(200, {"ok": True})
             except Exception as exc:

@@ -37,17 +37,13 @@ import asyncio
 import concurrent.futures
 import difflib
 import hashlib
-import io
 import json
-import os
 import re
 import shutil
 import sys
 import time
 import traceback
 import threading
-import tkinter
-import tkinter.filedialog
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -70,72 +66,17 @@ from telethon.sessions import StringSession       # type: ignore
 from telethon.tl.types import DocumentAttributeFilename  # type: ignore
 
 # ──────────────────────────────────────────────
-#  API CREDENTIALS  (read from config, not hardcoded)
+#  SHARED HELPERS  (tgd_common is the single source for the data dir,
+#  config load/save, API credentials, and ffmpeg detection)
 # ──────────────────────────────────────────────
-
-def _get_api_creds() -> "tuple[int, str]":
-    """Read API_ID and API_HASH from tg_audio_config.json at call time.
-
-    Raises RuntimeError if credentials are missing — complete the setup
-    wizard first.
-    """
-    cfg_path = _DATA_DIR / "tg_audio_config.json"
-    try:
-        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-        api_id   = cfg.get("api_id")
-        api_hash = cfg.get("api_hash", "")
-        if api_id and api_hash:
-            return int(api_id), str(api_hash)
-    except Exception:
-        pass
-    raise RuntimeError(
-        "Telegram API credentials not found.\n"
-        "Run TGDownloader and complete the setup wizard first."
-    )
-
-# ──────────────────────────────────────────────
-#  DATA DIRECTORY  (v6 addition)
-#  When bundled with PyInstaller the env-var points to the folder that
-#  contains the .exe so user data doesn't end up in a read-only temp dir.
-# ──────────────────────────────────────────────
-_DATA_DIR = Path(os.environ.get("TGD_DATA_DIR", Path(__file__).parent))
-_DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-# ──────────────────────────────────────────────
-#  DEFAULT CONFIG
-# ──────────────────────────────────────────────
-DEFAULT_CONFIG: dict = {
-    "home_music_folder":       None,
-    "bot_username":            "",  # must be set by user via setup wizard
-    "reply_timeout":           30,
-    "queue_wait_timeout":      120,
-    # Idle timeout after the last received audio file.  8 s is generous enough
-    # to handle a slow bot but short enough that the delay is barely noticeable.
-    # With the count-match fix this timeout is only hit when the bot sends fewer
-    # files than advertised (partial album), so it rarely fires at all.
-    "inter_file_idle_timeout": 8,
-    "idle_check_interval":     0.5,
-    "bot_busy_wait":           10,
-    "bot_busy_retries":        12,
-    "max_queue":               10,
-    "ui_scale":                1.0,
-    "target_quality":          "FLAC",  # FLAC | MP3 320 | MP3 128
-    # Maximum number of tracks downloaded in parallel per album.
-    # Keeping this at 3 prevents ExportAuthorization flood-waits from
-    # Telegram when many tracks on a non-home DC are authorised at once.
-    "max_parallel_downloads":  3,
-    # ── Scrobbling (opt-in; off unless a token/key is provided) ──
-    "scrobble_enabled":        False,
-    "scrobble_service":        "listenbrainz",  # "listenbrainz" | "lastfm"
-    "listenbrainz_token":      "",
-    "lastfm_api_key":          "",
-    "lastfm_secret":           "",
-    "lastfm_session_key":      "",
-    # ── Artist watchlist / new-release radar ──
-    "watchlist_autocheck":     True,
-    # ── UI preferences ──
-    "theme":                   "dark",   # "dark" | "light"
-}
+from tgd_common import (                            # noqa: E402
+    DATA_DIR as _DATA_DIR,
+    DEFAULT_CONFIG,
+    ffmpeg_available as _check_ffmpeg,
+    load_config,
+    require_api_credentials as _get_api_creds,
+    save_config,
+)
 
 BOT_BUSY_PHRASES = [
     "please wait",
@@ -157,7 +98,6 @@ AUDIO_EXTENSIONS = {".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac",
 FUZZY_THRESHOLD = 0.82
 
 # v6: use _DATA_DIR so these files sit beside the .exe when frozen
-CONFIG_FILE      = _DATA_DIR / "tg_audio_config.json"
 SESSION_FILE     = str(_DATA_DIR / "tg_audio_session")
 _BOT_INIT_FLAG   = _DATA_DIR / "bot_initialized.flag"   # written once after first-run setup
 _HASH_CACHE_FILE = _DATA_DIR / "hash_cache.json"        # path → {mtime, size, hash}
@@ -195,29 +135,8 @@ class URLResult:
 
 
 # ═════════════════════════════════════════════
-#  CONFIG
+#  CONFIG  (load_config / save_config live in tgd_common)
 # ═════════════════════════════════════════════
-
-def load_config() -> dict:
-    cfg = dict(DEFAULT_CONFIG)
-    if CONFIG_FILE.exists():
-        try:
-            saved = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-            cfg.update(saved)
-        except Exception:
-            pass
-    return cfg
-
-
-def save_config(cfg: dict) -> None:
-    try:
-        CONFIG_FILE.write_text(
-            json.dumps(cfg, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
-    except Exception as e:
-        _log(f"WARNING: Could not save config: {e}")
-
 
 def configure_settings(cfg: dict) -> dict:
     """Interactive CLI config editor."""
@@ -337,8 +256,9 @@ def load_manifest(home: Path) -> dict:
     if mp.exists():
         try:
             return json.loads(mp.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+        except Exception as exc:
+            _log(f"  WARNING: Could not parse manifest {mp} ({exc}) — "
+                 "starting with an empty manifest; completed URLs may re-download.")
 
     old = home / "tg_download_manifest.json"
     if old.exists():
@@ -448,6 +368,12 @@ def is_url_complete(
 # ═════════════════════════════════════════════
 
 def pick_folder(title: str = "Select folder") -> Path:
+    # Lazy import: tkinter is only needed for this rare interactive fallback,
+    # and importing it at module load breaks headless environments (CI, Linux
+    # without python3-tk) and bloats the frozen bundle's startup.
+    import tkinter
+    import tkinter.filedialog
+
     root = tkinter.Tk()
     root.withdraw()
     root.attributes("-topmost", True)
@@ -653,7 +579,8 @@ def build_library_hash_index(home: Path) -> set[str]:
     if _HASH_CACHE_FILE.exists():
         try:
             old_cache = json.loads(_HASH_CACHE_FILE.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception as exc:
+            _log(f"  WARNING: Hash cache unreadable ({exc}) — re-hashing the full library.")
             old_cache = {}
 
     hashes:    set[str] = set()
@@ -1076,12 +1003,6 @@ def sort_into_playlist(source: Path, playlist_dir: Path,
 #  FFMPEG QUALITY CONVERSION
 # ═════════════════════════════════════════════
 
-def _check_ffmpeg() -> bool:
-    """Return True if ffmpeg is available on PATH."""
-    import shutil as _shutil
-    return _shutil.which("ffmpeg") is not None
-
-
 def _needs_conversion(path: Path, target_quality: str) -> bool:
     """Return True when *path* is not already in the target format/quality."""
     ext = path.suffix.lower()
@@ -1268,7 +1189,7 @@ async def _ensure_bot_initialized(client, cfg: dict) -> None:
             if _m_priv:
                 # ── Private invite link ──────────────────────────────────────
                 invite_hash = _m_priv.group(1)
-                _log(f"  Joining via private invite link …")
+                _log("  Joining via private invite link …")
                 try:
                     from telethon.tl.functions.messages import ImportChatInviteRequest
                     result = await client(ImportChatInviteRequest(invite_hash))
@@ -1747,6 +1668,12 @@ async def process_url(
         _log("\n  WARNING: No download-all button found. Available buttons:")
         for i, btn in enumerate(all_buttons, 1):
             _log(f"    {i}. {btn.text}")
+        if not sys.stdin.isatty():
+            # GUI mode: stdin is an exhausted pipe — prompting would raise
+            # EOFError and surface as a confusing crash. Skip with a clear log.
+            _log("  Cannot prompt for a button in GUI mode — skipping this URL.")
+            await cleanup()
+            return [], None
         choice = input("  Enter button number to click (or Enter to skip): ").strip()
         if not choice.isdigit() or not (1 <= int(choice) <= len(all_buttons)):
             await cleanup()
@@ -1754,7 +1681,7 @@ async def process_url(
         target_button = all_buttons[int(choice) - 1]
         button_label  = target_button.text
 
-    _log(f"\n  Collecting files...")
+    _log("\n  Collecting files...")
     file_event.clear()
     collect_task = asyncio.ensure_future(
         collect_files(message_queue, file_event, expected_total, cfg)
@@ -1980,7 +1907,9 @@ async def main() -> None:
         # ── Pre-download duplicate warning ─────────────────────────────────
         check_pre_download(entry, home)
 
-        url_tmp = Path("./tg_tmp_downloads") / f"url_{i}"
+        # Anchored to _DATA_DIR, not the CWD: launched via a shortcut or at
+        # startup, the frozen exe's working directory can be anywhere.
+        url_tmp = _DATA_DIR / "tg_tmp_downloads" / f"url_{i}"
         url_tmp.mkdir(parents=True, exist_ok=True)
 
         try:
@@ -2064,7 +1993,7 @@ async def main() -> None:
                 _check_pause_flag()
 
     try:
-        Path("./tg_tmp_downloads").rmdir()
+        (_DATA_DIR / "tg_tmp_downloads").rmdir()
     except OSError:
         pass
 

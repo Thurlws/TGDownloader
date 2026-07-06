@@ -77,6 +77,7 @@ a = Analysis(
         # ── Our own modules ───────────────────────────────────
         'TGDownloader',
         'TGDownloader_GUI',
+        'tgd_common',
         # ── Stdlib that PyInstaller sometimes misses ──────────
         'asyncio',
         'asyncio.events',

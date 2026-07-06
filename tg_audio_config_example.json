@@ -11,5 +11,6 @@
   "ui_scale": 1.0,
   "target_quality": "FLAC",
   "api_id": 12345678,
-  "api_hash": "your_32_character_hex_hash_here"
+  "api_hash": "your_32_character_hex_hash_here",
+  "use_keyring": false
 }
