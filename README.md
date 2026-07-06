@@ -9,13 +9,9 @@ A personal music library manager with a Telegram client, automatic album sorting
 
 ---
 
-> **⚠️ Legal notice**
+> **⚠️ Legal notice** — TGDownloader is a **Telegram client and local music library manager**. It hosts, distributes, and links to **no content whatsoever** and includes no bot or content source; it only talks to Telegram bots **you** configure yourself. It is intended solely for managing audio you are legally entitled to possess, and you are solely responsible for using it lawfully. The authors do not endorse or facilitate copyright infringement in any form.
 >
-> TGDownloader is a **Telegram client and local music library manager**. It does not host, distribute, or provide access to any copyrighted content. It communicates only with Telegram bots that you configure yourself — bots that you already use independently of this software.
->
-> **Intended use:** Managing audio files you are legally entitled to possess — for example, files received through your own Telegram bots for music you own or have licensed.
->
-> The authors do not endorse, encourage, or facilitate copyright infringement or music piracy in any form. You are solely responsible for ensuring that your use of this software and any bots you connect it to complies with the laws in your jurisdiction and with the terms of service of any platform involved. This software is provided as-is with no warranties.
+> **Read the full [DISCLAIMER.md](DISCLAIMER.md)** — it forms part of the terms under which this software is provided.
 
 ---
 
