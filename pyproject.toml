@@ -1,0 +1,24 @@
+# Tooling configuration only — TGDownloader is not packaged/installed;
+# it runs from source (or as a PyInstaller bundle built via TGDownloader.spec).
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+# Pyflakes (F) + the pycodestyle error classes ruff enables by default.
+# Style-only rules are deliberately left off — this codebase favours aligned
+# assignments and compact one-liners, and relitigating that has no bug-value.
+select = ["E4", "E7", "E9", "F"]
+ignore = [
+    "E401",  # multiple imports per line — compact lazy-import style
+    "E402",  # imports after code — the entry points set up env vars/stdio first
+    "E701",  # statement on same line as colon — compact try/except one-liners
+    "E702",  # multiple statements per line — same compact style
+    "E731",  # lambda assignments — used intentionally for tiny callbacks
+    "E741",  # ambiguous single-letter names — used in tight local scopes
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

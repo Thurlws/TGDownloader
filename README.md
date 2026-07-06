@@ -2,6 +2,7 @@
 
 A personal music library manager with a Telegram client, automatic album sorting, duplicate detection, a full library browser, and a dark GUI served from a local web server.
 
+![CI](https://github.com/Thurlws/TGDownloader/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.11+-blue?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?style=flat-square)
@@ -51,8 +52,10 @@ The interface is a local web app that opens in your browser (or a Chromium app w
 ```bash
 git clone https://github.com/thurlws/tgdownloader.git
 cd tgdownloader
-pip install telethon mutagen cryptg ffmpeg
+pip install -r requirements.txt
 ```
+
+ffmpeg is a **system dependency, not a pip package** — install it from [ffmpeg.org](https://ffmpeg.org/download.html) and make sure the `ffmpeg` binary is on your PATH. (Do not `pip install ffmpeg`; the PyPI package of that name is an unrelated stub.)
 
 **2. Get Telegram API credentials**
 
@@ -97,7 +100,7 @@ Pre-built releases are published on the [Releases](../../releases) page. Extract
 To build it yourself, `TGDownloader.spec` is included in the repository root:
 
 ```bash
-pip install pyinstaller telethon mutagen cryptg ffmpeg
+pip install pyinstaller -r requirements.txt
 pyinstaller TGDownloader.spec
 ```
 
@@ -125,10 +128,13 @@ Output lands in `dist/TGDownloader/`.
 TGDownloader_bundled.py        ← entry point (run this, or build to .exe)
 TGDownloader_GUI.py            ← HTTP + WebSocket server, all API endpoints
 TGDownloader.py                ← download engine, Telegram client, album sorter
+tgd_common.py                  ← shared helpers: config, credentials, version, ffmpeg
 gui.html                       ← the entire frontend (single file)
 setup_wizard.html              ← first-run credential setup wizard
 TGDownloader.spec              ← PyInstaller build spec
 tg_audio_config_example.json  ← config template — copy to tg_audio_config.json to get started
+tests/                         ← pytest suite (run: pytest)
+.github/workflows/ci.yml       ← CI: ruff + pytest on every push/PR
 
 # Generated at runtime (gitignored):
 tg_audio_config.json      ← your settings + API credentials
@@ -164,6 +170,20 @@ All settings are accessible via **Settings** in the app. The config file is `tg_
 
 `target_quality` accepts `"FLAC"`, `"MP3 320"`, or `"MP3 128"`. Files are converted locally by ffmpeg after each download — whatever format your bot sends gets normalised to your chosen target.
 
+### Storing secrets in the OS keyring (optional)
+
+By default your `api_hash` and any service tokens (ListenBrainz, Last.fm, Spotify) live in plaintext in `tg_audio_config.json`. To move them into the operating system's credential store (Windows Credential Manager / macOS Keychain / Secret Service on Linux) instead:
+
+```bash
+pip install keyring
+```
+
+then set `"use_keyring": true` in `tg_audio_config.json` (or via Settings). On the next save, secrets are written to the keyring and blanked in the JSON file; the app reads them back transparently. Notes:
+
+- If you enable it but `keyring` isn't installed, secrets simply stay in the JSON file and a warning is logged — nothing is lost.
+- The pre-built .exe does not bundle `keyring`; this feature is for running from source (or rebuild the exe with `keyring` installed).
+- To go back, set `"use_keyring": false` and re-enter your secrets in Settings.
+
 ---
 
 ## Keyboard shortcuts
@@ -186,9 +206,10 @@ All settings are accessible via **Settings** in the app. The config file is `tg_
 
 ## Privacy & security
 
-- Your API credentials and Telegram session are stored **only on your machine**
+- Your API credentials and Telegram session are stored **only on your machine** (optionally in the OS keyring — see Configuration)
 - Nothing is sent to any server other than Telegram's own infrastructure and the Deezer public API (for album art / metadata)
 - The local web server binds to `127.0.0.1` only — it is not accessible from other machines on your network
+- Requests with a non-local `Host` or foreign `Origin` header are rejected (403), so web pages you visit cannot drive the API via CSRF, cross-origin WebSockets, or DNS rebinding
 
 ---
 

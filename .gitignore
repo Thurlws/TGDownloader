@@ -36,6 +36,7 @@ env/
 
 # ── PyInstaller bundle output ─────────────────────────────────────────────
 *.spec
+!TGDownloader.spec
 dist/
 build/
 

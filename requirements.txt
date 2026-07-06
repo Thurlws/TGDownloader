@@ -1,4 +1,11 @@
-ffmpeg
-telethon>=1.30.0       
-mutagen>=1.46.0        
+telethon>=1.30.0
+mutagen>=1.46.0
 cryptg>=0.4.0
+
+# NOTE: ffmpeg is a system dependency, NOT a pip package — install it from
+# https://ffmpeg.org/download.html and make sure it is on your PATH.
+# (The "ffmpeg" package on PyPI is an unrelated, abandoned stub.)
+
+# Optional: store API credentials/tokens in the OS keyring instead of the
+# plaintext config file (enable with "use_keyring": true in the config).
+# keyring>=24.0
