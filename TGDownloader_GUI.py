@@ -3071,6 +3071,30 @@ class Handler(BaseHTTPRequestHandler):
             handle_ws(self.connection, key)
             return
 
+        # Static assets (split out of gui.html in 1.4.0): /static/app.css,
+        # /static/js/*.js. Allowlisted extensions + containment check.
+        if path.startswith("/static/"):
+            base   = (BUNDLE_DIR / "static").resolve()
+            target = (BUNDLE_DIR / path.lstrip("/")).resolve()
+            try:
+                target.relative_to(base)
+            except ValueError:
+                self.send_error(403)
+                return
+            mime = {".css": "text/css; charset=utf-8",
+                    ".js":  "application/javascript; charset=utf-8"}.get(target.suffix.lower())
+            if mime is None or not target.is_file():
+                self.send_error(404)
+                return
+            content = target.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(len(content)))
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(content)
+            return
+
         if path in ("/", "/index.html", "/gui.html"):
             # Serve setup wizard if credentials not yet configured
             if not _credentials_configured():
@@ -3607,6 +3631,12 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/play-stats":
             self._send_json(200, _aggregate_play_stats(_load_play_events()))
+            return
+
+        # Pre-1.4.0 the frontend's loadSessions() GET always 404ed (only the
+        # POST route existed) and silently fell back to an empty list.
+        if path == "/sessions":
+            self._send_json(200, _load_sessions())
             return
 
         if path == "/library-stats":
@@ -4854,8 +4884,9 @@ def main():
         # the port stays bound for the lifetime of this process.
     except OSError:
         logger.info("Another instance already running — opening browser")
-        if not _open_app_window(f"http://127.0.0.1:{HTTP_PORT}/"):
-            webbrowser.open(f"http://127.0.0.1:{HTTP_PORT}/")
+        if not os.environ.get("TGD_NO_BROWSER"):
+            if not _open_app_window(f"http://127.0.0.1:{HTTP_PORT}/"):
+                webbrowser.open(f"http://127.0.0.1:{HTTP_PORT}/")
         sys.exit(0)
 
     if not GUI_HTML.exists():
@@ -4882,8 +4913,10 @@ def main():
     logger.info("Server listening on %s", url)
     print(f"TGDownloader GUI  →  {url}")
     print("Ctrl+C to quit.\n")
-    if not _open_app_window(url):
-        webbrowser.open(url)
+    # TGD_NO_BROWSER=1 → headless mode (tests, previews, remote use)
+    if not os.environ.get("TGD_NO_BROWSER"):
+        if not _open_app_window(url):
+            webbrowser.open(url)
 
     try:
         threading.Event().wait()
