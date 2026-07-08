@@ -17,7 +17,7 @@ bot_initialized.flag
 tgdownloader_debug.log
 pause.flag
 
-# ── Personal knowledge base (Obsidian vault — local notes, not published) ─
+# ── Personal knowledge base 
 TGDownloader Context Vault/
 
 # ── Temp download directories & runtime caches ───────────────────────────

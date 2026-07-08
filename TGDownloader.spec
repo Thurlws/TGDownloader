@@ -30,6 +30,8 @@ a = Analysis(
         # gui.html must be accessible at runtime via BUNDLE_DIR / 'gui.html'
         (str(HERE / 'gui.html'), '.'),
         (str(HERE / 'setup_wizard.html'), '.'),
+        # Split-out frontend assets (served at /static/…)
+        (str(HERE / 'static'), 'static'),
     ],
     hiddenimports=[
         # ── Telethon ──────────────────────────────────────────
