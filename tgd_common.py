@@ -47,7 +47,7 @@ import shutil
 import sys
 from pathlib import Path
 
-__version__ = "1.2.0"   # single source — bump this when you cut a new release
+__version__ = "1.3.0"   # single source — bump this when you cut a new release
 
 logger = logging.getLogger("tgd_common")
 
@@ -233,6 +233,74 @@ def require_api_credentials() -> "tuple[int, str]":
         "Telegram API credentials not found.\n"
         "Run TGDownloader and complete the setup wizard first."
     )
+
+
+# ── Recycle bin / trash ───────────────────────────────────────────────────────
+
+def send_to_trash(path: "Path | str") -> str:
+    """Move a file or directory to the OS recycle bin instead of deleting it.
+
+    Tries, in order: the ``send2trash`` package, the native Windows
+    SHFileOperationW call, and finally permanent deletion (logged as a
+    warning so the degradation is visible).  Returns the method used:
+    ``"send2trash"`` | ``"winapi"`` | ``"permanent"``.
+    """
+    p = Path(path)
+
+    try:
+        from send2trash import send2trash as _s2t  # type: ignore
+        _s2t(str(p))
+        return "send2trash"
+    except ImportError:
+        pass
+    except Exception as exc:
+        logger.warning("send2trash failed for %s (%s) — trying fallback", p, exc)
+
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class _SHFILEOPSTRUCTW(ctypes.Structure):
+                _fields_ = [
+                    ("hwnd",                  wintypes.HWND),
+                    ("wFunc",                 wintypes.UINT),
+                    ("pFrom",                 wintypes.LPCWSTR),
+                    ("pTo",                   wintypes.LPCWSTR),
+                    ("fFlags",                ctypes.c_uint16),
+                    ("fAnyOperationsAborted", wintypes.BOOL),
+                    ("hNameMappings",         wintypes.LPVOID),
+                    ("lpszProgressTitle",     wintypes.LPCWSTR),
+                ]
+
+            FO_DELETE          = 3
+            FOF_SILENT         = 0x0004
+            FOF_NOCONFIRMATION = 0x0010
+            FOF_ALLOWUNDO      = 0x0040
+            FOF_NOERRORUI      = 0x0400
+
+            op = _SHFILEOPSTRUCTW()
+            op.wFunc  = FO_DELETE
+            # pFrom is a double-NUL-terminated list; ctypes appends one NUL,
+            # the explicit "\0" provides the second.
+            op.pFrom  = str(p.resolve()) + "\0"
+            op.pTo    = None
+            op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI
+            res = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op))
+            if res == 0 and not op.fAnyOperationsAborted:
+                return "winapi"
+            logger.warning("SHFileOperationW returned %s for %s — deleting permanently", res, p)
+        except Exception as exc:
+            logger.warning("Recycle-bin fallback failed for %s (%s) — deleting permanently", p, exc)
+    else:
+        logger.warning("No trash backend available for %s — deleting permanently "
+                       "(pip install send2trash to enable the trash)", p)
+
+    if p.is_dir():
+        shutil.rmtree(p, ignore_errors=True)
+    else:
+        p.unlink(missing_ok=True)
+    return "permanent"
 
 
 # ── ffmpeg detection ──────────────────────────────────────────────────────────

@@ -36,6 +36,12 @@ The interface is a local web app that opens in your browser (or a Chromium app w
 - **Telegram auth** — full in-browser login flow including 2FA, no terminal prompts ever
 - **Audio quality selector** — configure the bot's quality setting without leaving the app
 - **Single-instance** — launching a second instance just focuses the existing browser window
+- **OS media integration** — hardware media keys and the Windows media overlay control playback (with album art)
+- **Sleep timer** — 15/30/60 minutes or stop after the current track
+- **Listening stats** — local play history with top artists/tracks (independent of scrobbling)
+- **Safe deletes** — removed files, albums and artists go to the recycle bin, not oblivion
+- **Backup & restore** — export app state as a zip and restore it from the Maintenance tab
+- **Cover art repair** — one click fetches missing album covers from Deezer
 
 ---
 
@@ -139,6 +145,7 @@ tg_sessions.json          ← saved queue sessions
 tgdownloader_debug.log    ← debug log (view in the Debug tab)
 hash_cache.json           ← library hash index cache
 album_id_cache.json       ← Deezer album ID cache
+play_history.jsonl        ← local listening history (powers the Listening stats)
 ```
 
 ---

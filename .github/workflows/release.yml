@@ -1,0 +1,56 @@
+name: Release
+
+# Cutting a release is: bump __version__ in tgd_common.py, commit, then
+#   git tag v1.3.0 && git push --tags
+# This builds the Windows bundle and attaches it to a GitHub release for
+# the same tag — which the in-app update checker already polls.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller -r requirements.txt
+
+      - name: Verify tag matches tgd_common.__version__
+        shell: pwsh
+        run: |
+          $v = python -c "import tgd_common; print(tgd_common.__version__)"
+          $tag = "${{ github.ref_name }}".TrimStart("v")
+          if ($v -ne $tag) {
+            Write-Error "Tag ${{ github.ref_name }} does not match __version__ $v — bump tgd_common.py first."
+            exit 1
+          }
+
+      - name: Run tests
+        run: |
+          pip install pytest
+          pytest
+
+      - name: Build bundle
+        run: pyinstaller TGDownloader.spec
+
+      - name: Zip bundle
+        shell: pwsh
+        run: Compress-Archive -Path dist/TGDownloader/* -DestinationPath "TGDownloader-${{ github.ref_name }}-windows.zip"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: TGDownloader-${{ github.ref_name }}-windows.zip
+          generate_release_notes: true

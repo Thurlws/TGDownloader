@@ -2837,6 +2837,200 @@ def _tgd_import():
 
 
 # ══════════════════════════════════════════════
+#  LOCAL PLAY TRACKING  (append-only JSONL history)
+# ══════════════════════════════════════════════
+# Every completed listen (same ≥50%/4-min threshold as scrobbling, but
+# independent of any scrobble service) is appended as one JSON line, so
+# writes never rewrite the whole file and a torn write loses at most the
+# final line.
+
+PLAY_HISTORY_FILE = DATA_DIR / "play_history.jsonl"
+
+
+def _record_play_event(meta: dict, path: "Path | None" = None) -> bool:
+    """Append one play to the local listening history.  Returns False when
+    the event lacks the minimum identifying metadata (title + artist)."""
+    title  = str(meta.get("title")  or "").strip()[:300]
+    artist = str(meta.get("artist") or "").strip()[:300]
+    album  = str(meta.get("album")  or "").strip()[:300]
+    if not (title and artist):
+        return False
+    entry = {
+        "t":  time.time(),
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "title": title, "artist": artist, "album": album,
+    }
+    with open(path or PLAY_HISTORY_FILE, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return True
+
+
+def _load_play_events(path: "Path | None" = None) -> "list[dict]":
+    p = path or PLAY_HISTORY_FILE
+    events: "list[dict]" = []
+    if not p.exists():
+        return events
+    try:
+        with open(p, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    ev = json.loads(line)
+                    if isinstance(ev, dict):
+                        events.append(ev)
+                except Exception:
+                    continue        # tolerate a torn final line
+    except Exception as exc:
+        logger.warning("Could not read play history: %s", exc)
+    return events
+
+
+def _aggregate_play_stats(events: "list[dict]", now: "float | None" = None) -> dict:
+    """Pure aggregation: totals, rolling windows, top tracks/artists, recent."""
+    now = time.time() if now is None else now
+    last7  = sum(1 for e in events if now - float(e.get("t") or 0) <= 7  * 86400)
+    last30 = sum(1 for e in events if now - float(e.get("t") or 0) <= 30 * 86400)
+    tracks:  "dict[tuple, int]" = {}
+    artists: "dict[str, int]"   = {}
+    for e in events:
+        artist = e.get("artist", "")
+        tracks[(artist, e.get("title", ""))] = tracks.get((artist, e.get("title", "")), 0) + 1
+        artists[artist] = artists.get(artist, 0) + 1
+    top_tracks = [{"artist": a, "title": t, "plays": n}
+                  for (a, t), n in sorted(tracks.items(), key=lambda kv: -kv[1])[:8]]
+    top_artists = [{"artist": a, "plays": n}
+                   for a, n in sorted(artists.items(), key=lambda kv: -kv[1])[:8]]
+    recent = [{"title": e.get("title", ""), "artist": e.get("artist", ""), "ts": e.get("ts", "")}
+              for e in events[-10:]][::-1]
+    return {"total": len(events), "last7": last7, "last30": last30,
+            "top_tracks": top_tracks, "top_artists": top_artists, "recent": recent}
+
+
+# ══════════════════════════════════════════════
+#  BACKUP RESTORE
+# ══════════════════════════════════════════════
+
+_RESTORABLE_STATE_FILES = {"liked_songs.json", "watchlist.json",
+                           "tg_sessions.json", "album_id_cache.json"}
+
+
+def _validate_backup_zip(data: bytes) -> "tuple[dict[str, bytes], list[str]]":
+    """({basename: raw_bytes}, skipped_names).  Only allowlisted basenames
+    containing valid JSON are accepted, so a crafted zip can neither traverse
+    paths (basenames only) nor plant executable/non-state files."""
+    import io as _io
+    import zipfile as _zf
+    accepted: "dict[str, bytes]" = {}
+    skipped:  "list[str]" = []
+    with _zf.ZipFile(_io.BytesIO(data)) as zf:
+        for name in zf.namelist():
+            base = name.replace("\\", "/").rsplit("/", 1)[-1]
+            if base not in _RESTORABLE_STATE_FILES and base != "tg_audio_config.json":
+                skipped.append(name)
+                continue
+            raw = zf.read(name)
+            try:
+                json.loads(raw.decode("utf-8"))
+            except Exception:
+                skipped.append(name)
+                continue
+            accepted[base] = raw
+    return accepted, skipped
+
+
+# ══════════════════════════════════════════════
+#  COVER ART REPAIR
+# ══════════════════════════════════════════════
+
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+def _dir_has_cover(d: "Path") -> bool:
+    try:
+        return any(f.is_file() and f.suffix.lower() in _IMAGE_EXTS
+                   for f in d.iterdir())
+    except Exception:
+        return False
+
+
+def _art_repair(limit: int = 25) -> dict:
+    """Find album/playlist folders without any cover image and fetch one from
+    Deezer.  Capped per run (default 25) to stay polite to the public API;
+    the response reports how many folders remain for a follow-up run."""
+    m    = _tgd_import()
+    cfg  = m.load_config()
+    home = cfg.get("home_music_folder")
+    if not home:
+        return {"error": "No home music folder configured"}
+    home_path = Path(home)
+    if not home_path.exists():
+        return {"error": f"Folder not found: {home}"}
+
+    audio_ext = {".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac",
+                 ".wav", ".aif", ".aiff", ".wma", ".ape", ".wv"}
+
+    def _has_audio(d: Path) -> bool:
+        try:
+            return any(f.is_file() and f.suffix.lower() in audio_ext
+                       for f in d.iterdir())
+        except Exception:
+            return False
+
+    targets: "list[tuple[Path, str]]" = []      # (folder, deezer search query)
+    checked = 0
+    artists_dir = home_path / ARTISTS_DIRNAME
+    if artists_dir.is_dir():
+        for artist_dir in sorted(artists_dir.iterdir()):
+            if not artist_dir.is_dir() or artist_dir.name.startswith("."):
+                continue
+            for album_dir in sorted(artist_dir.iterdir()):
+                if not album_dir.is_dir() or not _has_audio(album_dir):
+                    continue
+                checked += 1
+                if not _dir_has_cover(album_dir):
+                    targets.append((album_dir, f"{artist_dir.name} {album_dir.name}"))
+    playlists_dir = home_path / PLAYLISTS_DIRNAME
+    if playlists_dir.is_dir():
+        for pl_dir in sorted(playlists_dir.iterdir()):
+            if not pl_dir.is_dir() or pl_dir.name.startswith(".") or not _has_audio(pl_dir):
+                continue
+            checked += 1
+            if not _dir_has_cover(pl_dir):
+                targets.append((pl_dir, pl_dir.name))
+
+    fixed = failed = 0
+    for d, query in targets[:limit]:
+        try:
+            hits = (_deezer_search(query).get("data") or [])
+            url = ""
+            if hits:
+                url = hits[0].get("cover_xl") or hits[0].get("cover_big") or ""
+            if not url:
+                failed += 1
+                continue
+            req = urllib.request.Request(
+                url, headers={"User-Agent": f"TGDownloader/{APP_VERSION}"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                img = resp.read()
+            if img:
+                (d / "cover.jpg").write_bytes(img)
+                fixed += 1
+                logger.info("Art repair: saved cover for %s", d)
+            else:
+                failed += 1
+        except Exception as exc:
+            logger.debug("Art repair failed for %s: %s", d, exc)
+            failed += 1
+        time.sleep(0.25)                        # be polite to the Deezer API
+
+    attempted = min(len(targets), limit)
+    return {"checked": checked, "missing": len(targets), "fixed": fixed,
+            "failed": failed, "remaining": max(0, len(targets) - attempted)}
+
+
+# ══════════════════════════════════════════════
 #  HTTP HANDLER
 # ══════════════════════════════════════════════
 
@@ -3409,6 +3603,10 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 logger.warning("Quality fetch failed: %s", exc)
                 self._send_json(200, {"error": str(exc)})
+            return
+
+        if path == "/play-stats":
+            self._send_json(200, _aggregate_play_stats(_load_play_events()))
             return
 
         if path == "/library-stats":
@@ -4129,9 +4327,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(403, {"error": "Refusing to delete outside the library folder"})
                 return
             try:
-                tp.unlink()
-                logger.info("Deleted duplicate file: %s", tp)
-                self._send_json(200, {"ok": True})
+                method = tgd_common.send_to_trash(tp)
+                logger.info("Trashed duplicate file (%s): %s", method, tp)
+                self._send_json(200, {"ok": True, "trash": method})
             except Exception as exc:
                 logger.exception("delete-file failed")
                 self._send_json(500, {"error": str(exc)})
@@ -4243,10 +4441,9 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 artist_dir = Path(home) / ARTISTS_DIRNAME / m._sanitise_path(artist_name)
                 if artist_dir.exists() and artist_dir.is_dir():
-                    import shutil as _shutil
-                    _shutil.rmtree(str(artist_dir))
-                    logger.info("Deleted artist folder: %s", artist_dir)
-                    self._send_json(200, {"ok": True})
+                    method = tgd_common.send_to_trash(artist_dir)
+                    logger.info("Trashed artist folder (%s): %s", method, artist_dir)
+                    self._send_json(200, {"ok": True, "trash": method})
                 else:
                     self._send_json(404, {"error": f"Artist folder not found: {artist_dir}"})
             except Exception as exc:
@@ -4274,10 +4471,9 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(403, {"error": "Album dir outside music folder"})
                     return
                 if album_dir.exists() and album_dir.is_dir():
-                    import shutil as _shutil
-                    _shutil.rmtree(str(album_dir))
-                    logger.info("Deleted album folder: %s", album_dir)
-                    self._send_json(200, {"ok": True})
+                    method = tgd_common.send_to_trash(album_dir)
+                    logger.info("Trashed album folder (%s): %s", method, album_dir)
+                    self._send_json(200, {"ok": True, "trash": method})
                 else:
                     self._send_json(404, {"error": f"Album folder not found: {album_dir}"})
             except Exception as exc:
@@ -4521,6 +4717,60 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"ok": True})
             except Exception as exc:
                 logger.warning("open-folder failed: %s", exc)
+                self._send_json(500, {"error": str(exc)})
+            return
+
+        # ── Local play tracking ───────────────────────────────────────────
+        if path == "/play-event":
+            try:
+                ok = _record_play_event(body)
+                self._send_json(200 if ok else 400,
+                                {"ok": ok} if ok else
+                                {"ok": False, "error": "title and artist required"})
+            except Exception as exc:
+                logger.exception("play-event failed")
+                self._send_json(500, {"error": str(exc)})
+            return
+
+        # ── Restore a state backup made by /backup ────────────────────────
+        if path == "/restore-backup":
+            try:
+                from base64 import b64decode as _b64d
+                raw = _b64d(body.get("zip_b64") or "")
+                accepted, skipped = _validate_backup_zip(raw)
+            except Exception as exc:
+                self._send_json(400, {"error": f"Not a valid backup zip: {exc}"})
+                return
+            restored: "list[str]" = []
+            try:
+                for base, data_bytes in accepted.items():
+                    if base == "tg_audio_config.json":
+                        incoming = json.loads(data_bytes.decode("utf-8"))
+                        # Never let a backup overwrite live credentials —
+                        # /backup strips them, but a hand-edited zip might not.
+                        for k in (*tgd_common.SECRET_KEYS, "api_id", "spotify_client_id"):
+                            incoming.pop(k, None)
+                        cfg = tgd_common.load_config()
+                        cfg.update(incoming)
+                        tgd_common.save_config(cfg)
+                    else:
+                        (DATA_DIR / base).write_bytes(data_bytes)
+                    restored.append(base)
+                logger.info("Backup restored: %s (skipped: %s)", restored, skipped)
+                self._send_json(200, {"ok": True, "restored": restored, "skipped": skipped})
+            except Exception as exc:
+                logger.exception("restore-backup failed")
+                self._send_json(500, {"error": str(exc), "restored": restored})
+            return
+
+        # ── Fetch missing album covers from Deezer ────────────────────────
+        if path == "/art-repair":
+            try:
+                limit  = int(body.get("limit") or 25)
+                result = _art_repair(limit=max(1, min(limit, 100)))
+                self._send_json(200 if not result.get("error") else 400, result)
+            except Exception as exc:
+                logger.exception("art-repair failed")
                 self._send_json(500, {"error": str(exc)})
             return
 

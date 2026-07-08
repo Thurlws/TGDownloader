@@ -1,6 +1,7 @@
 telethon>=1.30.0
 mutagen>=1.46.0
 cryptg>=0.4.0
+send2trash>=1.8.0
 
 # NOTE: ffmpeg is a system dependency, NOT a pip package — install it from
 # https://ffmpeg.org/download.html and make sure it is on your PATH.

@@ -1,6 +1,6 @@
 # TGDownloader — Disclaimer & Legal Notice
 
-*Last updated: 2026-07-06*
+*Last updated: 2026-07-08*
 
 This notice supplements the [MIT License](LICENSE). The License governs your rights in the source code; this notice states the intended use of the software and the conditions under which it is offered. It does not modify or replace the License. **By downloading, installing, or using TGDownloader, you acknowledge that you have read and understood this notice.**
 
