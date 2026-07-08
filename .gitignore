@@ -12,9 +12,13 @@ library_stats_cache.json
 liked_songs.json
 watchlist.json
 tg_sessions.json
+play_history.jsonl
 bot_initialized.flag
 tgdownloader_debug.log
 pause.flag
+
+# ── Personal knowledge base (Obsidian vault — local notes, not published) ─
+TGDownloader Context Vault/
 
 # ── Temp download directories & runtime caches ───────────────────────────
 tg_tmp_downloads/

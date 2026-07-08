@@ -3331,6 +3331,7 @@
       </div>
     </div>
     <div id="mp-right">
+      <button class="mp-btn mp-btn-sm" id="mp-sleep" title="Sleep timer: off" data-icon="moon"></button>
       <button class="mp-btn mp-btn-sm" id="mp-np-toggle" title="Now playing view" data-icon="panelRight"></button>
       <div id="mp-vol-wrap">
         <span id="mp-vol-icon" style="display:flex;align-items:center;line-height:1"></span>
@@ -3559,12 +3560,29 @@
               <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Groups byte-identical audio files so you can reclaim space.</div>
               <div id="dupes-results"></div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" style="margin-bottom:14px">
               <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
                 <span>Backup</span>
                 <button class="btn-secondary" id="btn-backup" style="width:auto">Download backup</button>
               </div>
               <div style="font-size:11px;color:var(--fg3);margin:4px 0 0">Saves liked songs, watchlist, sessions and settings (no credentials) as a zip.</div>
+            </div>
+            <div class="stat-card" style="margin-bottom:14px">
+              <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <span>Restore Backup</span>
+                <button class="btn-secondary" id="btn-restore" style="width:auto">Restore from zip…</button>
+              </div>
+              <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Restores liked songs, watchlist, sessions and settings from a backup zip. Credentials are never overwritten.</div>
+              <input type="file" id="restore-file" accept=".zip" style="display:none">
+              <div id="restore-results"></div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <span>Cover Art Repair</span>
+                <button class="btn-secondary" id="btn-art-repair" style="width:auto">Repair missing covers</button>
+              </div>
+              <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Finds albums and playlists without cover art and fetches covers from Deezer (up to 25 per run).</div>
+              <div id="art-repair-results"></div>
             </div>
           </div>
 
@@ -3971,6 +3989,7 @@ const ICON = {
   shuffle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3h4v4"/><path d="M3 20 21 3"/><path d="M17 21h4v-4"/><path d="M15 15l6 6"/><path d="M3 4l6 6"/></svg>',
   repeat:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l3.5 3.5L17 9"/><path d="M3 11V9.5A4 4 0 0 1 7 5.5h13.5"/><path d="M7 22l-3.5-3.5L7 15"/><path d="M21 13v1.5a4 4 0 0 1-4 4H3.5"/></svg>',
   repeatOne:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l3.5 3.5L17 9"/><path d="M3 11V9.5A4 4 0 0 1 7 5.5h13.5"/><path d="M7 22l-3.5-3.5L7 15"/><path d="M21 13v1.5a4 4 0 0 1-4 4H3.5"/><text x="12" y="15" font-size="8" font-family="monospace" fill="currentColor" stroke="none" text-anchor="middle">1</text></svg>',
+  moon:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
   search:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
   copy:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
   close:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
@@ -5852,6 +5871,8 @@ let _libStatsCache = null;
 let _libStatsFetching = false;
 let _libStatsForceNext = false;   // one-shot: force a fresh server recompute on next fetch
 
+let _playStatsCache = null;   // /play-stats payload (local listening history)
+
 async function _fetchLibStats(force = false) {
   if (_libStatsFetching) return;
   _libStatsFetching = true;
@@ -5866,6 +5887,11 @@ async function _fetchLibStats(force = false) {
       _libStatsCache = data;
       renderStats(); // re-render with fresh data
     }
+  } catch (_) {}
+  try {
+    // Cheap (local JSONL aggregation) — refresh alongside the library stats.
+    const ps = await (await fetch('/play-stats')).json();
+    if (ps && !ps.error) { _playStatsCache = ps; renderStats(); }
   } catch (_) {}
   _libStatsFetching = false;
 }
@@ -6020,6 +6046,29 @@ function renderStats() {
     return;
   }
 
+  // ── Listening card (local play history — see /play-stats) ────────────────
+  let listenCard = '';
+  const ps = _playStatsCache;
+  if (ps && ps.total > 0) {
+    listenCard = `
+      <div class="stat-card">
+        <div class="stat-card-title">Listening</div>
+        <div class="stat-row"><span>Plays (all time)</span><strong style="color:var(--accent)">${ps.total.toLocaleString()}</strong></div>
+        <div class="stat-row"><span>Last 7 days</span><strong>${ps.last7}</strong></div>
+        <div class="stat-row"><span>Last 30 days</span><strong>${ps.last30}</strong></div>
+        ${ps.top_artists?.length ? `
+        <div class="stat-card-title" style="margin-top:10px;font-size:10px">Top artists</div>
+        ${makeBarChart(ps.top_artists.slice(0, 5).map(a => ({ label: a.artist, value: a.plays })))}` : ''}
+        ${ps.top_tracks?.length ? `
+        <div class="stat-card-title" style="margin-top:10px;font-size:10px">Top tracks</div>
+        ${ps.top_tracks.slice(0, 5).map(t => `
+          <div class="stat-row" style="gap:8px">
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(t.title)} <span style="color:var(--fg3)">· ${escHtml(t.artist)}</span></span>
+            <strong style="font-size:10px">${t.plays}×</strong>
+          </div>`).join('')}` : ''}
+      </div>`;
+  }
+
   el.innerHTML = `
     ${progCard}
     ${entries.length ? `
@@ -6035,6 +6084,7 @@ function renderStats() {
       ${avgSpeedMBs ? '' : '<div class="stat-row"><span style="font-size:10px;color:var(--fg3)">Run a session to calibrate ETA</span></div>'}
     </div>` : ''}
     ${sessionCard}
+    ${listenCard}
     ${libCard}
     ${speedCard}
   `;
@@ -7135,6 +7185,53 @@ document.getElementById('btn-backup').addEventListener('click', () => {
   const a = document.createElement('a');
   a.href = '/backup'; a.download = 'tgdownloader-backup.zip';
   document.body.appendChild(a); a.click(); a.remove();
+});
+document.getElementById('btn-restore')?.addEventListener('click', () =>
+  document.getElementById('restore-file').click());
+document.getElementById('restore-file')?.addEventListener('change', async e => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  const out = document.getElementById('restore-results');
+  out.innerHTML = '<div style="font-size:11px;color:var(--fg3)">Restoring…</div>';
+  try {
+    const buf = new Uint8Array(await f.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < buf.length; i += 0x8000)
+      bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+    const d = await (await fetch('/restore-backup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ zip_b64: btoa(bin) }),
+    })).json();
+    if (d.error) {
+      out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(d.error)}</div>`;
+      return;
+    }
+    const skippedNote = (d.skipped || []).length
+      ? ` · ${d.skipped.length} unknown entr${d.skipped.length === 1 ? 'y' : 'ies'} skipped` : '';
+    out.innerHTML = `<div style="font-size:11px;color:var(--accent)">Restored: ${escHtml((d.restored || []).join(', ') || 'nothing')}${skippedNote}. Reload the app to see restored data.</div>`;
+  } catch (err) {
+    out.innerHTML = `<div style="font-size:11px;color:var(--red)">Restore failed: ${escHtml(String(err))}</div>`;
+  }
+});
+document.getElementById('btn-art-repair')?.addEventListener('click', async () => {
+  const out = document.getElementById('art-repair-results');
+  const btn = document.getElementById('btn-art-repair');
+  btn.disabled = true;
+  out.innerHTML = '<div style="font-size:11px;color:var(--fg3)">Scanning albums and fetching covers…</div>';
+  try {
+    const d = await (await fetch('/art-repair', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    })).json();
+    if (d.error) {
+      out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(d.error)}</div>`;
+    } else {
+      out.innerHTML = `<div style="font-size:11px">Checked <strong>${d.checked}</strong> folders · missing <strong>${d.missing}</strong> · fixed <strong style="color:var(--accent)">${d.fixed}</strong>${d.failed ? ` · failed <strong style="color:var(--red)">${d.failed}</strong>` : ''}${d.remaining > 0 ? ` · ${d.remaining} left — run again` : ''}</div>`;
+    }
+  } catch (err) {
+    out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(String(err))}</div>`;
+  }
+  btn.disabled = false;
 });
 document.getElementById('btn-modal-cancel').addEventListener('click', () =>
   document.getElementById('modal-overlay').classList.remove('open'));
@@ -10489,6 +10586,7 @@ function _mpPlayTrack(idx, alb, autoplay = true) {
   _mpUpdateLikeBtn(_isTrackLiked(track, alb));
   _mpHighlightRow(idx);
   _npUpdate(track, alb);
+  _mpUpdateMediaSession(track, alb, coverSrc);
 
   // Scrobbling: only local files (never 30s Deezer previews).
   const _isLocalTrack = !!(trackPh && track.name);
@@ -10566,6 +10664,89 @@ function _sendScrobble(kind) {
   }).catch(() => {});
 }
 
+// Local listening history — recorded server-side regardless of whether a
+// scrobbling service is configured. Powers the Listening card in Stats.
+function _sendPlayEvent(meta) {
+  fetch('/play-event', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(meta),
+  }).catch(() => {});
+}
+
+// ── OS media integration (hardware keys, Windows media overlay) ──────────────
+function _mpUpdateMediaSession(track, alb, coverSrc) {
+  if (!('mediaSession' in navigator)) return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title:  track.title || track.name || '',
+      artist: track.artist || alb?.artist || '',
+      album:  track.album || (alb && !alb.is_liked ? alb.album : '') || '',
+      artwork: coverSrc
+        ? [{ src: new URL(coverSrc, location.href).href, sizes: '512x512', type: 'image/jpeg' }]
+        : [],
+    });
+  } catch (_) {}
+}
+
+(function _mpInitMediaSession() {
+  if (!('mediaSession' in navigator)) return;
+  try {
+    const ms = navigator.mediaSession;
+    ms.setActionHandler('play',  () => { if (!_mpPlaying) document.getElementById('mp-play-btn')?.click(); });
+    ms.setActionHandler('pause', () => { if (_mpPlaying)  document.getElementById('mp-play-btn')?.click(); });
+    ms.setActionHandler('previoustrack', () => document.getElementById('mp-prev')?.click());
+    ms.setActionHandler('nexttrack',     () => document.getElementById('mp-next')?.click());
+    ms.setActionHandler('seekto', d => {
+      if (d.seekTime != null && isFinite(_mpAudio.duration)) _mpAudio.currentTime = d.seekTime;
+    });
+  } catch (_) {}
+})();
+
+function _mpSyncPositionState() {
+  if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
+  try {
+    if (isFinite(_mpAudio.duration) && _mpAudio.duration > 0) {
+      navigator.mediaSession.setPositionState({
+        duration: _mpAudio.duration,
+        position: Math.min(_mpAudio.currentTime, _mpAudio.duration),
+        playbackRate: _mpAudio.playbackRate || 1,
+      });
+    }
+  } catch (_) {}
+}
+
+// ── Sleep timer (cycles Off → 15 → 30 → 60 min → End of track) ───────────────
+let _mpSleepMode  = 'off';   // 'off' | '15' | '30' | '60' | 'track'
+let _mpSleepUntil = 0;       // epoch ms when a minute-based timer expires
+
+function _mpUpdateSleepBtn() {
+  const b = document.getElementById('mp-sleep');
+  if (!b) return;
+  b.classList.toggle('active', _mpSleepMode !== 'off');
+  b.title = _mpSleepMode === 'off'   ? 'Sleep timer: off'
+          : _mpSleepMode === 'track' ? 'Sleep timer: stop after this track'
+          : `Sleep timer: ~${Math.max(1, Math.ceil((_mpSleepUntil - Date.now()) / 60000))} min left`;
+}
+
+document.getElementById('mp-sleep')?.addEventListener('click', () => {
+  const order = ['off', '15', '30', '60', 'track'];
+  _mpSleepMode  = order[(order.indexOf(_mpSleepMode) + 1) % order.length];
+  _mpSleepUntil = /^\d+$/.test(_mpSleepMode) ? Date.now() + parseInt(_mpSleepMode, 10) * 60000 : 0;
+  _mpUpdateSleepBtn();
+});
+
+setInterval(() => {
+  if (_mpSleepUntil && Date.now() >= _mpSleepUntil) {
+    _mpSleepMode  = 'off';
+    _mpSleepUntil = 0;
+    _mpUpdateSleepBtn();
+    if (_mpPlaying) _mpStop();
+  } else if (_mpSleepUntil) {
+    _mpUpdateSleepBtn();      // keep the "~N min left" tooltip fresh
+  }
+}, 15000);
+
 function _mpUpdatePlayBtn() {
   const btn = document.getElementById('mp-play-btn');
   if (!btn) return;
@@ -10631,11 +10812,12 @@ _mpAudio.addEventListener('timeupdate', () => {
   if (st && st.isLocal && !st.scrobbled && cur >= Math.min(dur * 0.5, 240) && cur > 20) {
     st.scrobbled = true;
     _sendScrobble('scrobble');
+    _sendPlayEvent(st.meta);      // local listening history (always on)
   }
 
   // Persist playback position at most every ~5s
   const now = Date.now();
-  if (now - _mpLastSaveAt > 5000) { _mpLastSaveAt = now; _mpSaveState(); }
+  if (now - _mpLastSaveAt > 5000) { _mpLastSaveAt = now; _mpSaveState(); _mpSyncPositionState(); }
 
   // Near-gapless: warm the next track into the browser cache before this one ends
   if (_mpPlaying && dur > 0 && (dur - cur) < 20 && _mpRepeat !== 'one') {
@@ -10672,8 +10854,14 @@ _mpAudio.addEventListener('loadedmetadata', () => {
   }
 });
 
-_mpAudio.addEventListener('play',  () => { _mpPlaying = true;  _mpUpdatePlayBtn(); _mpSaveState(); });
-_mpAudio.addEventListener('pause', () => { _mpPlaying = false; _mpUpdatePlayBtn(); _mpSaveState(); });
+_mpAudio.addEventListener('play',  () => {
+  _mpPlaying = true;  _mpUpdatePlayBtn(); _mpSaveState();
+  try { if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing'; } catch (_) {}
+});
+_mpAudio.addEventListener('pause', () => {
+  _mpPlaying = false; _mpUpdatePlayBtn(); _mpSaveState();
+  try { if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused'; } catch (_) {}
+});
 window.addEventListener('beforeunload', () => _mpSaveState());
 // A track that actually starts producing audio clears the error streak.
 _mpAudio.addEventListener('playing', () => {
@@ -10771,6 +10959,13 @@ _mpAudio.addEventListener('error', () => {
 
 _mpAudio.addEventListener('ended', () => {
   _mpPlaying = false;
+  // Sleep timer "end of track": stop here instead of advancing.
+  if (_mpSleepMode === 'track') {
+    _mpSleepMode = 'off';
+    _mpUpdateSleepBtn();
+    _mpStop();
+    return;
+  }
   // Repeat one: replay the same track
   if (_mpRepeat === 'one' && _mpIdx >= 0) {
     _mpPlayTrack(_mpIdx, _mpCurrentAlb);

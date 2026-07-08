@@ -70,6 +70,8 @@ a = Analysis(
         'mutagen.musepack',
         # ── Optional fast crypto ──────────────────────────────
         'cryptg',
+        # ── Recycle-bin deletes ───────────────────────────────
+        'send2trash',
         # ── Tkinter (folder picker fallback) ──────────────────
         'tkinter',
         'tkinter.filedialog',
