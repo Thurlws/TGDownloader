@@ -48,6 +48,12 @@ The interface is a local web app that opens in your browser (or a Chromium app w
 - **Safe deletes** — removed files, albums and artists go to the recycle bin, not oblivion
 - **Backup & restore** — export app state as a zip and restore it from the Maintenance tab
 - **Cover art repair** — one click fetches missing album covers from Deezer
+- **Tag cleanup** — normalises `feat.` formatting, canonicalises genres, fills albumartist (preview before applying)
+- **Album completeness** — flags albums missing tracks versus the Deezer tracklist
+- **Decode-test scan** — ffmpeg-verifies every file to catch truly corrupt downloads
+- **Smart de-duplication** — ranks copies by format/bitrate and keeps the best
+- **Folder import** — pull audio from any folder into your library through the same sort/dedupe pipeline
+- **AcoustID identification** *(optional)* — fingerprints untagged files to recover artist/title
 
 ---
 

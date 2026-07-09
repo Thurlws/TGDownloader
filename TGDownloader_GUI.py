@@ -3032,6 +3032,248 @@ def _loudness_scan(limit: int = 25) -> dict:
 
 
 # ══════════════════════════════════════════════
+#  LIBRARY INTELLIGENCE  (v1.6.0)
+# ══════════════════════════════════════════════
+
+_AUDIO_EXT = {".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac",
+              ".wav", ".aif", ".aiff", ".wma", ".ape", ".wv"}
+
+# Rough per-format quality rank for duplicate keep-best (higher = keep).
+_FORMAT_RANK = {".flac": 100, ".wav": 95, ".aif": 94, ".aiff": 94, ".ape": 93,
+                ".wv": 92, ".m4a": 60, ".aac": 55, ".ogg": 50, ".opus": 50,
+                ".mp3": 40, ".wma": 30}
+
+
+def _iter_library_audio(home_path: "Path"):
+    for p in home_path.rglob("*"):
+        if p.is_file() and p.suffix.lower() in _AUDIO_EXT:
+            yield p
+
+
+def _quality_score(path: "Path") -> "tuple[int, int]":
+    """(format_rank, bitrate_or_size) — bigger is better, for keep-best."""
+    rank = _FORMAT_RANK.get(path.suffix.lower(), 0)
+    bitrate = 0
+    try:
+        from mutagen import File as _MF
+        a = _MF(str(path))
+        if a is not None and getattr(a, "info", None) is not None:
+            bitrate = int(getattr(a.info, "bitrate", 0) or 0)
+    except Exception:
+        pass
+    if not bitrate:
+        try:
+            bitrate = path.stat().st_size
+        except OSError:
+            bitrate = 0
+    return rank, bitrate
+
+
+def _tag_janitor(apply: bool = False, limit: int = 500) -> dict:
+    """Scan the library for fixable tag issues (feat. formatting, genre
+    canonicalisation, missing albumartist).  Dry-run by default: returns the
+    proposed changes; with apply=True, writes them."""
+    m    = _tgd_import()
+    cfg  = m.load_config()
+    home = cfg.get("home_music_folder")
+    if not home:
+        return {"error": "No home music folder configured"}
+    home_path = Path(home)
+    if not home_path.exists():
+        return {"error": f"Folder not found: {home}"}
+
+    from mutagen import File as _MF
+    changes: "list[dict]" = []
+    scanned = 0
+    for p in _iter_library_audio(home_path):
+        if len(changes) >= limit:
+            break
+        scanned += 1
+        try:
+            audio = _MF(str(p), easy=True)
+            if audio is None:
+                continue
+        except Exception:
+            continue
+        fixes = {}
+        title = (audio.get("title") or [""])[0]
+        if title:
+            nt = tgd_common.normalise_featuring(title)
+            if nt != title:
+                fixes["title"] = nt
+        genre = (audio.get("genre") or [""])[0]
+        if genre:
+            cg = tgd_common.canonical_genre(genre)
+            if cg != genre:
+                fixes["genre"] = cg
+        # albumartist for compilations: fill from the parent artist folder when absent
+        if not (audio.get("albumartist") or [""])[0]:
+            try:
+                artist_folder = p.relative_to(home_path / ARTISTS_DIRNAME).parts[0]
+                if artist_folder:
+                    fixes["albumartist"] = artist_folder
+            except (ValueError, IndexError):
+                pass
+        if not fixes:
+            continue
+        rel = str(p.relative_to(home_path))
+        if apply:
+            try:
+                for k, v in fixes.items():
+                    audio[k] = [v]
+                audio.save()
+            except Exception as exc:
+                changes.append({"file": rel, "error": str(exc)})
+                continue
+        changes.append({"file": rel, "fixes": fixes})
+    return {"scanned": scanned, "changes": changes,
+            "applied": apply, "count": len([c for c in changes if "fixes" in c])}
+
+
+def _corruption_scan(limit: int = 400) -> dict:
+    """ffmpeg decode-test each file (stronger than a tag-open check): a file
+    that fails to decode is genuinely damaged.  Returns the bad files."""
+    ff = tgd_common.ffmpeg_exe()
+    if not ff:
+        return {"error": "ffmpeg not found — install it to decode-test files"}
+    m    = _tgd_import()
+    cfg  = m.load_config()
+    home = cfg.get("home_music_folder")
+    if not home:
+        return {"error": "No home music folder configured"}
+    home_path = Path(home)
+    if not home_path.exists():
+        return {"error": f"Folder not found: {home}"}
+
+    bad: "list[str]" = []
+    scanned = 0
+    for p in _iter_library_audio(home_path):
+        if scanned >= limit:
+            break
+        scanned += 1
+        try:
+            proc = subprocess.run(
+                [ff, "-v", "error", "-xerror", "-i", str(p),
+                 "-f", "null", "NUL" if sys.platform == "win32" else "/dev/null"],
+                capture_output=True, timeout=120)
+            if proc.returncode != 0 or proc.stderr.strip():
+                bad.append(str(p.relative_to(home_path)))
+        except Exception:
+            bad.append(str(p.relative_to(home_path)))
+    return {"scanned": scanned, "corrupt": bad, "count": len(bad)}
+
+
+def _album_completeness(limit: int = 60) -> dict:
+    """For each album folder, compare the local track count against Deezer's
+    tracklist for the best-matching album.  Best-effort: albums we can't match
+    on Deezer are reported as 'unknown' rather than incomplete."""
+    m    = _tgd_import()
+    cfg  = m.load_config()
+    home = cfg.get("home_music_folder")
+    if not home:
+        return {"error": "No home music folder configured"}
+    home_path = Path(home)
+    artists_dir = home_path / ARTISTS_DIRNAME
+    if not artists_dir.is_dir():
+        return {"albums": [], "checked": 0}
+
+    results: "list[dict]" = []
+    checked = 0
+    for artist_dir in sorted(artists_dir.iterdir()):
+        if not artist_dir.is_dir() or artist_dir.name.startswith("."):
+            continue
+        for album_dir in sorted(artist_dir.iterdir()):
+            if not album_dir.is_dir():
+                continue
+            local = sum(1 for f in album_dir.iterdir()
+                        if f.is_file() and f.suffix.lower() in _AUDIO_EXT)
+            if not local:
+                continue
+            if checked >= limit:
+                break
+            checked += 1
+            try:
+                hits = (_deezer_search(f"{artist_dir.name} {album_dir.name}").get("data") or [])
+                expected = int(hits[0].get("nb_tracks") or 0) if hits else 0
+            except Exception:
+                expected = 0
+            if expected and local < expected:
+                results.append({"artist": artist_dir.name, "album": album_dir.name,
+                                "have": local, "total": expected})
+            time.sleep(0.15)
+    results.sort(key=lambda r: r["total"] - r["have"], reverse=True)
+    return {"albums": results, "checked": checked, "incomplete": len(results)}
+
+
+def _fingerprint_scan(limit: int = 50) -> dict:
+    """Opt-in AcoustID fingerprinting for untagged files (needs Chromaprint's
+    fpcalc binary AND an acoustid_api_key in config).  Fills missing
+    artist/title/album from the AcoustID/MusicBrainz match."""
+    fp = tgd_common.fpcalc_exe()
+    if not fp:
+        return {"error": "fpcalc (Chromaprint) not found — install it to enable fingerprinting"}
+    m    = _tgd_import()
+    cfg  = m.load_config()
+    api_key = (cfg.get("acoustid_api_key") or "").strip()
+    if not api_key:
+        return {"error": "Set acoustid_api_key in config to enable fingerprinting"}
+    home = cfg.get("home_music_folder")
+    if not home:
+        return {"error": "No home music folder configured"}
+    home_path = Path(home)
+
+    from mutagen import File as _MF
+    identified = failed = scanned = 0
+    updates: "list[dict]" = []
+    for p in _iter_library_audio(home_path):
+        if scanned >= limit:
+            break
+        try:
+            audio = _MF(str(p), easy=True)
+            if audio is None:
+                continue
+            has_meta = (audio.get("artist") or [""])[0] and (audio.get("title") or [""])[0]
+            if has_meta:
+                continue                        # only fill genuinely untagged files
+        except Exception:
+            continue
+        scanned += 1
+        try:
+            proc = subprocess.run([fp, "-json", str(p)], capture_output=True,
+                                  timeout=60, text=True)
+            fpdata = json.loads(proc.stdout or "{}")
+            dur = int(float(fpdata.get("duration") or 0))
+            fingerprint = fpdata.get("fingerprint")
+            if not (dur and fingerprint):
+                failed += 1
+                continue
+            url = ("https://api.acoustid.org/v2/lookup?client=" + url_quote(api_key)
+                   + "&meta=recordings&duration=" + str(dur)
+                   + "&fingerprint=" + url_quote(fingerprint))
+            with urllib.request.urlopen(url, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            best = (data.get("results") or [{}])[0]
+            rec  = (best.get("recordings") or [{}])[0]
+            title  = rec.get("title", "")
+            artist = ((rec.get("artists") or [{}])[0]).get("name", "")
+            if title and artist:
+                audio["title"]  = [title]
+                audio["artist"] = [artist]
+                audio.save()
+                identified += 1
+                updates.append({"file": str(p.relative_to(home_path)),
+                                "artist": artist, "title": title})
+            else:
+                failed += 1
+        except Exception as exc:
+            logger.debug("Fingerprint failed for %s: %s", p, exc)
+            failed += 1
+        time.sleep(0.4)
+    return {"scanned": scanned, "identified": identified, "failed": failed,
+            "updates": updates}
+
+
+# ══════════════════════════════════════════════
 #  COVER ART REPAIR
 # ══════════════════════════════════════════════
 
@@ -3430,13 +3672,19 @@ class Handler(BaseHTTPRequestHandler):
                             sz = pp.stat().st_size
                         except OSError:
                             sz = 0
+                        rank, bitrate = _quality_score(pp)
                         members.append({
                             "path":     p,
                             "rel":      str(pp.relative_to(home_path)) if str(pp).startswith(str(home_path)) else pp.name,
                             "name":     pp.name,
                             "size":     sz,
+                            "ext":      pp.suffix.lower().lstrip("."),
+                            "quality":  rank * 10_000_000 + bitrate,
                         })
-                    members.sort(key=lambda x: x["path"])
+                    # Best copy first so the UI can mark it "keep".
+                    members.sort(key=lambda x: x["quality"], reverse=True)
+                    if members:
+                        members[0]["best"] = True
                     groups.append({"size": members[0]["size"], "files": members})
                 groups.sort(key=lambda g: g["size"] * (len(g["files"]) - 1), reverse=True)
                 wasted = sum(g["size"] * (len(g["files"]) - 1) for g in groups)
@@ -4744,6 +4992,66 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, {"path": chosen})
             return
 
+        # ── Import an external folder through the sort/dedupe pipeline ─────
+        if path == "/import-folder":
+            src = (body.get("path") or "").strip()
+            if not src:
+                # No path given → open the native picker for the user.
+                src = _pick_folder_native("")
+                if not src:
+                    self._send_json(200, {"ok": False, "cancelled": True})
+                    return
+            try:
+                m    = _tgd_import()
+                cfg  = m.load_config()
+                home = cfg.get("home_music_folder")
+                if not home:
+                    self._send_json(400, {"error": "No home music folder configured"})
+                    return
+                home_path = Path(home)
+                src_path  = Path(src)
+                if not src_path.is_dir():
+                    self._send_json(400, {"error": f"Not a folder: {src}"})
+                    return
+                if home_path.resolve() in src_path.resolve().parents or \
+                   src_path.resolve() == home_path.resolve():
+                    self._send_json(400, {"error": "Choose a folder outside your library to import from."})
+                    return
+                # Group the imported files by their album tag, exactly like a
+                # download: sort_by_album fuzzy-matches artist/album folders and
+                # applies the hash dedupe index so re-imports are skipped.
+                hash_index = m.build_library_hash_index(home_path)
+                by_artist: "dict[str, list]" = {}
+                for f in src_path.rglob("*"):
+                    if f.is_file() and f.suffix.lower() in _AUDIO_EXT:
+                        art = m._get_artist(f) if hasattr(m, "_get_artist") else ""
+                        by_artist.setdefault(art or "Imported", []).append(f)
+                imported = dupes = 0
+                for art, files in by_artist.items():
+                    artist_dir = (m._fuzzy_match_dir(art, m.artists_root(home_path))
+                                  or m.artists_root(home_path) / m._sanitise_path(art))
+                    # Stage into a temp dir so sort_by_album can move them out.
+                    staged = home_path / ".tgimport_tmp"
+                    staged.mkdir(parents=True, exist_ok=True)
+                    for f in files:
+                        try:
+                            dest = staged / f.name
+                            import shutil as _sh
+                            _sh.copy2(str(f), str(dest))
+                        except Exception:
+                            pass
+                    d, _albums = m.sort_by_album(staged, artist_dir, hash_index)
+                    dupes    += d
+                    imported += sum(1 for _ in files) - d
+                    import shutil as _sh
+                    _sh.rmtree(staged, ignore_errors=True)
+                self._send_json(200, {"ok": True, "imported": imported, "dupes": dupes,
+                                      "source": str(src_path)})
+            except Exception as exc:
+                logger.exception("import-folder failed")
+                self._send_json(500, {"error": str(exc)})
+            return
+
         # ── Telegram audio quality SET ────────────────────────────────────
         if path == "/telegram-quality":
             target = body.get("quality", "").strip()
@@ -4933,6 +5241,68 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"ok": True, "file": dst.name})
             except Exception as exc:
                 logger.exception("save-lrc failed")
+                self._send_json(500, {"error": str(exc)})
+            return
+
+        # ── Library intelligence (v1.6.0) ─────────────────────────────────
+        if path == "/tag-janitor":
+            try:
+                result = _tag_janitor(apply=bool(body.get("apply")),
+                                      limit=max(1, min(int(body.get("limit") or 500), 2000)))
+                self._send_json(200 if not result.get("error") else 400, result)
+            except Exception as exc:
+                logger.exception("tag-janitor failed")
+                self._send_json(500, {"error": str(exc)})
+            return
+
+        if path == "/corruption-scan":
+            try:
+                result = _corruption_scan(limit=max(1, min(int(body.get("limit") or 400), 5000)))
+                self._send_json(200 if not result.get("error") else 400, result)
+            except Exception as exc:
+                logger.exception("corruption-scan failed")
+                self._send_json(500, {"error": str(exc)})
+            return
+
+        if path == "/album-completeness":
+            try:
+                result = _album_completeness(limit=max(1, min(int(body.get("limit") or 60), 500)))
+                self._send_json(200 if not result.get("error") else 400, result)
+            except Exception as exc:
+                logger.exception("album-completeness failed")
+                self._send_json(500, {"error": str(exc)})
+            return
+
+        if path == "/fingerprint-scan":
+            try:
+                result = _fingerprint_scan(limit=max(1, min(int(body.get("limit") or 50), 500)))
+                self._send_json(200 if not result.get("error") else 400, result)
+            except Exception as exc:
+                logger.exception("fingerprint-scan failed")
+                self._send_json(500, {"error": str(exc)})
+            return
+
+        if path == "/dedupe-auto":
+            # Trash all but the best copy in every duplicate group.
+            try:
+                m    = _tgd_import()
+                cfg  = m.load_config()
+                home = cfg.get("home_music_folder")
+                if not home:
+                    self._send_json(400, {"error": "No home music folder configured"})
+                    return
+                home_path = Path(home).resolve()
+                trashed = 0
+                for paths in m.build_duplicate_groups(home_path):
+                    scored = sorted(paths, key=lambda p: _quality_score(Path(p)), reverse=True)
+                    for loser in scored[1:]:                 # keep scored[0]
+                        lp = Path(loser).resolve()
+                        if home_path in lp.parents:
+                            tgd_common.send_to_trash(lp)
+                            trashed += 1
+                self._send_json(200, {"ok": True, "trashed": trashed})
+            except Exception as exc:
+                logger.exception("dedupe-auto failed")
                 self._send_json(500, {"error": str(exc)})
             return
 

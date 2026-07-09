@@ -731,6 +731,22 @@ def _get_album(path: Path) -> str:
     return UNKNOWN_ALBUM
 
 
+def _get_artist(path: Path) -> str:
+    """Best-effort artist tag (albumartist preferred), else '' — used when
+    importing an external folder so files route to the right artist folder."""
+    try:
+        audio = MutagenFile(path, easy=True)
+        if audio is None:
+            return ""
+        for key in ("albumartist", "artist"):
+            tag = audio.get(key)
+            if tag and str(tag[0]).strip():
+                return str(tag[0]).strip()
+    except Exception:
+        pass
+    return ""
+
+
 def sort_by_album(source: Path, dest: Path,
                   hash_index: set[str] | None = None) -> tuple[int, list[str]]:
     _log(f"\n{'─'*50}")

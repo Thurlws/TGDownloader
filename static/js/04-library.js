@@ -1140,16 +1140,29 @@ function renderDupes(d) {
   const el = document.getElementById('dupes-results');
   if (!d.groups.length) { el.innerHTML = '<div class="stat-row" style="color:var(--accent)">✓ No duplicates remaining.</div>'; return; }
   el.innerHTML = `<div class="stat-row"><span>Duplicate groups</span><strong>${d.groups.length}</strong></div>
-    <div class="stat-row"><span>Reclaimable</span><strong style="color:var(--accent)">${_fmtBytes(d.wasted_bytes)}</strong></div>` +
+    <div class="stat-row"><span>Reclaimable</span><strong style="color:var(--accent)">${_fmtBytes(d.wasted_bytes)}</strong></div>
+    <div style="margin:6px 0"><button class="btn-secondary" id="btn-dedupe-auto" style="width:auto">Keep best, trash the rest</button></div>` +
     d.groups.map((g, gi) => `
       <div style="border:1px solid var(--border);border-radius:5px;padding:6px 8px;margin-top:8px">
         <div style="font-size:10px;color:var(--fg3);margin-bottom:4px">${g.files.length} copies · ${_fmtBytes(g.size)} each</div>
         ${g.files.map((f, fi) => `
           <div style="display:flex;align-items:center;gap:8px;padding:2px 0">
+            ${f.best ? '<span title="Best quality — kept" style="flex-shrink:0;color:var(--accent);font-size:9px;font-weight:600">KEEP</span>' : '<span style="flex-shrink:0;width:30px"></span>'}
             <span style="flex:1;min-width:0;font-family:var(--mono);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(f.rel)}">${escHtml(f.rel)}</span>
+            <span style="flex-shrink:0;font-size:9px;color:var(--fg3);text-transform:uppercase">${escHtml(f.ext || '')}</span>
             <button class="btn-icon" style="flex-shrink:0" title="Delete this copy" onclick="_deleteDupe(${gi},${fi})">✕</button>
           </div>`).join('')}
       </div>`).join('');
+  document.getElementById('btn-dedupe-auto')?.addEventListener('click', async () => {
+    const ok = await _confirm('Trash every duplicate except the best-quality copy in each group?', { title: 'Auto de-duplicate', confirmLabel: 'Keep best', danger: true });
+    if (!ok) return;
+    try {
+      const r = await (await fetch('/dedupe-auto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json();
+      if (r.error) { _toast(r.error, 'error'); return; }
+      _toast(`Moved ${r.trashed} duplicate(s) to the recycle bin.`, 'success');
+      findDuplicates();
+    } catch (e) { _toast(String(e), 'error'); }
+  });
 }
 
 async function _deleteDupe(gi, fi) {
