@@ -1430,6 +1430,7 @@ function _volIconMuted() {
 _mpUpdateModeButtons();
 _mpUpdateLikeBtn(false);
 _loadLikedKeys();
+_loadRatings();
 
 // ── Play button centering class ───────────────────────────────────────────────
 {

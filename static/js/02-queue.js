@@ -1233,6 +1233,10 @@ function renderStats() {
             <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(t.title)} <span style="color:var(--fg3)">· ${escHtml(t.artist)}</span></span>
             <strong style="font-size:10px">${t.plays}×</strong>
           </div>`).join('')}` : ''}
+        <div style="display:flex;gap:6px;margin-top:12px">
+          <button class="btn-secondary" id="btn-open-wrapped" style="width:auto;font-size:11px;padding:4px 10px">Your year in music</button>
+          <button class="btn-secondary" id="btn-open-phistory" style="width:auto;font-size:11px;padding:4px 10px">Full history</button>
+        </div>
       </div>`;
   }
 
@@ -1256,6 +1260,129 @@ function renderStats() {
     ${speedCard}
   `;
 }
+
+// ═══════════════════════════════════════
+//  WRAPPED + LISTENING HISTORY  (v1.7.0)
+// ═══════════════════════════════════════
+async function openWrapped(year) {
+  document.getElementById('wrapped-overlay')?.classList.add('open');
+  const content = document.getElementById('wrapped-content');
+  if (content) content.innerHTML = '<div class="stat-empty">Crunching your year…</div>';
+  try {
+    const d = await (await fetch('/wrapped' + (year ? `?year=${year}` : ''))).json();
+    _renderWrapped(d);
+  } catch (e) {
+    if (content) content.innerHTML = `<div class="stat-empty" style="color:var(--red)">Could not load your year: ${escHtml(String(e))}</div>`;
+  }
+}
+
+function _renderWrapped(d) {
+  const content = document.getElementById('wrapped-content');
+  const yearSel = document.getElementById('wrapped-year');
+  if (!content) return;
+  if (yearSel) {
+    const years = d.years?.length ? d.years : [d.year];
+    yearSel.innerHTML = years.map(y =>
+      `<option value="${y}"${y === d.year ? ' selected' : ''}>${y}</option>`).join('');
+  }
+  if (!d.total_plays) {
+    content.innerHTML = `<div class="stat-empty">No plays recorded in ${d.year} — play some music and come back.</div>`;
+    return;
+  }
+  const monthMax  = Math.max(...d.by_month, 1);
+  const monthLbls = ['J','F','M','A','M','J','J','A','S','O','N','D'];
+  const rows = (list, fmt) => list.map((x, i) => `
+    <div class="wrapped-row"><span class="rank">${i + 1}</span>${fmt(x)}
+      <span class="plays">${x.plays}×</span></div>`).join('');
+  content.innerHTML = `
+    <div class="wrapped-hero">
+      <div class="wrapped-hero-cell"><div class="wrapped-hero-num">${d.total_plays.toLocaleString()}</div><div class="wrapped-hero-lbl">plays</div></div>
+      <div class="wrapped-hero-cell"><div class="wrapped-hero-num">${d.unique_tracks.toLocaleString()}</div><div class="wrapped-hero-lbl">unique tracks</div></div>
+      <div class="wrapped-hero-cell"><div class="wrapped-hero-num">${d.unique_artists.toLocaleString()}</div><div class="wrapped-hero-lbl">artists</div></div>
+      <div class="wrapped-hero-cell"><div class="wrapped-hero-num">${d.listening_days}</div><div class="wrapped-hero-lbl">listening days</div></div>
+      <div class="wrapped-hero-cell"><div class="wrapped-hero-num">${d.longest_streak_days}</div><div class="wrapped-hero-lbl">longest day streak</div></div>
+      <div class="wrapped-hero-cell"><div class="wrapped-hero-num">${d.busiest_day ? d.busiest_day.plays : '—'}</div><div class="wrapped-hero-lbl">${d.busiest_day ? 'plays on ' + escHtml(d.busiest_day.date) : 'busiest day'}</div></div>
+    </div>
+    <div class="wrapped-sec-label">Plays by month</div>
+    <div class="wrapped-months">${d.by_month.map(v =>
+      `<div class="m" style="height:${Math.max(4, Math.round((v / monthMax) * 100))}%" title="${v} plays"></div>`).join('')}</div>
+    <div class="wrapped-months-lbls">${monthLbls.map(l => `<span>${l}</span>`).join('')}</div>
+    ${d.top_artists?.length ? `<div class="wrapped-sec-label">Top artists</div>` +
+      rows(d.top_artists.slice(0, 5), a => `<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(a.artist)}</span>`) : ''}
+    ${d.top_tracks?.length ? `<div class="wrapped-sec-label">Top tracks</div>` +
+      rows(d.top_tracks.slice(0, 5), t => `<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(t.title)} <span style="color:var(--fg3)">· ${escHtml(t.artist)}</span></span>`) : ''}
+    ${d.top_albums?.length ? `<div class="wrapped-sec-label">Top albums</div>` +
+      rows(d.top_albums, al => `<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(al.album)} <span style="color:var(--fg3)">· ${escHtml(al.artist)}</span></span>`) : ''}
+  `;
+}
+
+let _phOffset = 0, _phQuery = '', _phTimer = null;
+const _PH_PAGE = 200;
+
+async function openPlayHistory() {
+  _phOffset = 0; _phQuery = '';
+  const q = document.getElementById('phistory-q');
+  if (q) q.value = '';
+  document.getElementById('phistory-overlay')?.classList.add('open');
+  _phLoad(false);
+  setTimeout(() => q?.focus(), 20);
+}
+
+async function _phLoad(append) {
+  const list = document.getElementById('phistory-list');
+  if (!list) return;
+  if (!append) list.innerHTML = '<div class="stat-empty">Loading…</div>';
+  try {
+    const d = await (await fetch(`/play-history?q=${encodeURIComponent(_phQuery)}&offset=${_phOffset}&limit=${_PH_PAGE}`)).json();
+    const rows = (d.events || []).map(e => `
+      <div class="phistory-row">
+        <span class="t">${escHtml(e.title)}</span>
+        <span class="a">${escHtml(e.artist)}${e.album ? ' · ' + escHtml(e.album) : ''}</span>
+        <span class="ts">${escHtml((e.ts || '').replace('T', ' '))}</span>
+      </div>`).join('');
+    if (append) list.insertAdjacentHTML('beforeend', rows);
+    else list.innerHTML = rows || '<div class="stat-empty">No plays match.</div>';
+    const shown = _phOffset + (d.events || []).length;
+    const count = document.getElementById('phistory-count');
+    if (count) count.textContent = `${shown.toLocaleString()} of ${(d.total || 0).toLocaleString()} plays`;
+    const more = document.getElementById('btn-phistory-more');
+    if (more) more.style.display = shown < (d.total || 0) ? '' : 'none';
+  } catch (e) {
+    if (!append) list.innerHTML = `<div class="stat-empty" style="color:var(--red)">Could not load history: ${escHtml(String(e))}</div>`;
+  }
+}
+
+// Wire the (persistent) modal chrome + delegate the stats-card buttons
+document.getElementById('stats-content')?.addEventListener('click', (e) => {
+  if (e.target.closest('#btn-open-wrapped'))  openWrapped();
+  if (e.target.closest('#btn-open-phistory')) openPlayHistory();
+});
+document.getElementById('btn-wrapped-close')?.addEventListener('click', () =>
+  document.getElementById('wrapped-overlay')?.classList.remove('open'));
+document.getElementById('wrapped-overlay')?.addEventListener('click', (e) => {
+  if (e.target === document.getElementById('wrapped-overlay'))
+    document.getElementById('wrapped-overlay').classList.remove('open');
+});
+document.getElementById('wrapped-year')?.addEventListener('change', (e) =>
+  openWrapped(parseInt(e.target.value, 10)));
+document.getElementById('btn-phistory-close')?.addEventListener('click', () =>
+  document.getElementById('phistory-overlay')?.classList.remove('open'));
+document.getElementById('phistory-overlay')?.addEventListener('click', (e) => {
+  if (e.target === document.getElementById('phistory-overlay'))
+    document.getElementById('phistory-overlay').classList.remove('open');
+});
+document.getElementById('phistory-q')?.addEventListener('input', (e) => {
+  clearTimeout(_phTimer);
+  _phTimer = setTimeout(() => {
+    _phQuery = e.target.value.trim();
+    _phOffset = 0;
+    _phLoad(false);
+  }, 250);
+});
+document.getElementById('btn-phistory-more')?.addEventListener('click', () => {
+  _phOffset += _PH_PAGE;
+  _phLoad(true);
+});
 
 function makeSparkline(values) {
   if (!values.length) return '';

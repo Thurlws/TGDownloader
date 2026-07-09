@@ -592,6 +592,10 @@
                 <button class="btn-secondary" id="btn-corruption" style="width:auto">Decode-test files</button>
                 <button class="btn-secondary" id="btn-fingerprint" style="width:auto" title="Needs Chromaprint fpcalc + an AcoustID API key">Identify untagged (AcoustID)</button>
               </div>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--fg3);margin-top:8px;cursor:pointer">
+                <input type="checkbox" id="tag-fill-year" style="accent-color:var(--accent)">
+                Also fill missing release years from Deezer (up to 25 albums per run)
+              </label>
               <div id="libintel-results" style="margin-top:8px"></div>
             </div>
             <div class="stat-card">
@@ -766,6 +770,23 @@
             <input type="text" id="smart-pl-limit" placeholder="no limit" autocomplete="off" inputmode="numeric">
           </div>
         </div>
+        <div style="display:flex;gap:10px">
+          <div style="flex:1">
+            <label class="genre-pl-label">Min rating</label>
+            <select id="smart-pl-rating">
+              <option value="">Any</option>
+              <option value="5">★★★★★ only</option>
+              <option value="4">★★★★ and up</option>
+              <option value="3">★★★ and up</option>
+              <option value="2">★★ and up</option>
+              <option value="1">★ and up</option>
+            </select>
+          </div>
+          <div style="flex:1">
+            <label class="genre-pl-label">Not played in (days)</label>
+            <input type="text" id="smart-pl-notplayed" placeholder="any" autocomplete="off" inputmode="numeric">
+          </div>
+        </div>
         <label class="genre-pl-label">Order</label>
         <select id="smart-pl-sort">
           <option value="az">Artist / album</option>
@@ -776,6 +797,34 @@
           <button class="btn-secondary" id="btn-smart-pl-cancel" style="width:auto;padding:6px 16px">Cancel</button>
           <button class="btn-secondary" id="btn-smart-pl-create" style="width:auto;padding:6px 16px">Create</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Wrapped (year in review) modal -->
+  <div id="wrapped-overlay">
+    <div id="wrapped-box">
+      <div id="wrapped-header">
+        <div id="wrapped-title">Your Year in Music</div>
+        <select id="wrapped-year" title="Pick a year"></select>
+        <button class="btn-secondary" id="btn-wrapped-close" style="width:auto;padding:4px 12px">Close</button>
+      </div>
+      <div id="wrapped-content"><div class="stat-empty">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- Play history browser modal -->
+  <div id="phistory-overlay">
+    <div id="phistory-box">
+      <div id="phistory-header">
+        <div id="phistory-title">Listening History</div>
+        <input type="text" id="phistory-q" placeholder="Search title, artist or album…" autocomplete="off" spellcheck="false">
+        <button class="btn-secondary" id="btn-phistory-close" style="width:auto;padding:4px 12px">Close</button>
+      </div>
+      <div id="phistory-list"><div class="stat-empty">Loading…</div></div>
+      <div id="phistory-foot">
+        <span id="phistory-count"></span>
+        <button class="btn-secondary" id="btn-phistory-more" style="width:auto;padding:4px 12px;display:none">Load more</button>
       </div>
     </div>
   </div>
