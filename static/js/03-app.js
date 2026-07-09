@@ -74,6 +74,10 @@ function openSettings() {
     // Spotify search API credentials
     document.getElementById('cfg-spotify-id').value         = cfg.spotify_client_id || '';
     document.getElementById('cfg-spotify-secret').value     = cfg.spotify_client_secret || '';
+    // Post-download hook (v1.8.0)
+    const postCmd = document.getElementById('cfg-post-cmd');
+    if (postCmd) postCmd.value = cfg.post_download_command || '';
+    _loadTgHealth();
     _syncScrobbleService();
     // Theme + notifications
     document.getElementById('cfg-theme-light').checked = (cfg.theme === 'light');
@@ -86,6 +90,30 @@ function openSettings() {
     _settingsShowPanel('connection');
     document.getElementById('modal-overlay').classList.add('open');
   });
+}
+
+// Telegram flood-wait health block on the Connection panel (v1.8.0)
+async function _loadTgHealth() {
+  const el = document.getElementById('tg-health');
+  if (!el) return;
+  try {
+    const d = await (await fetch('/telegram-health')).json();
+    if (!d.total_recorded) {
+      el.innerHTML = '<span style="color:var(--accent)">✓ No flood-waits recorded this session.</span>';
+      return;
+    }
+    const recent = (d.recent || []).slice(0, 5).map(e =>
+      `<div style="font-family:var(--mono);font-size:10px;padding:1px 0">
+         ${escHtml(e.ts)} — waited ${e.wait}s <span style="color:var(--fg3)">(${escHtml(e.file)})</span>
+       </div>`).join('');
+    el.innerHTML = `
+      <div>Last hour: <strong${d.last_hour ? ' style="color:var(--yellow)"' : ''}>${d.last_hour}</strong>
+        · last 24 h: <strong>${d.last_24h}</strong>
+        · total wait (24 h): <strong>${d.wait_secs_24h}s</strong></div>
+      ${recent ? `<div style="margin-top:6px">${recent}</div>` : ''}`;
+  } catch (_) {
+    el.textContent = 'Could not load health data.';
+  }
 }
 
 // Settings: switch which category panel is visible
@@ -129,6 +157,11 @@ function saveSettings() {
   // Spotify search API credentials (raw strings)
   patch.spotify_client_id     = document.getElementById('cfg-spotify-id').value.trim();
   patch.spotify_client_secret = document.getElementById('cfg-spotify-secret').value.trim();
+
+  // Post-download hook — always sent (raw string) so clearing the field
+  // actually disables the hook.
+  const postCmdEl = document.getElementById('cfg-post-cmd');
+  if (postCmdEl) patch.post_download_command = postCmdEl.value.trim();
 
   // Theme
   const theme = document.getElementById('cfg-theme-light').checked ? 'light' : 'dark';
@@ -622,12 +655,18 @@ document.getElementById('cfg-scrobble-service').addEventListener('change', _sync
 document.querySelectorAll('.settings-nav-item').forEach(btn =>
   btn.addEventListener('click', () => _settingsShowPanel(btn.dataset.spanel)));
 document.getElementById('btn-about-check-update')?.addEventListener('click', () => _checkForUpdate(true));
+document.getElementById('btn-about-download')?.addEventListener('click', _downloadUpdate);
 document.getElementById('btn-run-health')?.addEventListener('click', runDiagnostics);
 document.getElementById('btn-run-scan').addEventListener('click', runIntegrityScan);
 document.getElementById('btn-find-dupes').addEventListener('click', findDuplicates);
 document.getElementById('btn-backup').addEventListener('click', () => {
   const a = document.createElement('a');
   a.href = '/backup'; a.download = 'tgdownloader-backup.zip';
+  document.body.appendChild(a); a.click(); a.remove();
+});
+document.getElementById('btn-debug-bundle')?.addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = '/debug-bundle'; a.download = 'tgdownloader-debug.zip';
   document.body.appendChild(a); a.click(); a.remove();
 });
 document.getElementById('btn-restore')?.addEventListener('click', () =>
