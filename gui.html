@@ -574,13 +574,34 @@
               <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Finds albums and playlists without cover art and fetches covers from Deezer (up to 25 per run).</div>
               <div id="art-repair-results"></div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" style="margin-bottom:14px">
               <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
                 <span>Loudness Analysis</span>
                 <button class="btn-secondary" id="btn-loudness" style="width:auto">Analyze library</button>
               </div>
               <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Tags tracks with ReplayGain so the player can level volume between albums (up to 25 files per run; needs ffmpeg). New downloads are tagged automatically when <span style="font-family:var(--mono)">replaygain_on_download</span> is enabled.</div>
               <div id="loudness-results"></div>
+            </div>
+            <div class="stat-card" style="margin-bottom:14px">
+              <div class="stat-card-title">Library Intelligence</div>
+              <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Metadata & integrity tools. Tag Cleanup previews changes before applying.</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <button class="btn-secondary" id="btn-tag-preview" style="width:auto">Preview tag cleanup</button>
+                <button class="btn-secondary" id="btn-tag-apply" style="width:auto;display:none">Apply fixes</button>
+                <button class="btn-secondary" id="btn-completeness" style="width:auto">Check album completeness</button>
+                <button class="btn-secondary" id="btn-corruption" style="width:auto">Decode-test files</button>
+                <button class="btn-secondary" id="btn-fingerprint" style="width:auto" title="Needs Chromaprint fpcalc + an AcoustID API key">Identify untagged (AcoustID)</button>
+              </div>
+              <div id="libintel-results" style="margin-top:8px"></div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <span>Import Folder</span>
+                <button class="btn-secondary" id="btn-import-folder" style="width:auto">Choose folder…</button>
+              </div>
+              <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Import audio from any folder into your library — sorted into Artist/Album and de-duplicated, just like a download. You can also drop a folder onto this card.</div>
+              <div id="import-dropzone" style="border:1px dashed var(--border2);border-radius:6px;padding:14px;text-align:center;font-size:11px;color:var(--fg3)">Drop a folder here</div>
+              <div id="import-results" style="margin-top:8px"></div>
             </div>
           </div>
 

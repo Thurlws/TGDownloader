@@ -47,7 +47,7 @@ import shutil
 import sys
 from pathlib import Path
 
-__version__ = "1.5.0"   # single source — bump this when you cut a new release
+__version__ = "1.6.0"   # single source — bump this when you cut a new release
 
 logger = logging.getLogger("tgd_common")
 
@@ -90,6 +90,9 @@ DEFAULT_CONFIG: dict = {
     # Analyze + tag loudness (REPLAYGAIN_TRACK_GAIN) on every new download.
     # Off by default: adds one ffmpeg decode pass per file.
     "replaygain_on_download":  False,
+    # AcoustID fingerprinting (v1.6.0) — optional; needs Chromaprint's fpcalc
+    # binary on PATH and a free API key from https://acoustid.org/.
+    "acoustid_api_key":        "",
     # ── Scrobbling (opt-in; off unless a token/key is provided) ──
     "scrobble_enabled":        False,
     "scrobble_service":        "listenbrainz",  # "listenbrainz" | "lastfm"
@@ -336,6 +339,70 @@ def apply_replaygain(path: "Path | str") -> "float | None":
         return None
     gain = replaygain_from_lufs(lufs)
     return gain if write_replaygain_tag(path, gain) else None
+
+
+# ── Tag janitor (pure normalisation helpers) ──────────────────────────────────
+
+import re as _re
+
+# Canonical genre names keyed by a lowercased, punctuation-stripped lookup.
+_GENRE_CANON = {
+    "hiphop": "Hip-Hop", "hip hop": "Hip-Hop", "hip-hop": "Hip-Hop",
+    "rap": "Hip-Hop", "hiphoprap": "Hip-Hop", "hip-hop/rap": "Hip-Hop",
+    "rnb": "R&B", "r&b": "R&B", "randb": "R&B", "rhythm and blues": "R&B",
+    "electronic": "Electronic", "electronica": "Electronic", "edm": "Electronic",
+    "electro": "Electronic", "dnb": "Drum & Bass", "drum and bass": "Drum & Bass",
+    "drum & bass": "Drum & Bass",
+    "alt rock": "Alternative Rock", "alternative": "Alternative Rock",
+    "alt-rock": "Alternative Rock", "indie": "Indie",
+    "rock": "Rock", "pop": "Pop", "jazz": "Jazz", "classical": "Classical",
+    "metal": "Metal", "heavy metal": "Metal", "country": "Country",
+    "folk": "Folk", "soul": "Soul", "funk": "Funk", "reggae": "Reggae",
+    "blues": "Blues", "punk": "Punk", "disco": "Disco", "house": "House",
+    "techno": "Techno", "ambient": "Ambient", "soundtrack": "Soundtrack",
+}
+
+
+def canonical_genre(genre: str) -> str:
+    """Map a free-form genre string to a canonical spelling.  Unknown genres are
+    title-cased and returned unchanged in meaning (so nothing is ever lost)."""
+    g = (genre or "").strip()
+    if not g:
+        return ""
+    key = _re.sub(r"[^a-z0-9& ]", "", g.lower()).strip()
+    key = _re.sub(r"\s+", " ", key)
+    if key in _GENRE_CANON:
+        return _GENRE_CANON[key]
+    if key.replace(" ", "") in _GENRE_CANON:
+        return _GENRE_CANON[key.replace(" ", "")]
+    return g if any(c.isupper() for c in g) else g.title()
+
+
+def normalise_featuring(title: str) -> str:
+    """Standardise featured-artist notation to a single '(feat. X)' form.
+
+    'Song ft X' / 'Song feat. X' / 'Song featuring X' / 'Song (ft. X)' all
+    become 'Song (feat. X)'.  Idempotent."""
+    t = (title or "").strip()
+    if not t:
+        return t
+    # Pull an existing parenthesised feat out to the end, normalising the token.
+    m = _re.search(r"[\(\[]\s*(?:feat(?:uring)?|ft)\.?\s+([^\)\]]+)[\)\]]", t, _re.IGNORECASE)
+    if m:
+        base = (t[:m.start()] + t[m.end():]).strip(" -–—")
+        return f"{base} (feat. {m.group(1).strip()})"
+    # Inline 'ft/feat/featuring X' → parenthesised.
+    m = _re.search(r"\s+(?:ft|feat|featuring)\.?\s+(.+)$", t, _re.IGNORECASE)
+    if m:
+        base = t[:m.start()].strip(" -–—")
+        return f"{base} (feat. {m.group(1).strip()})"
+    return t
+
+
+def fpcalc_exe() -> "str | None":
+    """Path to Chromaprint's fpcalc binary (for AcoustID fingerprinting), or
+    None.  Fingerprinting is entirely optional and off unless this is present."""
+    return shutil.which("fpcalc")
 
 
 # ── Recycle bin / trash ───────────────────────────────────────────────────────

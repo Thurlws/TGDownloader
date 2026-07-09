@@ -10,3 +10,7 @@ send2trash>=1.8.0
 # Optional: store API credentials/tokens in the OS keyring instead of the
 # plaintext config file (enable with "use_keyring": true in the config).
 # keyring>=24.0
+
+# Optional: AcoustID fingerprinting to identify untagged files needs the
+# Chromaprint "fpcalc" binary (a system install, not a pip package) plus a
+# free API key from https://acoustid.org/ set as acoustid_api_key in config.

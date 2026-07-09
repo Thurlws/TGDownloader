@@ -696,6 +696,107 @@ document.getElementById('btn-loudness')?.addEventListener('click', async () => {
   }
   btn.disabled = false;
 });
+// ── Library Intelligence (v1.6.0) ────────────────────────────────────────────
+function _libIntelOut(html) {
+  const el = document.getElementById('libintel-results');
+  if (el) el.innerHTML = html;
+}
+async function _libIntelRun(btnId, url, body, render) {
+  const btn = document.getElementById(btnId);
+  const prev = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; }
+  _libIntelOut('<div style="font-size:11px;color:var(--fg3)">Working… this scans your library, please wait.</div>');
+  try {
+    const d = await (await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    })).json();
+    if (d.error) { _libIntelOut(`<div style="font-size:11px;color:var(--red)">${escHtml(d.error)}</div>`); return null; }
+    if (render) _libIntelOut(render(d));
+    return d;
+  } catch (err) {
+    _libIntelOut(`<div style="font-size:11px;color:var(--red)">${escHtml(String(err))}</div>`);
+    return null;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = prev; }
+  }
+}
+
+document.getElementById('btn-tag-preview')?.addEventListener('click', () =>
+  _libIntelRun('btn-tag-preview', '/tag-janitor', { apply: false }, d => {
+    const applyBtn = document.getElementById('btn-tag-apply');
+    if (applyBtn) applyBtn.style.display = d.count > 0 ? '' : 'none';
+    if (!d.count) return `<div style="font-size:11px;color:var(--accent)">✓ No tag issues found (scanned ${d.scanned}).</div>`;
+    const rows = d.changes.filter(c => c.fixes).slice(0, 40).map(c =>
+      `<div style="font-size:10px;font-family:var(--mono);padding:2px 0">
+         <span style="color:var(--fg2)">${escHtml(c.file)}</span> →
+         ${Object.entries(c.fixes).map(([k, v]) => `${k}: <span style="color:var(--accent)">${escHtml(String(v))}</span>`).join(', ')}
+       </div>`).join('');
+    return `<div style="font-size:11px;margin-bottom:4px">${d.count} file(s) with fixable tags (showing up to 40). Click <strong>Apply fixes</strong> to write them.</div>${rows}`;
+  }));
+document.getElementById('btn-tag-apply')?.addEventListener('click', async () => {
+  const d = await _libIntelRun('btn-tag-apply', '/tag-janitor', { apply: true }, d =>
+    `<div style="font-size:11px;color:var(--accent)">Applied fixes to ${d.count} file(s).</div>`);
+  if (d) document.getElementById('btn-tag-apply').style.display = 'none';
+});
+document.getElementById('btn-completeness')?.addEventListener('click', () =>
+  _libIntelRun('btn-completeness', '/album-completeness', {}, d => {
+    if (!d.incomplete) return `<div style="font-size:11px;color:var(--accent)">✓ No incomplete albums found (checked ${d.checked}).</div>`;
+    const rows = d.albums.slice(0, 40).map(a =>
+      `<div style="font-size:10px;font-family:var(--mono);padding:2px 0">
+         ${escHtml(a.artist)} — ${escHtml(a.album)}
+         <strong style="color:var(--yellow)">${a.have}/${a.total}</strong></div>`).join('');
+    return `<div style="font-size:11px;margin-bottom:4px">${d.incomplete} album(s) look incomplete vs Deezer:</div>${rows}`;
+  }));
+document.getElementById('btn-corruption')?.addEventListener('click', () =>
+  _libIntelRun('btn-corruption', '/corruption-scan', {}, d => {
+    if (!d.count) return `<div style="font-size:11px;color:var(--accent)">✓ No corrupt files (decode-tested ${d.scanned}).</div>`;
+    const rows = d.corrupt.slice(0, 40).map(f =>
+      `<div style="font-size:10px;font-family:var(--mono);color:var(--red);padding:1px 0">${escHtml(f)}</div>`).join('');
+    return `<div style="font-size:11px;margin-bottom:4px">${d.count} file(s) failed to decode:</div>${rows}`;
+  }));
+document.getElementById('btn-fingerprint')?.addEventListener('click', () =>
+  _libIntelRun('btn-fingerprint', '/fingerprint-scan', {}, d =>
+    `<div style="font-size:11px">Scanned <strong>${d.scanned}</strong> untagged · identified <strong style="color:var(--accent)">${d.identified}</strong>${d.failed ? ` · unresolved <strong>${d.failed}</strong>` : ''}</div>` +
+    (d.updates || []).slice(0, 30).map(u =>
+      `<div style="font-size:10px;font-family:var(--mono);padding:1px 0">${escHtml(u.artist)} — ${escHtml(u.title)}</div>`).join('')));
+
+// ── Import folder ─────────────────────────────────────────────────────────────
+async function _runImport(path) {
+  const out = document.getElementById('import-results');
+  out.innerHTML = '<div style="font-size:11px;color:var(--fg3)">Importing and sorting…</div>';
+  try {
+    const d = await (await fetch('/import-folder', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: path || '' }),
+    })).json();
+    if (d.cancelled) { out.innerHTML = ''; return; }
+    if (d.error) { out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(d.error)}</div>`; return; }
+    out.innerHTML = `<div style="font-size:11px;color:var(--accent)">Imported ${d.imported} file(s)${d.dupes ? ` · ${d.dupes} duplicate(s) skipped` : ''}.</div>`;
+  } catch (err) {
+    out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(String(err))}</div>`;
+  }
+}
+document.getElementById('btn-import-folder')?.addEventListener('click', () => _runImport(''));
+(function _wireDropzone() {
+  const dz = document.getElementById('import-dropzone');
+  if (!dz) return;
+  ['dragover', 'dragenter'].forEach(ev => dz.addEventListener(ev, e => {
+    e.preventDefault(); dz.style.borderColor = 'var(--accent)';
+  }));
+  ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, () => {
+    dz.style.borderColor = 'var(--border2)';
+  }));
+  dz.addEventListener('drop', async e => {
+    e.preventDefault();
+    // Browsers don't expose real filesystem paths for security. If the drop
+    // carries a path (Electron-style) use it; otherwise fall back to the picker.
+    const item = e.dataTransfer?.files?.[0];
+    const p = item && item.path ? item.path : '';
+    _runImport(p);
+  });
+})();
+
 document.getElementById('btn-modal-cancel').addEventListener('click', () =>
   document.getElementById('modal-overlay').classList.remove('open'));
 document.getElementById('modal-overlay').addEventListener('click', e => {
