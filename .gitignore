@@ -23,6 +23,7 @@ TGDownloader Context Vault/
 # ── Temp download directories & runtime caches ───────────────────────────
 tg_tmp_downloads/
 tg_transcode_cache/
+tg_waveform_cache/
 
 # ── Python ────────────────────────────────────────────────────────────────
 __pycache__/

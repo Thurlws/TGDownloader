@@ -1071,6 +1071,21 @@ def _ffmpeg_convert(src: Path, target_quality: str) -> "Path | None":
         return None
 
 
+def apply_replaygain_directory(directory: Path) -> None:
+    """Best-effort loudness analysis + REPLAYGAIN_TRACK_GAIN tagging for every
+    audio file under *directory* (skips files already tagged)."""
+    from tgd_common import apply_replaygain, ffmpeg_available
+    if not ffmpeg_available():
+        return
+    files = [p for p in directory.rglob("*")
+             if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS]
+    if not files:
+        return
+    _log(f"\n  Analyzing loudness (ReplayGain) for {len(files)} file(s)…")
+    ok = sum(1 for f in files if apply_replaygain(f) is not None)
+    _log(f"  ReplayGain: {ok}/{len(files)} file(s) tagged.")
+
+
 def convert_directory_quality(directory: Path, target_quality: str) -> tuple[int, int]:
     """Convert every audio file in *directory* (recursively) to *target_quality*.
 
@@ -1947,6 +1962,8 @@ async def main() -> None:
             # ── On-device quality conversion ──────────────────────────
             _tgt_q = cfg.get('target_quality', 'FLAC')
             convert_directory_quality(pl_dir, _tgt_q)
+            if cfg.get("replaygain_on_download"):
+                apply_replaygain_directory(pl_dir)
             # Original Spotify/Deezer cover art for the playlist folder
             _cover_url = pmeta.get("cover", "")
             _save_playlist_cover(_cover_url, pl_dir)
@@ -1968,6 +1985,8 @@ async def main() -> None:
             # ── On-device quality conversion ──────────────────────────
             _tgt_q = cfg.get('target_quality', 'FLAC')
             convert_directory_quality(artist_dir, _tgt_q)
+            if cfg.get("replaygain_on_download"):
+                apply_replaygain_directory(artist_dir)
             mark_url_complete(home, manifest, entry.url, entry.artist,
                               [f.name for f in downloaded], albums)
             dl_count = len(downloaded)

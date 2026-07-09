@@ -2941,6 +2941,97 @@ def _validate_backup_zip(data: bytes) -> "tuple[dict[str, bytes], list[str]]":
 
 
 # ══════════════════════════════════════════════
+#  WAVEFORM PEAKS  (for the seekbar; cached like transcodes)
+# ══════════════════════════════════════════════
+
+_WAVEFORM_DIR     = DATA_DIR / "tg_waveform_cache"
+_WAVEFORM_BUCKETS = 160
+
+
+def _waveform_peaks(src: "Path") -> "list[float] | None":
+    """~160 normalised peak values (0..1) for *src*, decoded via ffmpeg to
+    8 kHz mono PCM and bucketed.  Cached on disk keyed by path+mtime+size."""
+    ff = tgd_common.ffmpeg_exe()
+    if not ff:
+        return None
+    try:
+        st  = src.stat()
+        key = hashlib.sha1(
+            f"{src.resolve()}|{st.st_mtime_ns}|{st.st_size}".encode("utf-8")).hexdigest()
+        _WAVEFORM_DIR.mkdir(parents=True, exist_ok=True)
+        cache = _WAVEFORM_DIR / (key + ".json")
+        if cache.exists():
+            return json.loads(cache.read_text(encoding="utf-8"))
+        proc = subprocess.run(
+            [ff, "-hide_banner", "-nostats", "-i", str(src), "-map", "0:a:0",
+             "-ac", "1", "-ar", "8000", "-f", "s16le", "-"],
+            capture_output=True, timeout=120)
+        raw = proc.stdout
+        if not raw:
+            return None
+        import array
+        samples = array.array("h")
+        samples.frombytes(raw[: len(raw) - (len(raw) % 2)])
+        if not len(samples):
+            return None
+        size  = max(1, len(samples) // _WAVEFORM_BUCKETS)
+        peaks = []
+        for i in range(_WAVEFORM_BUCKETS):
+            seg = samples[i * size:(i + 1) * size]
+            if not len(seg):
+                break
+            peaks.append(max(abs(s) for s in seg) / 32768.0)
+        mx    = max(peaks) or 1.0
+        peaks = [round(p / mx, 3) for p in peaks]
+        cache.write_text(json.dumps(peaks), encoding="utf-8")
+        return peaks
+    except Exception as exc:
+        logger.debug("Waveform failed for %s: %s", src, exc)
+        return None
+
+
+# ══════════════════════════════════════════════
+#  LOUDNESS SCAN  (batch ReplayGain tagging for the existing library)
+# ══════════════════════════════════════════════
+
+def _loudness_scan(limit: int = 25) -> dict:
+    """Tag up to *limit* untagged files with REPLAYGAIN_TRACK_GAIN.  Counts the
+    full backlog so the UI can say how many remain."""
+    if not tgd_common.ffmpeg_available():
+        return {"error": "ffmpeg not found — install it to analyze loudness"}
+    m    = _tgd_import()
+    cfg  = m.load_config()
+    home = cfg.get("home_music_folder")
+    if not home:
+        return {"error": "No home music folder configured"}
+    home_path = Path(home)
+    if not home_path.exists():
+        return {"error": f"Folder not found: {home}"}
+
+    audio_ext = {".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac",
+                 ".wav", ".aif", ".aiff", ".wma", ".ape", ".wv"}
+    checked = missing = tagged = failed = analyzed = 0
+    for p in home_path.rglob("*"):
+        if not (p.is_file() and p.suffix.lower() in audio_ext):
+            continue
+        checked += 1
+        if tgd_common.read_replaygain_gain(p) is not None:
+            continue
+        missing += 1
+        if analyzed >= limit:
+            continue                    # keep counting the backlog
+        analyzed += 1
+        lufs = tgd_common.analyze_loudness(p)
+        gain = tgd_common.replaygain_from_lufs(lufs) if lufs is not None else None
+        if gain is not None and tgd_common.write_replaygain_tag(p, gain):
+            tagged += 1
+        else:
+            failed += 1
+    return {"checked": checked, "missing": missing, "tagged": tagged,
+            "failed": failed, "remaining": max(0, missing - analyzed)}
+
+
+# ══════════════════════════════════════════════
 #  COVER ART REPAIR
 # ══════════════════════════════════════════════
 
@@ -3637,6 +3728,37 @@ class Handler(BaseHTTPRequestHandler):
         # POST route existed) and silently fell back to an empty list.
         if path == "/sessions":
             self._send_json(200, _load_sessions())
+            return
+
+        if path == "/waveform":
+            qs = urlparse(self.path).query
+            params = {}
+            for part in qs.split("&"):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    params[unquote_plus(k)] = unquote_plus(v)
+            album_dir = _lookup_album_dir(params.get("path_hash", ""))
+            src = _resolve_in_dir(album_dir, params.get("name", "")) if album_dir else None
+            if not src:
+                self.send_error(404)
+                return
+            peaks = _waveform_peaks(src)
+            self._send_json(200, {"peaks": peaks or []})
+            return
+
+        if path == "/track-gain":
+            qs = urlparse(self.path).query
+            params = {}
+            for part in qs.split("&"):
+                if "=" in part:
+                    k, v = part.split("=", 1)
+                    params[unquote_plus(k)] = unquote_plus(v)
+            album_dir = _lookup_album_dir(params.get("path_hash", ""))
+            src = _resolve_in_dir(album_dir, params.get("name", "")) if album_dir else None
+            if not src:
+                self.send_error(404)
+                return
+            self._send_json(200, {"gain": tgd_common.read_replaygain_gain(src)})
             return
 
         if path == "/library-stats":
@@ -4791,6 +4913,38 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 logger.exception("restore-backup failed")
                 self._send_json(500, {"error": str(exc), "restored": restored})
+            return
+
+        # ── Save a synced-lyrics sidecar next to the audio file ───────────
+        if path == "/save-lrc":
+            lrc = body.get("lrc")
+            if not isinstance(lrc, str) or not lrc.strip():
+                self._send_json(400, {"error": "Missing lrc text"})
+                return
+            album_dir = _lookup_album_dir(body.get("path_hash", ""))
+            src = _resolve_in_dir(album_dir, body.get("name", "")) if album_dir else None
+            if not src:
+                self._send_json(404, {"error": "Track not found"})
+                return
+            try:
+                dst = src.with_suffix(".lrc")
+                dst.write_text(lrc[:200_000], encoding="utf-8")
+                logger.info("Saved lyrics sidecar: %s", dst)
+                self._send_json(200, {"ok": True, "file": dst.name})
+            except Exception as exc:
+                logger.exception("save-lrc failed")
+                self._send_json(500, {"error": str(exc)})
+            return
+
+        # ── Batch ReplayGain tagging for the existing library ─────────────
+        if path == "/loudness-scan":
+            try:
+                limit  = int(body.get("limit") or 25)
+                result = _loudness_scan(limit=max(1, min(limit, 200)))
+                self._send_json(200 if not result.get("error") else 400, result)
+            except Exception as exc:
+                logger.exception("loudness-scan failed")
+                self._send_json(500, {"error": str(exc)})
             return
 
         # ── Fetch missing album covers from Deezer ────────────────────────
