@@ -450,6 +450,50 @@ def _emit_result(
 
 
 # ═════════════════════════════════════════════
+#  POST-DOWNLOAD USER HOOK  (v1.8.0)
+# ═════════════════════════════════════════════
+
+def _format_hook_command(cmd: str, dest: "Path | str", artist: str,
+                         status: str, url: str) -> str:
+    """Pure: substitute {folder}/{artist}/{status}/{url} placeholders, or
+    append the destination folder as a quoted argument when none is used."""
+    if any(tok in cmd for tok in ("{folder}", "{artist}", "{status}", "{url}")):
+        return (cmd.replace("{folder}", str(dest))
+                   .replace("{artist}", artist)
+                   .replace("{status}", status)
+                   .replace("{url}", url))
+    return f'{cmd} "{dest}"'
+
+
+def _run_post_download_hook(cfg: dict, dest: Path, url: str,
+                            artist: str, status: str) -> None:
+    """Fire-and-forget user command after a queue entry finishes.
+
+    Configured via "post_download_command" in the config.  "{folder}",
+    "{artist}", "{status}" and "{url}" placeholders are substituted; when no
+    placeholder is present the destination folder is appended as a quoted
+    argument.  The command also receives TGD_FOLDER / TGD_ARTIST / TGD_STATUS
+    / TGD_URL in its environment.  Runs detached through the shell (it is the
+    user's own machine and their own configured command); failures to launch
+    are logged, the download result is never affected."""
+    import os
+    import subprocess
+    cmd = str(cfg.get("post_download_command") or "").strip()
+    if not cmd:
+        return
+    try:
+        final = _format_hook_command(cmd, dest, artist, status, url)
+        env = os.environ.copy()
+        env.update({"TGD_FOLDER": str(dest), "TGD_ARTIST": artist,
+                    "TGD_STATUS": status, "TGD_URL": url})
+        subprocess.Popen(final, shell=True, env=env,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _log(f"  Post-download hook started: {final}")
+    except Exception as exc:
+        _log(f"  ⚠ Post-download hook failed to start: {exc}")
+
+
+# ═════════════════════════════════════════════
 #  PROGRESS DISPLAY
 # ═════════════════════════════════════════════
 
@@ -1996,6 +2040,7 @@ async def main() -> None:
             _emit_result(entry.url, entry.artist, status,
                          downloaded=dl_count, expected=expected,
                          dupes_skipped=dupes)
+            _run_post_download_hook(cfg, pl_dir, entry.url, entry.artist, status)
         else:
             dupes, albums = sort_by_album(url_tmp, artist_dir, hash_index)
             # ── On-device quality conversion ──────────────────────────
@@ -2015,6 +2060,7 @@ async def main() -> None:
             _emit_result(entry.url, entry.artist, status,
                          downloaded=dl_count, expected=expected,
                          dupes_skipped=dupes)
+            _run_post_download_hook(cfg, artist_dir, entry.url, entry.artist, status)
 
         shutil.rmtree(url_tmp, ignore_errors=True)
 

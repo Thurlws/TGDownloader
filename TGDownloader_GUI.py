@@ -39,6 +39,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -48,6 +49,7 @@ import urllib.request
 import webbrowser
 
 from base64 import b64encode
+from collections import deque
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from socketserver import ThreadingMixIn
@@ -279,11 +281,17 @@ def _check_for_update(force: bool = False) -> dict:
 
     latest_tag = (rel.get("tag_name") or rel.get("name") or "").strip()
     available  = _parse_version(latest_tag) > _parse_version(APP_VERSION)
+    # Direct link to the built Windows zip so the UI can offer a one-click
+    # download (v1.8.0) — release.yml attaches exactly one .zip per release.
+    download_url = next(
+        (a.get("browser_download_url") for a in (rel.get("assets") or [])
+         if str(a.get("name", "")).lower().endswith(".zip")), "")
     data = {
         "current":          APP_VERSION,
         "latest":           latest_tag.lstrip("vV") or latest_tag,
         "update_available": available,
         "url":              rel.get("html_url", f"https://github.com/{GITHUB_REPO}/releases"),
+        "download_url":     download_url,
         "name":             rel.get("name") or latest_tag,
         "notes":            (rel.get("body") or "")[:4000],
         "published_at":     rel.get("published_at", ""),
@@ -605,6 +613,34 @@ def _save_sessions(data: dict) -> None:
 #  PROCESS MANAGER
 # ══════════════════════════════════════════════
 
+# ── Telegram flood-wait health (v1.8.0) ───────────────────────────────────────
+# The backend logs "⏳ Flood-wait Ns for <file> (attempt …" when Telegram
+# rate-limits DC auth; the stdout relay below records them so /telegram-health
+# can show how often the account is being throttled.
+_FLOOD_RE = re.compile(r"Flood-wait (\d+)s for (.+?) \(attempt")
+_flood_events: "deque[dict]" = deque(maxlen=200)
+
+
+def _flood_health(events: "list[dict] | None" = None,
+                  now: "float | None" = None) -> dict:
+    """Pure summary of recorded flood-wait events: counts for the rolling
+    hour/day, total wait seconds, and the most recent events."""
+    evs = list(_flood_events) if events is None else list(events)
+    now = time.time() if now is None else now
+    hour = [e for e in evs if now - e.get("t", 0) <= 3600]
+    day  = [e for e in evs if now - e.get("t", 0) <= 86400]
+    recent = [{"wait": e.get("wait", 0), "file": e.get("file", ""),
+               "ts": time.strftime("%H:%M:%S", time.localtime(e.get("t", 0)))}
+              for e in evs[-10:]][::-1]
+    return {
+        "total_recorded": len(evs),
+        "last_hour":      len(hour),
+        "last_24h":       len(day),
+        "wait_secs_24h":  sum(e.get("wait", 0) for e in day),
+        "recent":         recent,
+    }
+
+
 class ProcessManager:
     # Seconds to wait after the last client disconnects before shutting the
     # whole app down. A page reload drops and re-opens the socket within ~1.5s,
@@ -715,6 +751,11 @@ class ProcessManager:
                         except Exception:
                             pass
                         continue
+                    m_fw = _FLOOD_RE.search(line)
+                    if m_fw:
+                        _flood_events.append({"t": time.time(),
+                                              "wait": int(m_fw.group(1)),
+                                              "file": m_fw.group(2)[:200]})
                     self.broadcast({"type": "log", "text": line})
                 self._proc.wait()
                 rc = self._proc.returncode
@@ -4206,6 +4247,66 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/play-stats":
             self._send_json(200, _aggregate_play_stats(_load_play_events()))
+            return
+
+        # ── Telegram flood-wait health (v1.8.0) ───────────────────────────
+        if path == "/telegram-health":
+            data = _flood_health()
+            data["backend_running"] = MANAGER.is_running()
+            self._send_json(200, data)
+            return
+
+        # ── Export debug bundle (v1.8.0) ──────────────────────────────────
+        if path == "/debug-bundle":
+            import io as _io
+            import platform as _platform
+            import zipfile as _zf
+            buf = _io.BytesIO()
+            with _zf.ZipFile(buf, "w", _zf.ZIP_DEFLATED) as zf:
+                # Debug log — last 2 MB is plenty for a bug report
+                try:
+                    if LOG_FILE.exists():
+                        raw = LOG_FILE.read_bytes()
+                        zf.writestr("tgdownloader_debug.log", raw[-2_000_000:])
+                except Exception:
+                    pass
+                # Config with every secret stripped (same list as /backup)
+                try:
+                    cfg = json.loads((DATA_DIR / "tg_audio_config.json").read_text("utf-8"))
+                    for secret in ("api_id", "api_hash", "listenbrainz_token",
+                                   "lastfm_api_key", "lastfm_secret", "lastfm_session_key",
+                                   "spotify_client_id", "spotify_client_secret"):
+                        cfg.pop(secret, None)
+                    zf.writestr("tg_audio_config.json", json.dumps(cfg, indent=2))
+                except Exception:
+                    pass
+                # Environment snapshot
+                try:
+                    info = [
+                        f"version:  {APP_VERSION}",
+                        f"platform: {_platform.platform()}",
+                        f"python:   {sys.version.split()[0]}",
+                        f"frozen:   {bool(getattr(sys, 'frozen', False))}",
+                        f"data_dir: {DATA_DIR}",
+                        f"ffmpeg:   {tgd_common.ffmpeg_exe() or 'not found'}",
+                        f"fpcalc:   {tgd_common.fpcalc_exe() or 'not found'}",
+                        f"keyring:  {bool(tgd_common._keyring())}",
+                    ]
+                    zf.writestr("environment.txt", "\n".join(info) + "\n")
+                except Exception:
+                    pass
+            data = buf.getvalue()
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Disposition",
+                             f'attachment; filename="tgdownloader-debug-{stamp}.zip"')
+            self.end_headers()
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
             return
 
         # ── Star ratings map for the library UI (v1.7.0) ──────────────────

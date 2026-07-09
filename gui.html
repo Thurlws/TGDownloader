@@ -441,6 +441,10 @@
               <label>Spotify Client Secret</label>
               <input type="password" id="cfg-spotify-secret" placeholder="paste your app's Client Secret" autocomplete="off">
             </div>
+
+            <div class="settings-panel-title" style="margin-top:18px">Telegram Health</div>
+            <div class="settings-panel-desc">Flood-waits happen when Telegram rate-limits downloads — frequent ones mean the queue should slow down (lower Max Parallel Downloads).</div>
+            <div id="tg-health" style="font-size:11px;color:var(--fg3)">Loading…</div>
           </div>
 
           <!-- Downloads -->
@@ -455,6 +459,11 @@
               <label>Max Queue Size</label>
               <input type="text" id="cfg-max-queue">
             </div>
+            <div class="modal-field">
+              <label>Post-download command (optional)</label>
+              <input type="text" id="cfg-post-cmd" placeholder='e.g. beet import "{folder}"' autocomplete="off" spellcheck="false">
+            </div>
+            <div style="font-size:11px;color:var(--fg3);margin-top:-6px">Runs after each finished download. <span style="font-family:var(--mono)">{folder}</span>, <span style="font-family:var(--mono)">{artist}</span>, <span style="font-family:var(--mono)">{status}</span> and <span style="font-family:var(--mono)">{url}</span> are substituted; without a placeholder the folder path is appended. Leave empty to disable.</div>
           </div>
 
           <!-- Interface -->
@@ -568,6 +577,13 @@
             </div>
             <div class="stat-card" style="margin-bottom:14px">
               <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <span>Debug Bundle</span>
+                <button class="btn-secondary" id="btn-debug-bundle" style="width:auto">Export debug bundle</button>
+              </div>
+              <div style="font-size:11px;color:var(--fg3);margin:4px 0 0">Zips the debug log, settings (credentials stripped) and an environment snapshot — attach it to a bug report.</div>
+            </div>
+            <div class="stat-card" style="margin-bottom:14px">
+              <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
                 <span>Cover Art Repair</span>
                 <button class="btn-secondary" id="btn-art-repair" style="width:auto">Repair missing covers</button>
               </div>
@@ -616,8 +632,9 @@
             <div class="settings-about-row">TGDownloader <strong id="about-version">—</strong></div>
             <div class="settings-about-row" id="about-update-row">Updates: <span id="about-update-status" style="color:var(--fg3)">—</span></div>
             <div class="settings-about-row"><a href="https://github.com/Thurlws/TGDownloader" target="_blank" rel="noopener">Project on GitHub ↗</a></div>
-            <div style="margin-top:14px">
+            <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
               <button class="btn-secondary" id="btn-about-check-update" style="width:auto">Check for updates</button>
+              <button class="btn-accent" id="btn-about-download" style="width:auto;display:none">Download update</button>
             </div>
           </div>
 

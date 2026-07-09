@@ -418,6 +418,7 @@ async function _checkForUpdate(force = false) {
     return;
   }
   _updateInfo = data;
+  const dlBtn = document.getElementById('btn-about-download');
   if (data.update_available) {
     if (badge)   { badge.style.display = 'inline-flex';
                    badge.title = `Version ${data.latest} is available — you have ${data.current}. Click to view the release.`; }
@@ -425,11 +426,25 @@ async function _checkForUpdate(force = false) {
     if (status)  status.textContent = `Update available: v${data.latest} (you have v${data.current})`;
     if (aboutS)  { aboutS.innerHTML = `<a href="#" id="about-update-link" style="color:var(--accent)">Update available: v${data.latest} ↗</a>`;
                    document.getElementById('about-update-link')?.addEventListener('click', (e) => { e.preventDefault(); _openReleasePage(); }); }
+    // One-click download of the built zip when the release carries one (v1.8.0)
+    if (dlBtn) {
+      dlBtn.style.display = data.download_url ? '' : 'none';
+      dlBtn.textContent = `Download v${data.latest}`;
+    }
   } else {
     if (badge)  badge.style.display = 'none';
     if (status) status.textContent = data.error ? data.error : `Up to date (v${data.current})`;
     if (aboutS) aboutS.textContent = data.error ? data.error : `Up to date (v${data.current})`;
+    if (dlBtn)  dlBtn.style.display = 'none';
   }
+}
+
+function _downloadUpdate() {
+  const url = _updateInfo && _updateInfo.download_url;
+  if (!url) { _openReleasePage(); return; }
+  const a = document.createElement('a');
+  a.href = url; a.target = '_blank'; a.rel = 'noopener';
+  document.body.appendChild(a); a.click(); a.remove();
 }
 
 function _openReleasePage() {

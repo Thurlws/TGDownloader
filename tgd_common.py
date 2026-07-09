@@ -47,7 +47,7 @@ import shutil
 import sys
 from pathlib import Path
 
-__version__ = "1.7.0"   # single source — bump this when you cut a new release
+__version__ = "1.8.0"   # single source — bump this when you cut a new release
 
 logger = logging.getLogger("tgd_common")
 
@@ -102,6 +102,11 @@ DEFAULT_CONFIG: dict = {
     "lastfm_session_key":      "",
     # ── Artist watchlist / new-release radar ──
     "watchlist_autocheck":     True,
+    # ── Post-download user hook (v1.8.0) ──
+    # Command run after each finished queue entry.  "{folder}" / "{artist}" /
+    # "{status}" / "{url}" placeholders are substituted; with no placeholder
+    # the destination folder is appended as a quoted argument.  Empty = off.
+    "post_download_command":   "",
     # ── UI preferences ──
     "theme":                   "dark",   # "dark" | "light"
     # ── Secrets storage: keep tokens in the OS keyring instead of the JSON
