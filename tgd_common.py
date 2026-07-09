@@ -47,7 +47,7 @@ import shutil
 import sys
 from pathlib import Path
 
-__version__ = "1.4.0"   # single source — bump this when you cut a new release
+__version__ = "1.5.0"   # single source — bump this when you cut a new release
 
 logger = logging.getLogger("tgd_common")
 
@@ -87,6 +87,9 @@ DEFAULT_CONFIG: dict = {
     # Keeping this at 3 prevents ExportAuthorization flood-waits from
     # Telegram when many tracks on a non-home DC are authorised at once.
     "max_parallel_downloads":  3,
+    # Analyze + tag loudness (REPLAYGAIN_TRACK_GAIN) on every new download.
+    # Off by default: adds one ffmpeg decode pass per file.
+    "replaygain_on_download":  False,
     # ── Scrobbling (opt-in; off unless a token/key is provided) ──
     "scrobble_enabled":        False,
     "scrobble_service":        "listenbrainz",  # "listenbrainz" | "lastfm"
@@ -233,6 +236,106 @@ def require_api_credentials() -> "tuple[int, str]":
         "Telegram API credentials not found.\n"
         "Run TGDownloader and complete the setup wizard first."
     )
+
+
+# ── Loudness analysis / ReplayGain ────────────────────────────────────────────
+# ReplayGain 2.0: reference level −18 LUFS; track gain = −18 − measured I.
+
+_RG_REFERENCE_LUFS = -18.0
+_RG_TAG = "REPLAYGAIN_TRACK_GAIN"
+
+
+def analyze_loudness(path: "Path | str") -> "float | None":
+    """Integrated loudness (LUFS) of an audio file via ffmpeg's ebur128 filter.
+    Returns None when ffmpeg is missing or the analysis fails."""
+    import re
+    import subprocess
+    ff = ffmpeg_exe()
+    if not ff:
+        return None
+    try:
+        proc = subprocess.run(
+            [ff, "-hide_banner", "-nostats", "-i", str(path),
+             "-map", "0:a:0", "-af", "ebur128", "-f", "null",
+             "NUL" if sys.platform == "win32" else "/dev/null"],
+            capture_output=True, timeout=120,
+        )
+        text = proc.stderr.decode("utf-8", errors="replace")
+        hits = re.findall(r"I:\s*(-?[\d.]+)\s+LUFS", text)
+        return float(hits[-1]) if hits else None
+    except Exception as exc:
+        logger.debug("Loudness analysis failed for %s: %s", path, exc)
+        return None
+
+
+def replaygain_from_lufs(integrated_lufs: float) -> float:
+    return round(_RG_REFERENCE_LUFS - integrated_lufs, 2)
+
+
+def write_replaygain_tag(path: "Path | str", gain_db: float) -> bool:
+    """Write REPLAYGAIN_TRACK_GAIN. Vorbis-comment formats (FLAC/Ogg/Opus)
+    take the key directly; MP3 uses an ID3 TXXX frame. Unsupported formats
+    return False."""
+    val = f"{gain_db:+.2f} dB"
+    try:
+        from mutagen import File as MF
+        from mutagen.mp3 import MP3
+        audio = MF(str(path))
+        if audio is None:
+            return False
+        if isinstance(audio, MP3):
+            from mutagen.id3 import TXXX
+            if audio.tags is None:
+                audio.add_tags()
+            audio.tags.setall("TXXX:" + _RG_TAG,
+                              [TXXX(encoding=3, desc=_RG_TAG, text=[val])])
+            audio.save()
+            return True
+        audio[_RG_TAG] = [val]
+        audio.save()
+        return True
+    except Exception as exc:
+        logger.debug("ReplayGain tag write failed for %s: %s", path, exc)
+        return False
+
+
+def read_replaygain_gain(path: "Path | str") -> "float | None":
+    """Read REPLAYGAIN_TRACK_GAIN in dB, or None when absent/unreadable."""
+    def _parse(raw: str) -> "float | None":
+        try:
+            return float(str(raw).lower().replace("db", "").strip())
+        except Exception:
+            return None
+    try:
+        from mutagen import File as MF
+        from mutagen.mp3 import MP3
+        audio = MF(str(path))
+        if audio is None or audio.tags is None:
+            return None
+        if isinstance(audio, MP3):
+            for frame in audio.tags.getall("TXXX"):
+                if frame.desc.upper() == _RG_TAG:
+                    return _parse(frame.text[0])
+            return None
+        vals = audio.tags.get(_RG_TAG)
+        if vals:
+            return _parse(vals[0])
+    except Exception:
+        pass
+    return None
+
+
+def apply_replaygain(path: "Path | str") -> "float | None":
+    """Analyze + tag one file (skips files already tagged).  Returns the gain
+    written (or already present), or None on failure."""
+    existing = read_replaygain_gain(path)
+    if existing is not None:
+        return existing
+    lufs = analyze_loudness(path)
+    if lufs is None:
+        return None
+    gain = replaygain_from_lufs(lufs)
+    return gain if write_replaygain_tag(path, gain) else None
 
 
 # ── Recycle bin / trash ───────────────────────────────────────────────────────

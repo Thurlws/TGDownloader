@@ -677,6 +677,25 @@ document.getElementById('btn-art-repair')?.addEventListener('click', async () =>
   }
   btn.disabled = false;
 });
+document.getElementById('btn-loudness')?.addEventListener('click', async () => {
+  const out = document.getElementById('loudness-results');
+  const btn = document.getElementById('btn-loudness');
+  btn.disabled = true;
+  out.innerHTML = '<div style="font-size:11px;color:var(--fg3)">Analyzing loudness — this decodes each file, please wait…</div>';
+  try {
+    const d = await (await fetch('/loudness-scan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    })).json();
+    if (d.error) {
+      out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(d.error)}</div>`;
+    } else {
+      out.innerHTML = `<div style="font-size:11px">Checked <strong>${d.checked}</strong> tracks · untagged <strong>${d.missing}</strong> · tagged <strong style="color:var(--accent)">${d.tagged}</strong>${d.failed ? ` · failed <strong style="color:var(--red)">${d.failed}</strong>` : ''}${d.remaining > 0 ? ` · ${d.remaining} left — run again` : ''}</div>`;
+    }
+  } catch (err) {
+    out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(String(err))}</div>`;
+  }
+  btn.disabled = false;
+});
 document.getElementById('btn-modal-cancel').addEventListener('click', () =>
   document.getElementById('modal-overlay').classList.remove('open'));
 document.getElementById('modal-overlay').addEventListener('click', e => {

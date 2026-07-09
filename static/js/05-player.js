@@ -44,6 +44,7 @@ async function _npLoadLyrics(track, alb) {
     if (!r.ok) { box.innerHTML = '<div class="np-lyrics-status">No lyrics found for this track.</div>'; return; }
     const d = await r.json();
     if (_npLyricsKey !== key) return;
+    window._npLyricsRaw = d.synced || null;   // raw LRC text for .lrc export
     if (d.synced) {
       _npLyricsData = _npParseLrc(d.synced);
       box.innerHTML = '';
@@ -447,6 +448,12 @@ function _mpPlayTrack(idx, alb, autoplay = true) {
   const track = _mpQueue[idx];
   if (!track) return;
 
+  // A manual track change during a crossfade abandons the fade (the adopt
+  // path below is only taken when the fade itself initiated this call).
+  if (window._mpCancelXfade && !(window._mpXfadeAdopt && window._mpXfadeAdopt.idx === idx)) {
+    _mpCancelXfade();
+  }
+
   _mpIdx        = idx;
   _mpPlaying    = autoplay;
   _mpCurrentAlb = alb;   // lock the album for this playback session
@@ -462,9 +469,16 @@ function _mpPlayTrack(idx, alb, autoplay = true) {
   const localSrc = (trackPh && track.name)
     ? `/audio-file?path_hash=${encodeURIComponent(trackPh)}&name=${encodeURIComponent(track.name)}`
     : (track.preview_url || '');
-  _mpAudio.src = localSrc;
-  _mpAudio.volume = parseFloat(document.getElementById('mp-vol-range')?.value || '1');
-  if (autoplay) _mpAudio.play().catch(() => {});
+  if (window._mpXfadeAdopt && window._mpXfadeAdopt.idx === idx) {
+    // Crossfade hand-off: the incoming element is already playing this track
+    // at full volume — make it the active element instead of restarting.
+    _mpAudio = window._mpXfadeAdopt.el;
+    window._mpXfadeAdopt = null;
+  } else {
+    _mpAudio.src = localSrc;
+    _mpAudio.volume = parseFloat(document.getElementById('mp-vol-range')?.value || '1');
+    if (autoplay) _mpAudio.play().catch(() => {});
+  }
 
   // Reset the scrubber so we don't briefly flash the old/preview duration (0:30)
   const _f = document.getElementById('mp-prog-fill');
@@ -524,6 +538,7 @@ function _mpPlayTrack(idx, alb, autoplay = true) {
     },
   };
   if (_isLocalTrack) _sendScrobble('now_playing');
+  if (window._fxOnTrackChange) { try { _fxOnTrackChange(track, alb, trackPh); } catch (_) {} }
   _mpSaveState();
 }
 
@@ -723,8 +738,10 @@ function _mpRenderProgress(cur, dur) {
   if (totEl && dur > 0) totEl.textContent = _mpFmtTime(dur);
 }
 
-// Audio event listeners
-_mpAudio.addEventListener('timeupdate', () => {
+// Audio event listeners — named handlers bound to BOTH pooled audio elements
+// (main + crossfade partner). Each ignores events from the inactive element.
+function _mpOnTimeupdate(e) {
+  if (e.target !== _mpAudio) return;
   const dur  = _mpAudio.duration || 30;
   const cur  = _mpAudio.currentTime;
   if (isFinite(_mpAudio.duration) && _mpAudio.duration > 0) _mpKnownDur = _mpAudio.duration;
@@ -763,10 +780,12 @@ _mpAudio.addEventListener('timeupdate', () => {
   }
 
   _npSyncLyrics();
-});
+  if (window._fxTick) { try { _fxTick(cur, dur); } catch (_) {} }
+}
 
 // Apply a pending restore-seek once the media duration is known
-_mpAudio.addEventListener('loadedmetadata', () => {
+function _mpOnLoadedMeta(e) {
+  if (e.target !== _mpAudio) return;
   if (isFinite(_mpAudio.duration) && _mpAudio.duration > 0) _mpKnownDur = _mpAudio.duration;
   if (_mpPendingSeek != null) {
     const seek = _mpPendingSeek;
@@ -776,19 +795,22 @@ _mpAudio.addEventListener('loadedmetadata', () => {
     // fire a timeupdate on its own).
     _mpRenderProgress(seek, _mpAudio.duration || _mpKnownDur);
   }
-});
+}
 
-_mpAudio.addEventListener('play',  () => {
+function _mpOnPlay(e) {
+  if (e.target !== _mpAudio) return;
   _mpPlaying = true;  _mpUpdatePlayBtn(); _mpSaveState();
   try { if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing'; } catch (_) {}
-});
-_mpAudio.addEventListener('pause', () => {
+}
+function _mpOnPause(e) {
+  if (e.target !== _mpAudio) return;
   _mpPlaying = false; _mpUpdatePlayBtn(); _mpSaveState();
   try { if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused'; } catch (_) {}
-});
+}
 window.addEventListener('beforeunload', () => _mpSaveState());
 // A track that actually starts producing audio clears the error streak.
-_mpAudio.addEventListener('playing', () => {
+function _mpOnPlaying(e) {
+  if (e.target !== _mpAudio) return;
   _mpErrorStreak = 0;
   // A transcoded local file is full quality — drop the "converting/preview" note.
   const src = _mpAudio.currentSrc || _mpAudio.src || '';
@@ -796,7 +818,7 @@ _mpAudio.addEventListener('playing', () => {
     const note = document.getElementById('mp-preview-note');
     if (note) { note.textContent = ''; note.style.display = 'none'; }
   }
-});
+}
 
 // Move on after a failed track: streak-guarded skip to the next playable one.
 function _mpSkipAfterError(track, reason) {
@@ -821,7 +843,8 @@ function _mpSkipAfterError(track, reason) {
 // The current source failed. Figure out WHY (missing file vs. the browser not
 // being able to decode it — e.g. 24-bit/hi-res FLAC) and recover accordingly:
 // transcode the file server-side, fall back to the preview, or skip.
-_mpAudio.addEventListener('error', () => {
+function _mpOnError(e) {
+  if (e.target !== _mpAudio) return;
   if (!_mpQueue.length || _mpIdx < 0) return;
   const track = _mpQueue[_mpIdx];
   if (!track) return;
@@ -879,17 +902,21 @@ _mpAudio.addEventListener('error', () => {
 
   // A preview URL (or unknown source) failed → just skip.
   _mpSkipAfterError(track);
-});
+}
 
-_mpAudio.addEventListener('ended', () => {
+function _mpOnEnded(e) {
+  if (e.target !== _mpAudio) return;
   _mpPlaying = false;
   // Sleep timer "end of track": stop here instead of advancing.
   if (_mpSleepMode === 'track') {
     _mpSleepMode = 'off';
     _mpUpdateSleepBtn();
+    if (window._mpCancelXfade) _mpCancelXfade();
     _mpStop();
     return;
   }
+  // A crossfade is mid-flight: the incoming element takes over seamlessly.
+  if (window._fxFinishXfade && _fxFinishXfade()) return;
   // Repeat one: replay the same track
   if (_mpRepeat === 'one' && _mpIdx >= 0) {
     _mpPlayTrack(_mpIdx, _mpCurrentAlb);
@@ -907,7 +934,20 @@ _mpAudio.addEventListener('ended', () => {
   }
   _mpUpdatePlayBtn();
   _mpHighlightRow(-1);
-});
+}
+
+// Attach the full handler set to a pooled audio element. Called for the DOM
+// element now and for the crossfade partner when 06-audio-fx.js creates it.
+function _mpBindAudioEvents(el) {
+  el.addEventListener('timeupdate',     _mpOnTimeupdate);
+  el.addEventListener('loadedmetadata', _mpOnLoadedMeta);
+  el.addEventListener('play',           _mpOnPlay);
+  el.addEventListener('pause',          _mpOnPause);
+  el.addEventListener('playing',        _mpOnPlaying);
+  el.addEventListener('error',          _mpOnError);
+  el.addEventListener('ended',          _mpOnEnded);
+}
+_mpBindAudioEvents(_mpAudio);
 
 // ── Track navigation helpers (respect shuffle + repeat) ──────────────────────
 function _mpTrackPlayable(t) {

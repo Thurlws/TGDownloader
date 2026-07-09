@@ -316,6 +316,7 @@
       </div>
     </div>
     <div id="mp-right">
+      <button class="mp-btn mp-btn-sm" id="mp-eq" title="Audio settings — EQ, crossfade, ReplayGain, visualizer" data-icon="sliders"></button>
       <button class="mp-btn mp-btn-sm" id="mp-sleep" title="Sleep timer: off" data-icon="moon"></button>
       <button class="mp-btn mp-btn-sm" id="mp-np-toggle" title="Now playing view" data-icon="panelRight"></button>
       <div id="mp-vol-wrap">
@@ -334,6 +335,8 @@
       <button id="np-collapse" class="np-icon-btn" title="Collapse panel" data-icon="chevronRight"></button>
       <span id="np-header-title">Now Playing</span>
       <span style="flex:1"></span>
+      <button id="np-save-lrc" class="np-icon-btn" title="Save synced lyrics as .lrc next to the file" data-icon="save" style="display:none"></button>
+      <button id="np-karaoke" class="np-icon-btn" title="Karaoke mode (fullscreen synced lyrics)" data-icon="mic" style="display:none"></button>
       <button id="np-lyrics-toggle" class="np-icon-btn" title="Lyrics" data-icon="list"></button>
     </div>
     <div id="np-body">
@@ -345,6 +348,8 @@
         </div>
         <div id="np-track-title">—</div>
         <div id="np-track-artist"></div>
+        <canvas id="np-wave" width="640" height="56" title="Waveform — click to seek" style="display:none;width:100%;height:44px;cursor:pointer;border-radius:4px"></canvas>
+        <canvas id="np-vis" width="640" height="48" style="display:none;width:100%;height:36px;border-radius:4px"></canvas>
         <div id="np-lyrics"><div class="np-lyrics-status">Loading lyrics…</div></div>
         <div id="np-queue" style="display:none">
           <div class="np-section-label np-queue-head">
@@ -561,13 +566,21 @@
               <input type="file" id="restore-file" accept=".zip" style="display:none">
               <div id="restore-results"></div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" style="margin-bottom:14px">
               <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
                 <span>Cover Art Repair</span>
                 <button class="btn-secondary" id="btn-art-repair" style="width:auto">Repair missing covers</button>
               </div>
               <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Finds albums and playlists without cover art and fetches covers from Deezer (up to 25 per run).</div>
               <div id="art-repair-results"></div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <span>Loudness Analysis</span>
+                <button class="btn-secondary" id="btn-loudness" style="width:auto">Analyze library</button>
+              </div>
+              <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Tags tracks with ReplayGain so the player can level volume between albums (up to 25 files per run; needs ffmpeg). New downloads are tagged automatically when <span style="font-family:var(--mono)">replaygain_on_download</span> is enabled.</div>
+              <div id="loudness-results"></div>
             </div>
           </div>
 
@@ -967,5 +980,6 @@
 <script src="/static/js/03-app.js"></script>
 <script src="/static/js/04-library.js"></script>
 <script src="/static/js/05-player.js"></script>
+<script src="/static/js/06-audio-fx.js"></script>
 </body>
 </html>

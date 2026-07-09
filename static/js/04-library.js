@@ -93,7 +93,10 @@ async function _mpStartRadio() {
 }
 let _likedKeys   = new Set();      // "path_hash\x00name" keys of liked songs
 const _likedAlbum = { album: 'Liked Songs', artist: '', path_hash: '', cover_url: null, is_liked: true };
-const _mpAudio   = document.getElementById('mini-audio');
+// `let` (not const): crossfade swaps the active element between the DOM
+// <audio> and a second pooled Audio() — see 06-audio-fx.js.
+let _mpAudio  = document.getElementById('mini-audio');
+let _mpAudioB = null;              // crossfade partner element (lazy)
 
 // ── Liked songs helpers ──────────────────────────────────────────────────────
 function _likeKey(track, alb) {

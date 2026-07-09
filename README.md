@@ -39,6 +39,12 @@ The interface is a local web app that opens in your browser (or a Chromium app w
 - **OS media integration** — hardware media keys and the Windows media overlay control playback (with album art)
 - **Sleep timer** — 15/30/60 minutes or stop after the current track
 - **Listening stats** — local play history with top artists/tracks (independent of scrobbling)
+- **Equalizer & visualizer** — 10-band EQ with presets, plus a spectrum visualizer (WebAudio)
+- **Crossfade** — smooth 1–12 s blend between tracks, configurable in the audio panel
+- **ReplayGain** — loudness analysis tags your library (Maintenance tab or automatically on download) and the player levels volume between albums
+- **Waveform seekbar** — click-to-seek waveform in the Now Playing panel
+- **Karaoke mode & .lrc export** — fullscreen synced lyrics; save them as sidecar files
+- **Resume long tracks** — DJ mixes and audiobooks (>20 min) reopen where you left off
 - **Safe deletes** — removed files, albums and artists go to the recycle bin, not oblivion
 - **Backup & restore** — export app state as a zip and restore it from the Maintenance tab
 - **Cover art repair** — one click fetches missing album covers from Deezer
@@ -146,6 +152,7 @@ tgdownloader_debug.log    ← debug log (view in the Debug tab)
 hash_cache.json           ← library hash index cache
 album_id_cache.json       ← Deezer album ID cache
 play_history.jsonl        ← local listening history (powers the Listening stats)
+tg_waveform_cache/        ← cached waveform peaks for the seekbar
 ```
 
 ---
