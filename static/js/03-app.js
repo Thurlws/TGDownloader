@@ -722,8 +722,11 @@ async function _libIntelRun(btnId, url, body, render) {
   }
 }
 
+function _tagFillYear() {
+  return !!document.getElementById('tag-fill-year')?.checked;
+}
 document.getElementById('btn-tag-preview')?.addEventListener('click', () =>
-  _libIntelRun('btn-tag-preview', '/tag-janitor', { apply: false }, d => {
+  _libIntelRun('btn-tag-preview', '/tag-janitor', { apply: false, fill_year: _tagFillYear() }, d => {
     const applyBtn = document.getElementById('btn-tag-apply');
     if (applyBtn) applyBtn.style.display = d.count > 0 ? '' : 'none';
     if (!d.count) return `<div style="font-size:11px;color:var(--accent)">✓ No tag issues found (scanned ${d.scanned}).</div>`;
@@ -732,11 +735,13 @@ document.getElementById('btn-tag-preview')?.addEventListener('click', () =>
          <span style="color:var(--fg2)">${escHtml(c.file)}</span> →
          ${Object.entries(c.fixes).map(([k, v]) => `${k}: <span style="color:var(--accent)">${escHtml(String(v))}</span>`).join(', ')}
        </div>`).join('');
-    return `<div style="font-size:11px;margin-bottom:4px">${d.count} file(s) with fixable tags (showing up to 40). Click <strong>Apply fixes</strong> to write them.</div>${rows}`;
+    const yearNote = d.year_filled
+      ? ` (${d.year_filled} year${d.year_filled !== 1 ? 's' : ''} from Deezer${d.year_lookups_capped ? ' — capped, run again for more' : ''})` : '';
+    return `<div style="font-size:11px;margin-bottom:4px">${d.count} file(s) with fixable tags${yearNote} (showing up to 40). Click <strong>Apply fixes</strong> to write them.</div>${rows}`;
   }));
 document.getElementById('btn-tag-apply')?.addEventListener('click', async () => {
-  const d = await _libIntelRun('btn-tag-apply', '/tag-janitor', { apply: true }, d =>
-    `<div style="font-size:11px;color:var(--accent)">Applied fixes to ${d.count} file(s).</div>`);
+  const d = await _libIntelRun('btn-tag-apply', '/tag-janitor', { apply: true, fill_year: _tagFillYear() }, d =>
+    `<div style="font-size:11px;color:var(--accent)">Applied fixes to ${d.count} file(s)${d.year_filled ? ` — ${d.year_filled} release year(s) filled` : ''}.</div>`);
   if (d) document.getElementById('btn-tag-apply').style.display = 'none';
 });
 document.getElementById('btn-completeness')?.addEventListener('click', () =>

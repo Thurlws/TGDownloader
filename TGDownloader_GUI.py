@@ -1645,7 +1645,8 @@ def _create_genre_playlist(home_path: Path, genre: str, name: str) -> dict:
 
 def _scan_all_tracks(home_path: Path) -> "list[dict]":
     """Flat scan of every library track with the metadata needed for smart
-    playlists: {path, artist, album, title, genres, track_num, ext, mtime}."""
+    playlists: {path, artist, album, title, genres, track_num, ext, mtime,
+    rating_key}."""
     from mutagen import File as _MF
     out: list = []
     scan_root = home_path / ARTISTS_DIRNAME
@@ -1659,6 +1660,10 @@ def _scan_all_tracks(home_path: Path) -> "list[dict]":
         for album_dir in sorted(artist_dir.iterdir()):
             if not album_dir.is_dir():
                 continue
+            # Same 16-hex album hash as /library-albums, so ratings (keyed on
+            # path_hash + NUL + filename) can be looked up per scanned track.
+            album_ph = hashlib.sha256(
+                str(album_dir.resolve()).encode()).hexdigest()[:16]
             for f in sorted(album_dir.iterdir()):
                 if not f.is_file() or f.suffix.lower() not in _GENRE_AUDIO_EXT:
                     continue
@@ -1688,13 +1693,37 @@ def _scan_all_tracks(home_path: Path) -> "list[dict]":
                     "path": str(f), "artist": artist_dir.name, "album": album_dir.name,
                     "title": title or f.stem, "genres": genres, "track_num": track_num,
                     "ext": f.suffix.lower().lstrip("."), "mtime": mtime,
+                    "rating_key": _liked_key(album_ph, f.name),
                 })
+    return out
+
+
+def _last_played_map(events: "list[dict]") -> dict:
+    """Most recent play time per track from the local listening history.
+    Keys: ("artist_lower", "title_lower") plus a title-only fallback key
+    ("", "title_lower") — folder artist names can differ slightly from the
+    tag artist recorded in the history, and for a "not played in N days"
+    rule a false 'played recently' merely excludes a track (safe)."""
+    out: dict = {}
+    for e in events:
+        try:
+            t = float(e.get("t") or 0)
+        except Exception:
+            continue
+        title  = str(e.get("title")  or "").strip().lower()
+        artist = str(e.get("artist") or "").strip().lower()
+        if not title:
+            continue
+        for key in ((artist, title), ("", title)):
+            if t > out.get(key, 0):
+                out[key] = t
     return out
 
 
 def _create_smart_playlist(home_path: Path, name: str, opts: dict) -> dict:
     """Materialise a playlist folder from rule-based filters over the library:
-    format / genre / artist substrings, "added within N days", sort + limit."""
+    format / genre / artist substrings, "added within N days", "min star
+    rating", "not played in N days" (v1.7.0), sort + limit."""
     import shutil, time
 
     tracks = _scan_all_tracks(home_path)
@@ -1705,7 +1734,15 @@ def _create_smart_playlist(home_path: Path, name: str, opts: dict) -> dict:
     except Exception: added_days = 0
     try:    limit = int(opts.get("limit") or 0)
     except Exception: limit = 0
+    try:    min_rating = int(opts.get("min_rating") or 0)
+    except Exception: min_rating = 0
+    try:    not_played_days = int(opts.get("not_played_days") or 0)
+    except Exception: not_played_days = 0
     cutoff = (time.time() - added_days * 86400) if added_days > 0 else None
+
+    ratings = _load_ratings() if min_rating > 0 else {}
+    played  = _last_played_map(_load_play_events()) if not_played_days > 0 else {}
+    played_cutoff = time.time() - not_played_days * 86400
 
     def _ok(t):
         if fmt and t["ext"] != fmt:
@@ -1716,6 +1753,16 @@ def _create_smart_playlist(home_path: Path, name: str, opts: dict) -> dict:
             return False
         if cutoff is not None and t["mtime"] < cutoff:
             return False
+        if min_rating > 0:
+            r = (ratings.get(t.get("rating_key", "")) or {}).get("rating", 0)
+            if r < min_rating:
+                return False
+        if not_played_days > 0:
+            title = t["title"].strip().lower()
+            last  = max(played.get((t["artist"].strip().lower(), title), 0),
+                        played.get(("", title), 0))
+            if last > played_cutoff:      # played too recently (never-played = 0 passes)
+                return False
         return True
 
     matches = [t for t in tracks if _ok(t)]
@@ -1991,6 +2038,65 @@ def _toggle_liked(entry: dict) -> dict:
     kept.insert(0, new_item)
     _save_liked(kept)
     return {"liked": True, "count": len(kept)}
+
+
+# ══════════════════════════════════════════════
+#  STAR RATINGS  (v1.7.0 — same keying as liked songs, feeds smart playlists)
+# ══════════════════════════════════════════════
+
+RATINGS_FILE = DATA_DIR / "ratings.json"
+
+
+def _load_ratings(path: "Path | None" = None) -> dict:
+    """{key: {rating, title, artist, album, updated}} where key is the same
+    path_hash + NUL + filename compound used for liked songs."""
+    p = path or RATINGS_FILE
+    try:
+        if p.exists():
+            data = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+    except Exception as exc:
+        logger.debug("Could not read ratings: %s", exc)
+    return {}
+
+
+def _save_ratings(data: dict, path: "Path | None" = None) -> None:
+    try:
+        (path or RATINGS_FILE).write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as exc:
+        logger.debug("Could not write ratings: %s", exc)
+
+
+def _set_rating(entry: dict, path: "Path | None" = None) -> dict:
+    """Set a track's star rating (1–5); 0 clears it.
+    Returns {ok, rating, count} or {error}."""
+    ph   = (entry.get("path_hash") or "").strip()
+    name = (entry.get("name") or "").strip()
+    if not ph or not name:
+        return {"error": "Missing path_hash or name"}
+    try:
+        rating = int(entry.get("rating") or 0)
+    except Exception:
+        return {"error": "rating must be an integer 0–5"}
+    if not 0 <= rating <= 5:
+        return {"error": "rating must be 0–5"}
+
+    items = _load_ratings(path)
+    key   = _liked_key(ph, name)
+    if rating == 0:
+        items.pop(key, None)
+    else:
+        items[key] = {
+            "rating":  rating,
+            "title":   entry.get("title") or name,
+            "artist":  entry.get("artist") or "",
+            "album":   entry.get("album") or "",
+            "updated": int(time.time()),
+        }
+    _save_ratings(items, path)
+    return {"ok": True, "rating": rating, "count": len(items)}
 
 
 # ══════════════════════════════════════════════
@@ -2908,12 +3014,96 @@ def _aggregate_play_stats(events: "list[dict]", now: "float | None" = None) -> d
             "top_tracks": top_tracks, "top_artists": top_artists, "recent": recent}
 
 
+def _filter_play_events(events: "list[dict]", q: str = "",
+                        limit: int = 200, offset: int = 0) -> dict:
+    """Newest-first slice of the listening history, optionally filtered by a
+    case-insensitive substring across title / artist / album.  Pure."""
+    ql = (q or "").strip().lower()
+    if ql:
+        events = [e for e in events
+                  if ql in str(e.get("title") or "").lower()
+                  or ql in str(e.get("artist") or "").lower()
+                  or ql in str(e.get("album") or "").lower()]
+    newest_first = events[::-1]
+    limit  = max(1, min(int(limit or 200), 1000))
+    offset = max(0, int(offset or 0))
+    page = [{"title": e.get("title", ""), "artist": e.get("artist", ""),
+             "album": e.get("album", ""), "ts": e.get("ts", "")}
+            for e in newest_first[offset:offset + limit]]
+    return {"total": len(newest_first), "events": page, "offset": offset}
+
+
+def _wrapped_stats(events: "list[dict]", year: int,
+                   now: "float | None" = None) -> dict:
+    """Year-end "Wrapped" summary from the local listening history.  Pure:
+    totals, top artists/tracks/albums, per-month counts, busiest day and the
+    longest daily listening streak for the given calendar year."""
+    import datetime as _dt
+    yr_events: "list[tuple[_dt.datetime, dict]]" = []
+    years_seen: set = set()
+    for e in events:
+        try:
+            dt = _dt.datetime.fromtimestamp(float(e.get("t") or 0))
+        except Exception:
+            continue
+        years_seen.add(dt.year)
+        if dt.year == year:
+            yr_events.append((dt, e))
+
+    tracks:  "dict[tuple, int]" = {}
+    artists: "dict[str, int]"   = {}
+    albums:  "dict[tuple, int]" = {}
+    by_month = [0] * 12
+    by_day:  "dict[str, int]"   = {}
+    for dt, e in yr_events:
+        artist = e.get("artist", "")
+        title  = e.get("title", "")
+        album  = e.get("album", "")
+        tracks[(artist, title)] = tracks.get((artist, title), 0) + 1
+        artists[artist] = artists.get(artist, 0) + 1
+        if album:
+            albums[(artist, album)] = albums.get((artist, album), 0) + 1
+        by_month[dt.month - 1] += 1
+        day = dt.strftime("%Y-%m-%d")
+        by_day[day] = by_day.get(day, 0) + 1
+
+    # Longest run of consecutive listening days
+    streak = best_streak = 0
+    prev: "_dt.date | None" = None
+    for day in sorted(by_day):
+        d = _dt.date.fromisoformat(day)
+        streak = streak + 1 if (prev and (d - prev).days == 1) else 1
+        best_streak = max(best_streak, streak)
+        prev = d
+
+    busiest = max(by_day.items(), key=lambda kv: kv[1]) if by_day else None
+    return {
+        "year": year,
+        "years": sorted(years_seen, reverse=True),
+        "total_plays":    len(yr_events),
+        "unique_tracks":  len(tracks),
+        "unique_artists": len({a for a in artists if a}),
+        "top_artists": [{"artist": a, "plays": n}
+                        for a, n in sorted(artists.items(), key=lambda kv: -kv[1])[:10]],
+        "top_tracks":  [{"artist": a, "title": t, "plays": n}
+                        for (a, t), n in sorted(tracks.items(), key=lambda kv: -kv[1])[:10]],
+        "top_albums":  [{"artist": a, "album": al, "plays": n}
+                        for (a, al), n in sorted(albums.items(), key=lambda kv: -kv[1])[:5]],
+        "by_month": by_month,
+        "listening_days": len(by_day),
+        "busiest_day": ({"date": busiest[0], "plays": busiest[1]} if busiest else None),
+        "longest_streak_days": best_streak,
+        "first_play": (yr_events[0][1].get("ts", "") if yr_events else None),
+    }
+
+
 # ══════════════════════════════════════════════
 #  BACKUP RESTORE
 # ══════════════════════════════════════════════
 
 _RESTORABLE_STATE_FILES = {"liked_songs.json", "watchlist.json",
-                           "tg_sessions.json", "album_id_cache.json"}
+                           "tg_sessions.json", "album_id_cache.json",
+                           "ratings.json"}
 
 
 def _validate_backup_zip(data: bytes) -> "tuple[dict[str, bytes], list[str]]":
@@ -3069,10 +3259,34 @@ def _quality_score(path: "Path") -> "tuple[int, int]":
     return rank, bitrate
 
 
-def _tag_janitor(apply: bool = False, limit: int = 500) -> dict:
+_YEAR_LOOKUP_CAP = 25    # Deezer year lookups per janitor run (keeps runs bounded)
+
+
+def _deezer_album_year(artist: str, album: str) -> "str | None":
+    """Release year ("YYYY") of the best Deezer match for artist+album, or
+    None when unmatched / offline."""
+    album_id = _deezer_search_album_id(artist, album)
+    if not album_id:
+        return None
+    try:
+        req = urllib.request.Request(
+            f"https://api.deezer.com/album/{album_id}",
+            headers={"User-Agent": "TGDownloader/6"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        rd = str(data.get("release_date") or "")
+        return rd[:4] if len(rd) >= 4 and rd[:4].isdigit() else None
+    except Exception as exc:
+        logger.debug("Deezer year lookup failed for %s — %s: %s", artist, album, exc)
+        return None
+
+
+def _tag_janitor(apply: bool = False, limit: int = 500,
+                 fill_year: bool = False) -> dict:
     """Scan the library for fixable tag issues (feat. formatting, genre
-    canonicalisation, missing albumartist).  Dry-run by default: returns the
-    proposed changes; with apply=True, writes them."""
+    canonicalisation, missing albumartist; with fill_year, missing release
+    years via Deezer).  Dry-run by default: returns the proposed changes;
+    with apply=True, writes them."""
     m    = _tgd_import()
     cfg  = m.load_config()
     home = cfg.get("home_music_folder")
@@ -3085,6 +3299,9 @@ def _tag_janitor(apply: bool = False, limit: int = 500) -> dict:
     from mutagen import File as _MF
     changes: "list[dict]" = []
     scanned = 0
+    # Year fill: one Deezer lookup per album dir, capped per run.
+    year_cache: "dict[Path, str | None]" = {}
+    year_lookups = 0
     for p in _iter_library_audio(home_path):
         if len(changes) >= limit:
             break
@@ -3114,6 +3331,21 @@ def _tag_janitor(apply: bool = False, limit: int = 500) -> dict:
                     fixes["albumartist"] = artist_folder
             except (ValueError, IndexError):
                 pass
+        # Release year from Deezer for files with no date tag (v1.7.0, opt-in)
+        if fill_year and not (audio.get("date") or [""])[0]:
+            album_dir = p.parent
+            if album_dir not in year_cache and year_lookups < _YEAR_LOOKUP_CAP:
+                year_lookups += 1
+                try:
+                    artist_folder = p.relative_to(home_path / ARTISTS_DIRNAME).parts[0]
+                except (ValueError, IndexError):
+                    artist_folder = ""
+                year_cache[album_dir] = (
+                    _deezer_album_year(artist_folder, album_dir.name)
+                    if artist_folder else None)
+            yr = year_cache.get(album_dir)
+            if yr:
+                fixes["date"] = yr
         if not fixes:
             continue
         rel = str(p.relative_to(home_path))
@@ -3127,7 +3359,10 @@ def _tag_janitor(apply: bool = False, limit: int = 500) -> dict:
                 continue
         changes.append({"file": rel, "fixes": fixes})
     return {"scanned": scanned, "changes": changes,
-            "applied": apply, "count": len([c for c in changes if "fixes" in c])}
+            "applied": apply, "count": len([c for c in changes if "fixes" in c]),
+            "year_filled": len([c for c in changes
+                                if "date" in (c.get("fixes") or {})]),
+            "year_lookups_capped": fill_year and year_lookups >= _YEAR_LOOKUP_CAP}
 
 
 def _corruption_scan(limit: int = 400) -> dict:
@@ -3852,7 +4087,8 @@ class Handler(BaseHTTPRequestHandler):
             import io, zipfile
             buf = io.BytesIO()
             state_files = ["liked_songs.json", "watchlist.json",
-                           "tg_sessions.json", "album_id_cache.json"]
+                           "tg_sessions.json", "album_id_cache.json",
+                           "ratings.json"]
             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
                 for name in state_files:
                     fp = DATA_DIR / name
@@ -3970,6 +4206,39 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/play-stats":
             self._send_json(200, _aggregate_play_stats(_load_play_events()))
+            return
+
+        # ── Star ratings map for the library UI (v1.7.0) ──────────────────
+        if path == "/ratings":
+            items = _load_ratings()
+            self._send_json(200, {"ratings": {k: v.get("rating", 0)
+                                              for k, v in items.items()}})
+            return
+
+        # ── Browsable listening history (v1.7.0) ──────────────────────────
+        if path == "/play-history":
+            qs = urlparse(self.path).query
+            params = dict(part.split("=", 1) for part in qs.split("&") if "=" in part)
+            try:    limit = int(params.get("limit") or 200)
+            except Exception: limit = 200
+            try:    offset = int(params.get("offset") or 0)
+            except Exception: offset = 0
+            q = unquote_plus(params.get("q") or "")
+            self._send_json(200, _filter_play_events(_load_play_events(),
+                                                     q=q, limit=limit, offset=offset))
+            return
+
+        # ── Year-end Wrapped summary (v1.7.0) ─────────────────────────────
+        if path == "/wrapped":
+            qs = urlparse(self.path).query
+            params = dict(part.split("=", 1) for part in qs.split("&") if "=" in part)
+            try:
+                year = int(params.get("year") or 0)
+            except Exception:
+                year = 0
+            if not year:
+                year = int(time.strftime("%Y"))
+            self._send_json(200, _wrapped_stats(_load_play_events(), year))
             return
 
         # Pre-1.4.0 the frontend's loadSessions() GET always 404ed (only the
@@ -4985,6 +5254,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": str(exc)})
             return
 
+        # ── Set a track's star rating (v1.7.0) ────────────────────────────
+        if path == "/rate":
+            try:
+                result = _set_rating(body or {})
+                self._send_json(400 if result.get("error") else 200, result)
+            except Exception as exc:
+                logger.exception("Error in /rate")
+                self._send_json(500, {"error": str(exc)})
+            return
+
         # ── Native Windows folder picker ──────────────────────────────────
         if path == "/browse-folder":
             current = body.get("current", "")
@@ -5248,7 +5527,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/tag-janitor":
             try:
                 result = _tag_janitor(apply=bool(body.get("apply")),
-                                      limit=max(1, min(int(body.get("limit") or 500), 2000)))
+                                      limit=max(1, min(int(body.get("limit") or 500), 2000)),
+                                      fill_year=bool(body.get("fill_year")))
                 self._send_json(200 if not result.get("error") else 400, result)
             except Exception as exc:
                 logger.exception("tag-janitor failed")

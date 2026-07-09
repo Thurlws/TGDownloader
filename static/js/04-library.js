@@ -145,6 +145,43 @@ async function _toggleLike(track, alb) {
   }
 }
 
+// ── Star ratings (v1.7.0) ────────────────────────────────────────────────────
+let _ratingsMap = new Map();       // "path_hash\x00name" → 1..5
+
+async function _loadRatings() {
+  try {
+    const r = await fetch('/ratings');
+    const d = await r.json();
+    _ratingsMap = new Map(Object.entries(d.ratings || {}));
+  } catch (e) { /* keep existing map */ }
+}
+
+function _trackRating(track, alb) {
+  return _ratingsMap.get(_likeKey(track, alb)) || 0;
+}
+
+async function _setTrackRating(track, alb, rating) {
+  const ph   = track.path_hash || alb?.path_hash || '';
+  const name = track.name || '';
+  if (!ph || !name) return false;
+  const key = ph + '\x00' + name;
+  try {
+    const r = await fetch('/rate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        path_hash: ph, name, rating,
+        title:  track.title || track.name || '',
+        artist: track.artist || alb?.artist || '',
+        album:  alb?.album || track.album || '',
+      }),
+    });
+    const d = await r.json();
+    if (d.error) return false;
+    if (rating > 0) _ratingsMap.set(key, rating); else _ratingsMap.delete(key);
+    return true;
+  } catch (e) { return false; }
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 function _fmtFans(n) {
   if (!n) return '';
@@ -1730,6 +1767,28 @@ async function _renderHomeView() {
     </div>`;
   };
 
+  // Recently added shelf (v1.7.0): album-folder mtime, so folder imports and
+  // manual copies surface here too — not just bot downloads.
+  const addedRecently = regularAlbums
+    .filter(a => a.mtime)
+    .sort((x, y) => (y.mtime || 0) - (x.mtime || 0))
+    .slice(0, 12);
+  const addedCard = (a, idx) => {
+    const src = a.cover_url || (a.path_hash ? `/cover/${a.path_hash}` : '');
+    const cover = src
+      ? `<img class="lib-cover" src="${escHtml(src)}" loading="lazy" alt=""
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+         <div class="lib-cover-ph" style="display:none">${ICON.note}</div>`
+      : `<div class="lib-cover-ph">${ICON.note}</div>`;
+    return `<div class="lib-album-card home-added-card" data-ai="${idx}">
+      <div class="lib-cover-wrap">${cover}</div>
+      <div class="lib-album-info">
+        <div class="lib-album-title" title="${escHtml(a.album)}">${escHtml(a.album)}</div>
+        <div class="lib-album-artist">${escHtml(a.artist)}</div>
+      </div>
+    </div>`;
+  };
+
   // Time-of-day greeting for a little ambience
   const _hr = new Date().getHours();
   const greeting = _hr < 5 ? 'Good night' : _hr < 12 ? 'Good morning'
@@ -1768,6 +1827,9 @@ async function _renderHomeView() {
         <div class="home-hero-eyebrow">${ICON.headphones} Your library</div>
         <div class="home-hero-title">${greeting}</div>
         <div class="home-hero-sub">${subBits.length ? escHtml(subBits.join('  ·  ')) : 'Add some music to get started'}</div>
+        ${regularAlbums.length ? `<button class="btn-secondary" id="btn-home-surprise"
+            style="width:auto;margin-top:12px;display:inline-flex;align-items:center;gap:6px"
+            title="Open a random album from your library">${ICON.shuffle} Surprise me</button>` : ''}
       </div>
     </div>
     <div class="home-section-label home-releases-head">
@@ -1777,6 +1839,10 @@ async function _renderHomeView() {
     <div id="home-releases"><div class="stat-empty" style="padding:14px 0">Loading…</div></div>
     <div class="home-section-label" style="margin-top:22px">Recommended for you</div>
     <div id="home-recs"></div>
+    ${addedRecently.length ? `
+      <div class="home-section-label">Recently added</div>
+      <div class="lib-album-grid home-recent-grid">${addedRecently.map((a, i) => addedCard(a, i)).join('')}</div>
+    ` : ''}
     ${recent.length ? `
       <div class="home-section-label">Recently downloaded</div>
       <div class="lib-album-grid home-recent-grid">${recent.map((r, i) => card(r, i)).join('')}</div>
@@ -1806,6 +1872,29 @@ async function _renderHomeView() {
       }
     });
   });
+
+  // Recently-added shelf cards → open that album (v1.7.0)
+  content.querySelectorAll('.home-added-card').forEach(el => {
+    el.addEventListener('click', () => {
+      const a = addedRecently[+el.dataset.ai];
+      if (!a) return;
+      const group = _libArtistList.find(g => g.name === a.artist);
+      if (group) Promise.resolve(_selectLibArtist(group, true)).then(() => _openLibAlbum(a));
+    });
+  });
+
+  document.getElementById('btn-home-surprise')?.addEventListener('click', _libSurpriseMe);
+}
+
+// ── Surprise me: open a random album from the library (v1.7.0) ──────────────
+function _libSurpriseMe() {
+  const pool = (_libAllAlbums || []).filter(a => !a.is_playlist);
+  if (!pool.length) { _toast('No albums in your library yet.', 'info'); return; }
+  const alb = pool[Math.floor(Math.random() * pool.length)];
+  const group = _libArtistList.find(g => g.name === alb.artist);
+  if (!group) return;
+  _toast(`How about "${alb.album}" by ${alb.artist}?`, 'info');
+  Promise.resolve(_selectLibArtist(group, true)).then(() => _openLibAlbum(alb));
 }
 
 // ── Recommended for you (Home) ──────────────────────────────────────────────
@@ -1963,6 +2052,26 @@ function _refreshTrackHearts(tracks, alb) {
   });
 }
 
+// Repaint the star-rating badges in the visible track rows (v1.7.0)
+function _refreshTrackStars(tracks, alb) {
+  document.querySelectorAll('.lib-track-row').forEach(r => {
+    const t = tracks[+r.dataset.idx];
+    if (!t) return;
+    const titleEl = r.querySelector('.lib-track-title');
+    if (!titleEl) return;
+    let stars = titleEl.querySelector('.lib-track-stars');
+    const rating = _trackRating(t, alb);
+    if (!rating) { stars?.remove(); return; }
+    if (!stars) {
+      stars = document.createElement('span');
+      stars.className = 'lib-track-stars';
+      titleEl.appendChild(stars);
+    }
+    stars.textContent = '★'.repeat(rating);
+    stars.title = `Rated ${rating}/5`;
+  });
+}
+
 // Build {path_hash, name} refs for the selected tracks so the backend can copy
 // them. Per-track path_hash (Liked Songs) wins; else the album/playlist dir's.
 function _trackRefs(selTracks, alb) {
@@ -2013,6 +2122,38 @@ function _openTrackCtx(rowEl, tracks, alb, opts, point) {
         for (const t of selTracks) if (!_isTrackLiked(t, alb)) await _toggleLike(t, alb);
         _refreshTrackHearts(tracks, alb); _toast('Added to Liked Songs.', 'success');
       } });
+  }
+
+  // ── Star rating (v1.7.0): 1–5 submenu + clear ──
+  {
+    const current = n === 1 ? _trackRating(selTracks[0], alb) : 0;
+    items.push({
+      label: n > 1 ? `Rate ${n} tracks` : 'Rate',
+      icon: ICON.star,
+      submenu: () => {
+        const sub = [5, 4, 3, 2, 1].map(r => ({
+          label: '★'.repeat(r) + '☆'.repeat(5 - r) + (current === r ? '   ✓' : ''),
+          action: async () => {
+            for (const t of selTracks) await _setTrackRating(t, alb, r);
+            _refreshTrackStars(tracks, alb);
+            _toast(n > 1 ? `Rated ${n} tracks ${r} star${r !== 1 ? 's' : ''}.`
+                         : `Rated ${r} star${r !== 1 ? 's' : ''}.`, 'success');
+          },
+        }));
+        if (selTracks.some(t => _trackRating(t, alb))) {
+          sub.push({ divider: true });
+          sub.push({
+            label: 'Clear rating',
+            action: async () => {
+              for (const t of selTracks) if (_trackRating(t, alb)) await _setTrackRating(t, alb, 0);
+              _refreshTrackStars(tracks, alb);
+              _toast('Rating cleared.', 'success');
+            },
+          });
+        }
+        return sub;
+      },
+    });
   }
 
   // Queue the album(s) the selected tracks belong to (playlist view)
@@ -2241,10 +2382,11 @@ function _renderLibTracks(tracks, alb, opts) {
          <span class="ico" style="display:none">${ICON.note}</span>`
       : `<span class="ico">${ICON.note}</span>`;
 
-    // Title cell: title over optional artist subline
+    // Title cell: title over optional artist subline (+ star-rating badge)
+    const rating = _trackRating(track, alb);
     const mainCell = `
       <span class="lib-track-main">
-        <span class="lib-track-title" title="${escHtml(track.title || track.name)}">${escHtml(track.title || track.name)}</span>
+        <span class="lib-track-title" title="${escHtml(track.title || track.name)}">${escHtml(track.title || track.name)}${rating ? `<span class="lib-track-stars" title="Rated ${rating}/5">${'★'.repeat(rating)}</span>` : ''}</span>
         ${opts.showArtist ? `<span class="lib-track-sub">${escHtml(track.artist || alb?.artist || '')}</span>` : ''}
       </span>`;
 

@@ -633,7 +633,8 @@ document.getElementById('genre-pl-overlay')?.addEventListener('click', (e) => {
 function openSmartPlaylistModal() {
   const st = document.getElementById('smart-pl-status');
   if (st) { st.textContent = ''; st.className = ''; }
-  ['smart-pl-name','smart-pl-genre','smart-pl-artist','smart-pl-days','smart-pl-limit'].forEach(id => {
+  ['smart-pl-name','smart-pl-genre','smart-pl-artist','smart-pl-days','smart-pl-limit',
+   'smart-pl-rating','smart-pl-notplayed'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('smart-pl-overlay')?.classList.add('open');
@@ -646,16 +647,19 @@ async function _createSmartPlaylist() {
   const status = document.getElementById('smart-pl-status');
   const btn    = document.getElementById('btn-smart-pl-create');
   const body = {
-    name:       document.getElementById('smart-pl-name').value.trim(),
-    format:     document.getElementById('smart-pl-format').value,
-    genre:      document.getElementById('smart-pl-genre').value.trim(),
-    artist:     document.getElementById('smart-pl-artist').value.trim(),
-    added_days: document.getElementById('smart-pl-days').value.trim(),
-    limit:      document.getElementById('smart-pl-limit').value.trim(),
-    sort:       document.getElementById('smart-pl-sort').value,
+    name:            document.getElementById('smart-pl-name').value.trim(),
+    format:          document.getElementById('smart-pl-format').value,
+    genre:           document.getElementById('smart-pl-genre').value.trim(),
+    artist:          document.getElementById('smart-pl-artist').value.trim(),
+    added_days:      document.getElementById('smart-pl-days').value.trim(),
+    limit:           document.getElementById('smart-pl-limit').value.trim(),
+    min_rating:      document.getElementById('smart-pl-rating')?.value || '',
+    not_played_days: document.getElementById('smart-pl-notplayed')?.value.trim() || '',
+    sort:            document.getElementById('smart-pl-sort').value,
   };
   if (!body.name) { status.textContent = 'Give the playlist a name.'; status.className = 'error'; return; }
-  if (!body.format && !body.genre && !body.artist && !body.added_days) {
+  if (!body.format && !body.genre && !body.artist && !body.added_days
+      && !body.min_rating && !body.not_played_days) {
     status.textContent = 'Set at least one rule.'; status.className = 'error'; return;
   }
   btn.disabled = true;
