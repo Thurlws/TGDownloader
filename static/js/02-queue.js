@@ -1566,6 +1566,70 @@ function retryAllFailed() {
 
 
 // ═══════════════════════════════════════
+//  SCHEDULED QUEUE RUN  (v1.9.0)
+// ═══════════════════════════════════════
+async function _refreshScheduleBanner() {
+  const el = document.getElementById('schedule-banner');
+  if (!el) return;
+  try {
+    const d = await (await fetch('/schedule-queue')).json();
+    if (d.scheduled) {
+      el.style.display = '';
+      el.innerHTML = `Scheduled: ${escHtml(d.at_str)} · ${d.entries} URL(s) —
+        <a href="#" id="schedule-cancel-link" style="color:var(--red)">cancel</a>`;
+      document.getElementById('schedule-cancel-link')?.addEventListener('click', async (ev) => {
+        ev.preventDefault();
+        await fetch('/schedule-cancel', { method: 'POST',
+          headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        _toast('Scheduled run cancelled.', 'info');
+        _refreshScheduleBanner();
+      });
+    } else {
+      el.style.display = 'none';
+      el.innerHTML = '';
+    }
+  } catch (_) {}
+}
+
+async function scheduleQueueRun() {
+  const home = document.getElementById('home-input').value.trim();
+  if (!home) {
+    flash(document.getElementById('home-input'));
+    appendLog('ERROR: Set a home music folder first.\n', 'log-error');
+    return;
+  }
+  if (!entries.length) { appendLog('ERROR: Queue is empty.\n', 'log-error'); return; }
+  const when = await _prompt('Start time (HH:MM, 24-hour — next occurrence, so past times mean tomorrow)', {
+    title: 'Schedule queue run', placeholder: 'e.g. 03:30', confirmLabel: 'Schedule',
+  });
+  if (!when) return;
+  const m = when.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m || +m[1] > 23 || +m[2] > 59) { _toast('Use HH:MM (24-hour).', 'error'); return; }
+  const at = new Date();
+  at.setHours(+m[1], +m[2], 0, 0);
+  if (at.getTime() <= Date.now()) at.setDate(at.getDate() + 1);
+  // Persist the home folder now, exactly like an immediate run does.
+  await fetch('/config', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ home_music_folder: home }) });
+  try {
+    const d = await (await fetch('/schedule-queue', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ at: Math.floor(at.getTime() / 1000), entries, home }),
+    })).json();
+    if (d.error) { _toast(d.error, 'error'); return; }
+    _toast(`Queue scheduled for ${d.at_str}.`, 'success');
+    appendLog(`Queue scheduled for ${d.at_str} — ${d.entries} URL(s). Keep the app running.\n`, 'log-success');
+  } catch (e) {
+    _toast('Could not schedule: ' + e, 'error');
+  }
+  _refreshScheduleBanner();
+}
+
+document.getElementById('btn-schedule')?.addEventListener('click', scheduleQueueRun);
+_refreshScheduleBanner();
+setInterval(_refreshScheduleBanner, 60_000);   // keep the countdown banner honest
+
+// ═══════════════════════════════════════
 //  COPY ALL URLS
 // ═══════════════════════════════════════
 function copyAllUrls() {

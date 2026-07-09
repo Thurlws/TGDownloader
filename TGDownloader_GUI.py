@@ -786,6 +786,101 @@ class ProcessManager:
 MANAGER = ProcessManager()
 SERVER: "Server | None" = None
 
+
+# ══════════════════════════════════════════════
+#  SCHEDULED QUEUE RUN  (v1.9.0 — one pending schedule, in-memory)
+# ══════════════════════════════════════════════
+
+def _build_backend_stdin(entries: list) -> str:
+    """The stdin payload the backend expects: mode, count, then per entry
+    url / artist / playlist-name lines, closed with a confirmation."""
+    lines = ["1", str(len(entries))]
+    for e in entries:
+        lines.append(e.get("url", ""))
+        lines.append(e.get("artist", ""))
+        pl = e.get("playlistName", "") if e.get("isPlaylist") else ""
+        lines.append(pl.replace("\n", " ").strip())
+    lines.append("Y")
+    return "\n".join(lines) + "\n"
+
+
+_schedule_lock = threading.Lock()
+_scheduled: "dict | None" = None            # {at, entries, home, created}
+_schedule_timer: "threading.Timer | None" = None
+
+
+def _schedule_status() -> dict:
+    with _schedule_lock:
+        if not _scheduled:
+            return {"scheduled": False}
+        return {
+            "scheduled": True,
+            "at":        _scheduled["at"],
+            "at_str":    time.strftime("%Y-%m-%d %H:%M",
+                                       time.localtime(_scheduled["at"])),
+            "entries":   len(_scheduled["entries"]),
+            "in_secs":   max(0, int(_scheduled["at"] - time.time())),
+        }
+
+
+def _schedule_cancel() -> dict:
+    global _scheduled, _schedule_timer
+    with _schedule_lock:
+        if _schedule_timer:
+            _schedule_timer.cancel()
+        _schedule_timer = None
+        _scheduled = None
+    return {"ok": True, "scheduled": False}
+
+
+def _schedule_fire() -> None:
+    global _scheduled, _schedule_timer
+    with _schedule_lock:
+        job = _scheduled
+        _scheduled = None
+        _schedule_timer = None
+    if not job:
+        return
+    if MANAGER.is_running():
+        logger.warning("Scheduled run skipped — a download is already running")
+        MANAGER.broadcast({"type": "log",
+                           "text": "Scheduled run skipped — a download is already running.\n"})
+        return
+    entries = job["entries"]
+    if any(e.get("isPlaylist") for e in entries):
+        try:
+            _write_playlist_meta(job.get("home", ""), entries)
+        except Exception:
+            logger.exception("playlist meta prep failed (scheduled run)")
+    logger.info("Scheduled run starting (%d entries)", len(entries))
+    MANAGER.broadcast({"type": "log",
+                       "text": f"Scheduled run starting — {len(entries)} URL(s)\n"})
+    MANAGER.start(_build_backend_stdin(entries))
+    MANAGER.broadcast({"type": "status", "running": True})
+
+
+def _schedule_set(at: float, entries: list, home: str = "") -> dict:
+    """Arm (or re-arm — one schedule at a time) a queue start at epoch *at*."""
+    global _scheduled, _schedule_timer
+    if not entries or not isinstance(entries, list):
+        return {"error": "Queue is empty"}
+    delay = at - time.time()
+    if delay < 5:
+        return {"error": "Scheduled time must be in the future"}
+    if delay > 7 * 86400:
+        return {"error": "Scheduled time must be within the next 7 days"}
+    with _schedule_lock:
+        if _schedule_timer:
+            _schedule_timer.cancel()
+        _scheduled = {"at": float(at), "entries": entries,
+                      "home": home or "", "created": time.time()}
+        _schedule_timer = threading.Timer(delay, _schedule_fire)
+        _schedule_timer.daemon = True
+        _schedule_timer.start()
+    logger.info("Queue run scheduled for %s (%d entries)",
+                time.strftime("%Y-%m-%d %H:%M", time.localtime(at)), len(entries))
+    return _schedule_status()
+
 # ── Library tab caches (process lifetime) ─────────────────────────────────────
 _cover_cache:         dict[str, str]          = {}   # deezer album_id → cover_medium URL
 _path_hash_map:       dict[str, "Path"]       = {}   # path_hash[:16] → album_dir Path
@@ -2338,15 +2433,7 @@ def handle_ws(conn, key: str):
                         _write_playlist_meta(data.get("home", ""), entries)
                     except Exception:
                         logger.exception("playlist meta prep failed")
-                lines   = ["1", str(len(entries))]
-                for e in entries:
-                    lines.append(e.get("url", ""))
-                    lines.append(e.get("artist", ""))
-                    # 3rd line per entry: playlist name (empty = not a playlist)
-                    pl = e.get("playlistName", "") if e.get("isPlaylist") else ""
-                    lines.append(pl.replace("\n", " ").strip())
-                lines.append("Y")
-                MANAGER.start("\n".join(lines) + "\n")
+                MANAGER.start(_build_backend_stdin(entries))
                 MANAGER.broadcast({"type": "status", "running": True})
 
             elif action == "stop":
@@ -4249,6 +4336,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, _aggregate_play_stats(_load_play_events()))
             return
 
+        # ── Scheduled queue run status (v1.9.0) ───────────────────────────
+        if path == "/schedule-queue":
+            self._send_json(200, _schedule_status())
+            return
+
         # ── Telegram flood-wait health (v1.8.0) ───────────────────────────
         if path == "/telegram-health":
             data = _flood_health()
@@ -5353,6 +5445,22 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 logger.exception("Error in /toggle-like")
                 self._send_json(500, {"error": str(exc)})
+            return
+
+        # ── Schedule / cancel a queue run (v1.9.0) ────────────────────────
+        if path == "/schedule-queue":
+            try:
+                result = _schedule_set(float(body.get("at") or 0),
+                                       body.get("entries") or [],
+                                       str(body.get("home") or ""))
+                self._send_json(400 if result.get("error") else 200, result)
+            except Exception as exc:
+                logger.exception("Error in /schedule-queue")
+                self._send_json(500, {"error": str(exc)})
+            return
+
+        if path == "/schedule-cancel":
+            self._send_json(200, _schedule_cancel())
             return
 
         # ── Set a track's star rating (v1.7.0) ────────────────────────────
