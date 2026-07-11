@@ -881,6 +881,101 @@ def _schedule_set(at: float, entries: list, home: str = "") -> dict:
                 time.strftime("%Y-%m-%d %H:%M", time.localtime(at)), len(entries))
     return _schedule_status()
 
+
+# ── Filesystem watcher: auto-refresh the library when files change on disk ─────
+# A lightweight polling thread (no watchdog dependency, matching the app's
+# stdlib-first style) that fingerprints the album-folder layout and pushes a
+# "library-changed" event to connected clients when it shifts. Files added,
+# removed or moved by other tools — or dropped straight into the Music folder —
+# then appear without pressing Refresh.
+_watch_lock   = threading.Lock()
+_watch_thread: "threading.Thread | None" = None
+_watch_stop:   "threading.Event | None"  = None
+_watch_home   = ""
+_WATCH_INTERVAL = 5.0   # seconds between disk polls
+
+
+def _lib_watch_signature(home_path: Path) -> str:
+    """Cheap fingerprint that changes when tracks/albums are added, removed or
+    moved. Reuses the /library-stats cache validator, so it reacts to exactly
+    the changes the library view cares about with only per-directory stat()
+    calls — no file reads."""
+    artists_root = home_path / ARTISTS_DIRNAME
+    if not artists_root.is_dir():
+        artists_root = home_path
+    return _library_stats_signature(home_path, artists_root)
+
+
+def _lib_watcher_loop(home: str, stop: "threading.Event") -> None:
+    home_path = Path(home)
+    try:
+        last_sig = _lib_watch_signature(home_path)
+    except Exception:
+        last_sig = ""
+    logger.info("Library watcher active on %s (every %.0fs)", home, _WATCH_INTERVAL)
+    while not stop.wait(_WATCH_INTERVAL):
+        # A running download churns the library itself; the queue's own 'done'
+        # event already refreshes it, so don't poll (or double-fire) mid-write.
+        if MANAGER.is_running():
+            continue
+        try:
+            sig = _lib_watch_signature(home_path)
+        except Exception as exc:
+            logger.debug("Library watcher poll failed: %s", exc)
+            continue
+        if sig != last_sig:
+            last_sig = sig
+            logger.info("Library change detected on disk — notifying clients")
+            MANAGER.broadcast({"type": "library-changed"})
+    logger.info("Library watcher stopped")
+
+
+def _lib_watch_status() -> dict:
+    with _watch_lock:
+        alive = bool(_watch_thread and _watch_thread.is_alive())
+        return {"watching": alive, "home": _watch_home if alive else "",
+                "interval": _WATCH_INTERVAL}
+
+
+def _start_lib_watcher(home: str) -> dict:
+    """(Re)start the watcher on *home*. Idempotent — calling again restarts it
+    cleanly (used when the music folder changes or the flag is re-applied)."""
+    global _watch_thread, _watch_stop, _watch_home
+    if not home:
+        return {"error": "No music folder is configured yet."}
+    if not Path(home).exists():
+        return {"error": "The configured music folder doesn't exist."}
+    with _watch_lock:
+        if _watch_stop:
+            _watch_stop.set()          # signal any previous thread to exit
+        _watch_stop   = threading.Event()
+        _watch_home   = home
+        _watch_thread = threading.Thread(
+            target=_lib_watcher_loop, args=(home, _watch_stop),
+            daemon=True, name="lib-watch")
+        _watch_thread.start()
+    return _lib_watch_status()
+
+
+def _stop_lib_watcher() -> dict:
+    global _watch_thread, _watch_stop, _watch_home
+    with _watch_lock:
+        if _watch_stop:
+            _watch_stop.set()
+        _watch_stop   = None
+        _watch_thread = None
+        _watch_home   = ""
+    return {"watching": False, "home": "", "interval": _WATCH_INTERVAL}
+
+
+def _apply_lib_watcher(cfg: dict) -> dict:
+    """Start or stop the watcher to match the persisted `watch_library` flag."""
+    home = cfg.get("home_music_folder") or ""
+    if cfg.get("watch_library") and home:
+        return _start_lib_watcher(home)
+    return _stop_lib_watcher()
+
+
 # ── Library tab caches (process lifetime) ─────────────────────────────────────
 _cover_cache:         dict[str, str]          = {}   # deezer album_id → cover_medium URL
 _path_hash_map:       dict[str, "Path"]       = {}   # path_hash[:16] → album_dir Path
@@ -1859,7 +1954,8 @@ def _last_played_map(events: "list[dict]") -> dict:
 def _create_smart_playlist(home_path: Path, name: str, opts: dict) -> dict:
     """Materialise a playlist folder from rule-based filters over the library:
     format / genre / artist substrings, "added within N days", "min star
-    rating", "not played in N days" (v1.7.0), sort + limit."""
+    rating", "not played in N days" (v1.7.0), "BPM range" (v1.11.0 — needs a
+    Tempo Analysis scan), sort + limit."""
     import shutil, time
 
     tracks = _scan_all_tracks(home_path)
@@ -1874,11 +1970,16 @@ def _create_smart_playlist(home_path: Path, name: str, opts: dict) -> dict:
     except Exception: min_rating = 0
     try:    not_played_days = int(opts.get("not_played_days") or 0)
     except Exception: not_played_days = 0
+    try:    bpm_min = float(opts.get("bpm_min") or 0)
+    except Exception: bpm_min = 0.0
+    try:    bpm_max = float(opts.get("bpm_max") or 0)
+    except Exception: bpm_max = 0.0
     cutoff = (time.time() - added_days * 86400) if added_days > 0 else None
 
     ratings = _load_ratings() if min_rating > 0 else {}
     played  = _last_played_map(_load_play_events()) if not_played_days > 0 else {}
     played_cutoff = time.time() - not_played_days * 86400
+    bpm_cache = _load_bpm_cache() if (bpm_min > 0 or bpm_max > 0) else {}
 
     def _ok(t):
         if fmt and t["ext"] != fmt:
@@ -1898,6 +1999,14 @@ def _create_smart_playlist(home_path: Path, name: str, opts: dict) -> dict:
             last  = max(played.get((t["artist"].strip().lower(), title), 0),
                         played.get(("", title), 0))
             if last > played_cutoff:      # played too recently (never-played = 0 passes)
+                return False
+        if bpm_min > 0 or bpm_max > 0:
+            b = (bpm_cache.get(t.get("rating_key", "")) or {}).get("bpm")
+            if not b:                     # unknown / unscanned → can't match a tempo rule
+                return False
+            if bpm_min > 0 and b < bpm_min:
+                return False
+            if bpm_max > 0 and b > bpm_max:
                 return False
         return True
 
@@ -3347,6 +3456,99 @@ def _loudness_scan(limit: int = 25) -> dict:
             failed += 1
     return {"checked": checked, "missing": missing, "tagged": tagged,
             "failed": failed, "remaining": max(0, missing - analyzed)}
+
+
+# ── Tempo (BPM) analysis via Deezer — feeds smart-playlist tempo rules ─────────
+BPM_CACHE_FILE = DATA_DIR / "bpm_cache.json"
+
+
+def _load_bpm_cache() -> dict:
+    """{rating_key: {bpm: float|None, gain: float|None, ts: int}} keyed by the
+    same path_hash + NUL + filename compound as ratings, so a scanned track's
+    tempo can be looked up directly in _create_smart_playlist. A stored key —
+    even with bpm=None — means 'already looked up', so re-runs skip it."""
+    try:
+        if BPM_CACHE_FILE.exists():
+            data = json.loads(BPM_CACHE_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+    except Exception as exc:
+        logger.debug("Could not read BPM cache: %s", exc)
+    return {}
+
+
+def _save_bpm_cache(data: dict) -> None:
+    try:
+        BPM_CACHE_FILE.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as exc:
+        logger.debug("Could not write BPM cache: %s", exc)
+
+
+def _deezer_bpm_lookup(artist: str, title: str) -> dict:
+    """Best-effort tempo for a local track: find the closest Deezer track, then
+    read its bpm + gain from the full track object (search results omit them).
+    Returns {} when offline / unmatched. Deezer reports bpm=0 for many tracks,
+    which we normalise to None (unknown)."""
+    def _search(q: str) -> "int | None":
+        url = ("https://api.deezer.com/search/track?q="
+               + url_quote(q) + "&limit=1&output=json")
+        req = urllib.request.Request(url, headers={"User-Agent": "TGDownloader/6"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        items = data.get("data") or []
+        return items[0].get("id") if items else None
+    try:
+        tid = None
+        if artist and title:
+            tid = _search(f'artist:"{artist}" track:"{title}"')
+        if not tid:                       # looser fallback query
+            tid = _search(f"{artist} {title}".strip())
+        if not tid:
+            return {}
+        turl = f"https://api.deezer.com/track/{tid}?output=json"
+        req = urllib.request.Request(turl, headers={"User-Agent": "TGDownloader/6"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            tr = json.loads(resp.read().decode("utf-8"))
+        bpm  = tr.get("bpm")
+        gain = tr.get("gain")
+        return {"bpm":  float(bpm) if bpm else None,
+                "gain": float(gain) if gain is not None else None}
+    except Exception as exc:
+        logger.debug("BPM lookup failed for %s — %s: %s", artist, title, exc)
+        return {}
+
+
+def _bpm_scan(limit: int = 40) -> dict:
+    """Look up Deezer tempo for up to *limit* not-yet-checked library tracks and
+    cache each result. Counts the backlog so the UI can say how many remain."""
+    m    = _tgd_import()
+    cfg  = m.load_config()
+    home = cfg.get("home_music_folder")
+    if not home:
+        return {"error": "No home music folder configured"}
+    home_path = Path(home)
+    if not home_path.exists():
+        return {"error": f"Folder not found: {home}"}
+
+    tracks = _scan_all_tracks(home_path)
+    cache  = _load_bpm_cache()
+    todo   = [t for t in tracks if t["rating_key"] not in cache]
+    processed = matched = 0
+    for t in todo:
+        if processed >= limit:
+            break
+        processed += 1
+        info = _deezer_bpm_lookup(t["artist"], t["title"])
+        cache[t["rating_key"]] = {"bpm":  info.get("bpm"),
+                                  "gain": info.get("gain"),
+                                  "ts":   int(time.time())}
+        if info.get("bpm"):
+            matched += 1
+    _save_bpm_cache(cache)
+    with_bpm = sum(1 for v in cache.values() if v.get("bpm"))
+    return {"total": len(tracks), "processed": processed, "matched": matched,
+            "with_bpm": with_bpm, "remaining": max(0, len(todo) - processed)}
 
 
 # ══════════════════════════════════════════════
@@ -5156,6 +5358,10 @@ class Handler(BaseHTTPRequestHandler):
             cfg = m.load_config()
             cfg.update(body)
             m.save_config(cfg)
+            # Applying the library-watcher flag needs to (re)start/stop its thread,
+            # not just persist the value — do it whenever the flag is in the patch.
+            if "watch_library" in body:
+                _apply_lib_watcher(cfg)
             self._send_json(200, {"ok": True})
             return
 
@@ -5832,6 +6038,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": str(exc)})
             return
 
+        # ── Look up track tempo (BPM) from Deezer for smart-playlist rules ─
+        if path == "/bpm-scan":
+            try:
+                limit  = int(body.get("limit") or 40)
+                result = _bpm_scan(limit=max(1, min(limit, 200)))
+                self._send_json(200 if not result.get("error") else 400, result)
+            except Exception as exc:
+                logger.exception("bpm-scan failed")
+                self._send_json(500, {"error": str(exc)})
+            return
+
         # ── Fetch missing album covers from Deezer ────────────────────────
         if path == "/art-repair":
             try:
@@ -5947,6 +6164,13 @@ def main():
     threading.Thread(target=SERVER.serve_forever, daemon=True).start()
     # Restore session on startup so quality works without pressing TG button
     asyncio.run_coroutine_threadsafe(_silent_auth_check(), _tg_loop)
+    # Resume the on-disk library watcher if the user left it enabled
+    try:
+        _wcfg = _tgd_import().load_config()
+        if _wcfg.get("watch_library"):
+            _apply_lib_watcher(_wcfg)
+    except Exception:
+        logger.exception("Could not resume library watcher at startup")
 
     url = f"http://127.0.0.1:{HTTP_PORT}/"
     logger.info("Server listening on %s", url)

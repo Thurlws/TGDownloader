@@ -9,7 +9,9 @@ tg_audio_session.session-journal
 hash_cache.json
 album_id_cache.json
 library_stats_cache.json
+bpm_cache.json
 liked_songs.json
+ratings.json
 watchlist.json
 tg_sessions.json
 play_history.jsonl

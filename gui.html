@@ -546,6 +546,14 @@
             <div class="settings-panel-title">Maintenance</div>
             <div class="settings-panel-desc">Keep your library healthy and back up your data.</div>
             <div class="stat-card" style="margin-bottom:14px">
+              <div class="stat-card-title">Auto-refresh Library</div>
+              <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Watch the music folder and update the Library view automatically when files are added, removed or moved by other tools — no manual Refresh needed.</div>
+              <label class="modal-toggle">
+                <input type="checkbox" id="cfg-watch-library">
+                <span>Auto-refresh the library when files change on disk</span>
+              </label>
+            </div>
+            <div class="stat-card" style="margin-bottom:14px">
               <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
                 <span>System Diagnostics</span>
                 <button class="btn-secondary" id="btn-run-health" style="width:auto">Run check</button>
@@ -607,6 +615,14 @@
               </div>
               <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Tags tracks with ReplayGain so the player can level volume between albums (up to 25 files per run; needs ffmpeg). New downloads are tagged automatically when <span style="font-family:var(--mono)">replaygain_on_download</span> is enabled.</div>
               <div id="loudness-results"></div>
+            </div>
+            <div class="stat-card" style="margin-bottom:14px">
+              <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <span>Tempo Analysis (BPM)</span>
+                <button class="btn-secondary" id="btn-bpm-scan" style="width:auto">Analyze tempo</button>
+              </div>
+              <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Looks up each track's tempo from Deezer so you can build tempo-based smart playlists — e.g. 120–140&nbsp;BPM for a workout mix. Up to 40 tracks per run; re-run to continue. Then set a BPM range under <span style="font-family:var(--mono)">＋ Smart playlist</span> in the Library.</div>
+              <div id="bpm-scan-results"></div>
             </div>
             <div class="stat-card" style="margin-bottom:14px">
               <div class="stat-card-title">Library Intelligence</div>
@@ -813,6 +829,16 @@
           <div style="flex:1">
             <label class="genre-pl-label">Not played in (days)</label>
             <input type="text" id="smart-pl-notplayed" placeholder="any" autocomplete="off" inputmode="numeric">
+          </div>
+        </div>
+        <div style="display:flex;gap:10px">
+          <div style="flex:1">
+            <label class="genre-pl-label">Min BPM <span style="color:var(--fg3);font-weight:400">— run Tempo Analysis first</span></label>
+            <input type="text" id="smart-pl-bpm-min" placeholder="any" autocomplete="off" inputmode="numeric">
+          </div>
+          <div style="flex:1">
+            <label class="genre-pl-label">Max BPM</label>
+            <input type="text" id="smart-pl-bpm-max" placeholder="any" autocomplete="off" inputmode="numeric">
           </div>
         </div>
         <label class="genre-pl-label">Order</label>
