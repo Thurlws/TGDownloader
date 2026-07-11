@@ -656,9 +656,13 @@ document.querySelectorAll('.settings-nav-item').forEach(btn =>
   btn.addEventListener('click', () => _settingsShowPanel(btn.dataset.spanel)));
 document.getElementById('btn-about-check-update')?.addEventListener('click', () => _checkForUpdate(true));
 document.getElementById('btn-about-download')?.addEventListener('click', _downloadUpdate);
-document.getElementById('btn-run-health')?.addEventListener('click', runDiagnostics);
-document.getElementById('btn-run-scan').addEventListener('click', runIntegrityScan);
-document.getElementById('btn-find-dupes').addEventListener('click', findDuplicates);
+// Lazy arrows, not bare identifiers: these three live in 04-library.js, which
+// loads AFTER this file — a direct reference here is evaluated at load time,
+// throws ReferenceError, and silently kills every listener wired below
+// (including tab switching). Regression shipped in the v1.4.0 split.
+document.getElementById('btn-run-health')?.addEventListener('click', () => runDiagnostics());
+document.getElementById('btn-run-scan')?.addEventListener('click', () => runIntegrityScan());
+document.getElementById('btn-find-dupes')?.addEventListener('click', () => findDuplicates());
 document.getElementById('btn-backup').addEventListener('click', () => {
   const a = document.createElement('a');
   a.href = '/backup'; a.download = 'tgdownloader-backup.zip';
