@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TGDownloader</title>
 <link rel="stylesheet" href="/static/app.css">
+<!-- PWA: installable web app (v1.10.0) -->
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#131313">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="TGDownloader">
+<link rel="icon" type="image/png" href="/static/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
 </head>
 <body>
 <div id="app">
@@ -637,6 +645,7 @@
             <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
               <button class="btn-secondary" id="btn-about-check-update" style="width:auto">Check for updates</button>
               <button class="btn-accent" id="btn-about-download" style="width:auto;display:none">Download update</button>
+              <button class="btn-secondary" id="btn-about-tour" style="width:auto">Take the tour</button>
             </div>
           </div>
 
@@ -1070,5 +1079,6 @@
 <script src="/static/js/04-library.js"></script>
 <script src="/static/js/05-player.js"></script>
 <script src="/static/js/06-audio-fx.js"></script>
+<script src="/static/js/07-onboarding.js"></script>
 </body>
 </html>
