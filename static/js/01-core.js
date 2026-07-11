@@ -461,6 +461,15 @@ function _openReleasePage() {
   _checkForUpdate(false);     // silent, cache-backed check on launch
 })();
 
+// PWA: register the (network-only) service worker so the app is installable /
+// can be added to a phone home screen. Self-contained — references nothing from
+// later modules. Failure is non-fatal (e.g. insecure context on a LAN IP).
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+
 // New-release radar: silent check on launch if the user has opted in.
 (async function initReleaseRadar() {
   try {

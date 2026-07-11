@@ -341,26 +341,40 @@ function _fxBuildPanel() {
   if (panel) return panel;
   panel = document.createElement('div');
   panel.id = 'fx-panel';
-  const rows = _FX_FREQS.map((f, i) => `
-    <div class="fx-row">
+  const bands = _FX_FREQS.map((f, i) => {
+    const g = _fxS.gains[i] || 0;
+    return `
+    <div class="fx-band-col">
+      <span class="fx-db" id="fx-db-${i}">${g > 0 ? '+' : ''}${g}</span>
+      <div class="fx-band-track">
+        <input type="range" class="fx-band" data-i="${i}" min="-12" max="12" step="1" value="${g}"
+               aria-label="${f >= 1000 ? (f / 1000) + 'k' : f} Hz" orient="vertical">
+      </div>
       <span class="fx-freq">${f >= 1000 ? (f / 1000) + 'k' : f}</span>
-      <input type="range" class="fx-band" data-i="${i}" min="-12" max="12" step="1" value="${_fxS.gains[i] || 0}">
-      <span class="fx-db" id="fx-db-${i}">${(_fxS.gains[i] || 0) > 0 ? '+' : ''}${_fxS.gains[i] || 0}</span>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   panel.innerHTML = `
-    <div class="fx-title">Audio settings</div>
-    <label class="fx-check"><input type="checkbox" id="fx-eq-on" ${_fxS.eq ? 'checked' : ''}> Equalizer</label>
+    <div class="fx-head">
+      <span class="fx-title">Equalizer</span>
+      <label class="fx-switch" title="Toggle equalizer">
+        <input type="checkbox" id="fx-eq-on" ${_fxS.eq ? 'checked' : ''}>
+        <span class="fx-switch-track"></span>
+      </label>
+    </div>
     <div class="fx-preset-row">
       ${Object.keys(_FX_PRESETS).map(p => `<button class="fx-preset" data-p="${p}">${p}</button>`).join('')}
     </div>
-    ${rows}
-    <div class="fx-sep"></div>
-    <div class="fx-row"><span class="fx-freq">Fade</span>
-      <input type="range" id="fx-fade" min="0" max="12" step="1" value="${_fxS.fade || 0}">
-      <span class="fx-db" id="fx-fade-lbl">${_fxS.fade ? _fxS.fade + 's' : 'off'}</span>
+    <div class="fx-eq ${_fxS.eq ? '' : 'fx-eq-off'}" id="fx-eq-area">
+      <div class="fx-eq-bands">${bands}</div>
     </div>
-    <label class="fx-check"><input type="checkbox" id="fx-rg" ${_fxS.rg ? 'checked' : ''}> ReplayGain volume levelling</label>
-    <label class="fx-check"><input type="checkbox" id="fx-vis" ${_fxS.vis ? 'checked' : ''}> Visualizer</label>`;
+    <div class="fx-sep"></div>
+    <div class="fx-ctrl-row">
+      <span class="fx-ctrl-label">Crossfade</span>
+      <input type="range" id="fx-fade" min="0" max="12" step="1" value="${_fxS.fade || 0}">
+      <span class="fx-ctrl-val" id="fx-fade-lbl">${_fxS.fade ? _fxS.fade + 's' : 'off'}</span>
+    </div>
+    <label class="fx-check"><input type="checkbox" id="fx-rg" ${_fxS.rg ? 'checked' : ''}><span>ReplayGain volume levelling</span></label>
+    <label class="fx-check"><input type="checkbox" id="fx-vis" ${_fxS.vis ? 'checked' : ''}><span>Visualizer</span></label>`;
   document.body.appendChild(panel);
 
   panel.querySelectorAll('.fx-band').forEach(sl => sl.addEventListener('input', () => {
@@ -368,6 +382,7 @@ function _fxBuildPanel() {
     _fxS.gains[i] = +sl.value;
     const lbl = document.getElementById('fx-db-' + i);
     if (lbl) lbl.textContent = (sl.value > 0 ? '+' : '') + sl.value;
+    _fxHighlightPreset();
     if (_fxS.eq) { _fxEnsureGraph(); _fxApplyEq(); }
     _fxSave();
   }));
@@ -380,13 +395,17 @@ function _fxBuildPanel() {
       if (lbl) lbl.textContent = (_fxS.gains[i] > 0 ? '+' : '') + _fxS.gains[i];
     });
     if (!_fxS.eq) { _fxS.eq = true; const cb = document.getElementById('fx-eq-on'); if (cb) cb.checked = true; }
+    _fxEqAreaState();
+    _fxHighlightPreset();
     _fxEnsureGraph(); _fxApplyEq(); _fxSave(); _fxSyncEqBtn();
   }));
   panel.querySelector('#fx-eq-on').addEventListener('change', e => {
     _fxS.eq = e.target.checked;
+    _fxEqAreaState();
     if (_fxS.eq) _fxEnsureGraph();
     _fxApplyEq(); _fxSave(); _fxSyncEqBtn();
   });
+  _fxHighlightPreset();
   panel.querySelector('#fx-fade').addEventListener('input', e => {
     _fxS.fade = +e.target.value;
     const lbl = document.getElementById('fx-fade-lbl');
@@ -408,6 +427,20 @@ function _fxBuildPanel() {
 function _fxSyncEqBtn() {
   const b = document.getElementById('mp-eq');
   if (b) b.classList.toggle('active', !!(_fxS.eq || _fxS.fade));
+}
+
+// Highlight the preset pill whose curve matches the current band gains (if any).
+function _fxHighlightPreset() {
+  const match = Object.keys(_FX_PRESETS).find(p =>
+    _FX_PRESETS[p].every((v, i) => v === (_fxS.gains[i] || 0)));
+  document.querySelectorAll('#fx-panel .fx-preset').forEach(btn =>
+    btn.classList.toggle('active', btn.dataset.p === match));
+}
+
+// Dim the band sliders when the EQ is switched off (still adjustable).
+function _fxEqAreaState() {
+  const area = document.getElementById('fx-eq-area');
+  if (area) area.classList.toggle('fx-eq-off', !_fxS.eq);
 }
 
 document.getElementById('mp-eq')?.addEventListener('click', e => {
@@ -488,26 +521,65 @@ function _fxTick(cur, dur) {
 (function _fxInit() {
   const st = document.createElement('style');
   st.textContent = `
-#fx-panel { position: fixed; right: 12px; bottom: 74px; z-index: 900; width: 280px;
-  background: var(--bg2, #222); border: 1px solid var(--border2, #444); border-radius: 8px;
-  padding: 12px; display: none; box-shadow: 0 8px 30px rgba(0,0,0,.45); }
-#fx-panel.open { display: block; }
-#fx-panel .fx-title { font-size: 11px; font-weight: 600; letter-spacing: .08em;
-  text-transform: uppercase; color: var(--fg3, #999); margin-bottom: 8px; }
-#fx-panel .fx-row { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
-#fx-panel .fx-freq { width: 34px; font-size: 10px; color: var(--fg3, #999);
-  font-family: var(--mono, monospace); text-align: right; }
-#fx-panel .fx-db { width: 26px; font-size: 10px; color: var(--fg, #ddd);
-  font-family: var(--mono, monospace); }
-#fx-panel input[type=range] { flex: 1; accent-color: var(--accent, #1db954); height: 14px; }
-#fx-panel .fx-check { display: flex; align-items: center; gap: 6px; font-size: 11px;
-  color: var(--fg, #ddd); margin: 6px 0; cursor: pointer; }
-#fx-panel .fx-sep { border-top: 1px solid var(--border2, #444); margin: 8px 0; }
-#fx-panel .fx-preset-row { display: flex; gap: 4px; margin: 4px 0 8px; flex-wrap: wrap; }
-#fx-panel .fx-preset { font-size: 10px; padding: 2px 8px; border-radius: 10px;
+#fx-panel { position: fixed; right: 12px; bottom: 74px; z-index: 900; width: 300px;
+  background: var(--bg2, #222); border: 1px solid var(--border2, #444); border-radius: 10px;
+  padding: 14px; display: none; box-shadow: 0 12px 40px rgba(0,0,0,.5);
+  font-family: var(--sans, sans-serif); }
+#fx-panel.open { display: block; animation: fxPanelIn .16s ease both; }
+@keyframes fxPanelIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+#fx-panel .fx-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+#fx-panel .fx-title { font-size: 11px; font-weight: 600; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--fg2, #bbb); }
+/* Toggle switch */
+#fx-panel .fx-switch { position: relative; display: inline-block; width: 34px; height: 18px; cursor: pointer; }
+#fx-panel .fx-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+#fx-panel .fx-switch-track { position: absolute; inset: 0; border-radius: 10px;
+  background: var(--bg4, #333); border: 1px solid var(--border2, #444); transition: background .15s, border-color .15s; }
+#fx-panel .fx-switch-track::after { content: ''; position: absolute; top: 2px; left: 2px;
+  width: 12px; height: 12px; border-radius: 50%; background: var(--fg3, #999); transition: transform .15s, background .15s; }
+#fx-panel .fx-switch input:checked + .fx-switch-track { background: var(--accent, #c4fa55); border-color: var(--accent, #c4fa55); }
+#fx-panel .fx-switch input:checked + .fx-switch-track::after { transform: translateX(16px); background: #111; }
+/* Preset pills */
+#fx-panel .fx-preset-row { display: flex; gap: 5px; margin: 0 0 12px; flex-wrap: wrap; }
+#fx-panel .fx-preset { font-size: 10px; padding: 3px 10px; border-radius: 20px;
   border: 1px solid var(--border2, #444); background: var(--bg3, #2a2a2a);
-  color: var(--fg, #ddd); cursor: pointer; }
-#fx-panel .fx-preset:hover { border-color: var(--accent, #1db954); }
+  color: var(--fg2, #bbb); cursor: pointer; transition: all .12s; }
+#fx-panel .fx-preset:hover { border-color: var(--accent, #c4fa55); color: var(--fg, #fff); }
+#fx-panel .fx-preset.active { background: var(--accent, #c4fa55); border-color: var(--accent, #c4fa55);
+  color: #111; font-weight: 600; }
+/* Equalizer bands */
+#fx-panel .fx-eq { transition: opacity .15s; }
+#fx-panel .fx-eq.fx-eq-off { opacity: .4; }
+#fx-panel .fx-eq-bands { display: flex; justify-content: space-between; gap: 2px; }
+#fx-panel .fx-band-col { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 1; }
+#fx-panel .fx-db { font-size: 9px; color: var(--fg2, #ddd); font-family: var(--mono, monospace);
+  min-height: 12px; }
+#fx-panel .fx-freq { font-size: 9px; color: var(--fg3, #999); font-family: var(--mono, monospace); }
+#fx-panel .fx-band-track { position: relative; height: 104px; display: flex; justify-content: center; }
+/* 0 dB reference tick behind each slider */
+#fx-panel .fx-band-track::after { content: ''; position: absolute; top: 50%; left: 3px; right: 3px;
+  height: 1px; background: var(--border2, #444); pointer-events: none; }
+#fx-panel .fx-band { writing-mode: vertical-lr; direction: rtl; -webkit-appearance: slider-vertical;
+  appearance: slider-vertical; width: 20px; height: 104px; margin: 0; cursor: pointer;
+  background: transparent; position: relative; z-index: 1; }
+#fx-panel .fx-band::-webkit-slider-runnable-track { width: 4px; border-radius: 2px;
+  background: var(--bg4, #333); }
+#fx-panel .fx-band::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px;
+  border-radius: 50%; background: var(--accent, #c4fa55); border: 2px solid var(--bg2, #222);
+  box-shadow: 0 1px 3px rgba(0,0,0,.4); cursor: grab; }
+#fx-panel .fx-band::-moz-range-track { width: 4px; border-radius: 2px; background: var(--bg4, #333); }
+#fx-panel .fx-band::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%;
+  background: var(--accent, #c4fa55); border: 2px solid var(--bg2, #222); cursor: grab; }
+#fx-panel .fx-sep { border-top: 1px solid var(--border, #333); margin: 14px 0 10px; }
+/* Crossfade + toggle rows */
+#fx-panel .fx-ctrl-row { display: flex; align-items: center; gap: 10px; margin: 2px 0 8px; }
+#fx-panel .fx-ctrl-label { font-size: 11px; color: var(--fg2, #ddd); width: 62px; flex-shrink: 0; }
+#fx-panel .fx-ctrl-val { font-size: 10px; color: var(--fg3, #999); font-family: var(--mono, monospace);
+  width: 24px; text-align: right; flex-shrink: 0; }
+#fx-panel #fx-fade { flex: 1; accent-color: var(--accent, #c4fa55); height: 4px; }
+#fx-panel .fx-check { display: flex; align-items: center; gap: 8px; font-size: 11px;
+  color: var(--fg2, #ddd); margin: 7px 0; cursor: pointer; }
+#fx-panel .fx-check input { accent-color: var(--accent, #c4fa55); width: 14px; height: 14px; flex-shrink: 0; }
 #fx-karaoke { position: fixed; inset: 0; z-index: 1000; display: none;
   background: color-mix(in srgb, var(--bg, #111) 92%, transparent);
   backdrop-filter: blur(6px); text-align: center; cursor: pointer;

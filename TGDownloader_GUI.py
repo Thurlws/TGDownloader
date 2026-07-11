@@ -3778,7 +3778,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(403)
                 return
             mime = {".css": "text/css; charset=utf-8",
-                    ".js":  "application/javascript; charset=utf-8"}.get(target.suffix.lower())
+                    ".js":  "application/javascript; charset=utf-8",
+                    ".png": "image/png",
+                    ".svg": "image/svg+xml",
+                    ".ico": "image/x-icon",
+                    ".webmanifest": "application/manifest+json"}.get(target.suffix.lower())
             if mime is None or not target.is_file():
                 self.send_error(404)
                 return
@@ -3787,6 +3791,28 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", mime)
             self.send_header("Content-Length", str(len(content)))
             self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(content)
+            return
+
+        # PWA manifest + service worker (v1.10.0). The SW must be served from
+        # the root so its scope covers the whole app.
+        if path in ("/manifest.webmanifest", "/sw.js"):
+            fname = "manifest.webmanifest" if path.endswith("webmanifest") else "sw.js"
+            f = BUNDLE_DIR / "static" / fname
+            if not f.is_file():
+                self.send_error(404)
+                return
+            content = f.read_bytes()
+            ctype = ("application/manifest+json; charset=utf-8"
+                     if fname.endswith("webmanifest")
+                     else "application/javascript; charset=utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(content)))
+            self.send_header("Cache-Control", "no-cache")
+            if fname == "sw.js":
+                self.send_header("Service-Worker-Allowed", "/")
             self.end_headers()
             self.wfile.write(content)
             return
