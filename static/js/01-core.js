@@ -191,6 +191,13 @@ function connectWS() {
       if (activeTab === 'history') loadHistory();
       if (activeTab === 'stats')   { _fetchLibStats(); renderStats(); }
       if (activeTab === 'library') loadLibrary({ keepView: true });
+    } else if (msg.type === 'library-changed') {
+      // Files changed on disk (filesystem watcher) — mirror the post-download
+      // refresh so whichever data tab is open updates without a manual Refresh.
+      _libStatsCache = null;
+      if (activeTab === 'history') loadHistory();
+      if (activeTab === 'stats')   { _fetchLibStats(); renderStats(); }
+      if (activeTab === 'library') loadLibrary({ keepView: true });
     } else if (msg.type === 'error') {
       appendLog(`ERROR: ${msg.text}\n`, 'log-error');
     }
@@ -658,7 +665,7 @@ function openSmartPlaylistModal() {
   const st = document.getElementById('smart-pl-status');
   if (st) { st.textContent = ''; st.className = ''; }
   ['smart-pl-name','smart-pl-genre','smart-pl-artist','smart-pl-days','smart-pl-limit',
-   'smart-pl-rating','smart-pl-notplayed'].forEach(id => {
+   'smart-pl-rating','smart-pl-notplayed','smart-pl-bpm-min','smart-pl-bpm-max'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('smart-pl-overlay')?.classList.add('open');
@@ -679,11 +686,13 @@ async function _createSmartPlaylist() {
     limit:           document.getElementById('smart-pl-limit').value.trim(),
     min_rating:      document.getElementById('smart-pl-rating')?.value || '',
     not_played_days: document.getElementById('smart-pl-notplayed')?.value.trim() || '',
+    bpm_min:         document.getElementById('smart-pl-bpm-min')?.value.trim() || '',
+    bpm_max:         document.getElementById('smart-pl-bpm-max')?.value.trim() || '',
     sort:            document.getElementById('smart-pl-sort').value,
   };
   if (!body.name) { status.textContent = 'Give the playlist a name.'; status.className = 'error'; return; }
   if (!body.format && !body.genre && !body.artist && !body.added_days
-      && !body.min_rating && !body.not_played_days) {
+      && !body.min_rating && !body.not_played_days && !body.bpm_min && !body.bpm_max) {
     status.textContent = 'Set at least one rule.'; status.className = 'error'; return;
   }
   btn.disabled = true;

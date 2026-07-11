@@ -149,8 +149,9 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # Optional: set a custom icon
-    # icon=str(HERE / 'icon.ico'),
+    # App icon — multi-resolution .ico (16→256) built from static/icon-512.png.
+    # Regenerate with scripts/make_icon.py if the brand PNG changes.
+    icon=str(HERE / 'icon.ico'),
 )
 
 # ── Collect everything into dist/TGDownloader/ ────────────────────────────────

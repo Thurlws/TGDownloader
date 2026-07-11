@@ -77,6 +77,9 @@ function openSettings() {
     // Post-download hook (v1.8.0)
     const postCmd = document.getElementById('cfg-post-cmd');
     if (postCmd) postCmd.value = cfg.post_download_command || '';
+    // Auto-refresh library watcher (v1.11.0)
+    const watchLib = document.getElementById('cfg-watch-library');
+    if (watchLib) watchLib.checked = !!cfg.watch_library;
     _loadTgHealth();
     _syncScrobbleService();
     // Theme + notifications
@@ -162,6 +165,11 @@ function saveSettings() {
   // actually disables the hook.
   const postCmdEl = document.getElementById('cfg-post-cmd');
   if (postCmdEl) patch.post_download_command = postCmdEl.value.trim();
+
+  // Auto-refresh library watcher — always sent so toggling off is honoured; the
+  // server (re)starts or stops the watcher thread when this key is present.
+  const watchLibEl = document.getElementById('cfg-watch-library');
+  if (watchLibEl) patch.watch_library = watchLibEl.checked;
 
   // Theme
   const theme = document.getElementById('cfg-theme-light').checked ? 'light' : 'dark';
@@ -733,6 +741,26 @@ document.getElementById('btn-loudness')?.addEventListener('click', async () => {
       out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(d.error)}</div>`;
     } else {
       out.innerHTML = `<div style="font-size:11px">Checked <strong>${d.checked}</strong> tracks · untagged <strong>${d.missing}</strong> · tagged <strong style="color:var(--accent)">${d.tagged}</strong>${d.failed ? ` · failed <strong style="color:var(--red)">${d.failed}</strong>` : ''}${d.remaining > 0 ? ` · ${d.remaining} left — run again` : ''}</div>`;
+    }
+  } catch (err) {
+    out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(String(err))}</div>`;
+  }
+  btn.disabled = false;
+});
+// Tempo Analysis — Deezer BPM lookup feeding smart-playlist tempo rules (v1.11.0)
+document.getElementById('btn-bpm-scan')?.addEventListener('click', async () => {
+  const out = document.getElementById('bpm-scan-results');
+  const btn = document.getElementById('btn-bpm-scan');
+  btn.disabled = true;
+  out.innerHTML = '<div style="font-size:11px;color:var(--fg3)">Looking up tempo from Deezer — please wait…</div>';
+  try {
+    const d = await (await fetch('/bpm-scan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    })).json();
+    if (d.error) {
+      out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(d.error)}</div>`;
+    } else {
+      out.innerHTML = `<div style="font-size:11px">Analyzed <strong>${d.processed}</strong> this run · matched <strong style="color:var(--accent)">${d.matched}</strong> · tempo known for <strong>${d.with_bpm}</strong>/<strong>${d.total}</strong>${d.remaining > 0 ? ` · ${d.remaining} left — run again` : ''}</div>`;
     }
   } catch (err) {
     out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(String(err))}</div>`;

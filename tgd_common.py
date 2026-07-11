@@ -47,7 +47,7 @@ import shutil
 import sys
 from pathlib import Path
 
-__version__ = "1.10.0"   # single source — bump this when you cut a new release
+__version__ = "1.11.0"   # single source — bump this when you cut a new release
 
 logger = logging.getLogger("tgd_common")
 
