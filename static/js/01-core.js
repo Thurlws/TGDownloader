@@ -435,7 +435,8 @@ async function _checkForUpdate(force = false) {
     return;
   }
   _updateInfo = data;
-  const dlBtn = document.getElementById('btn-about-download');
+  const dlBtn   = document.getElementById('btn-about-download');
+  const instBtn = document.getElementById('btn-about-install');
   if (data.update_available) {
     if (badge)   { badge.style.display = 'inline-flex';
                    badge.title = `Version ${data.latest} is available — you have ${data.current}. Click to view the release.`; }
@@ -443,16 +444,45 @@ async function _checkForUpdate(force = false) {
     if (status)  status.textContent = `Update available: v${data.latest} (you have v${data.current})`;
     if (aboutS)  { aboutS.innerHTML = `<a href="#" id="about-update-link" style="color:var(--accent)">Update available: v${data.latest} ↗</a>`;
                    document.getElementById('about-update-link')?.addEventListener('click', (e) => { e.preventDefault(); _openReleasePage(); }); }
-    // One-click download of the built zip when the release carries one (v1.8.0)
-    if (dlBtn) {
-      dlBtn.style.display = data.download_url ? '' : 'none';
-      dlBtn.textContent = `Download v${data.latest}`;
-    }
+    // Packaged Windows app installs in place and restarts (v1.15.0); everywhere
+    // else falls back to opening the zip for a manual folder replace (v1.8.0).
+    const canApply = data.can_apply && data.download_url;
+    if (instBtn) { instBtn.style.display = canApply ? '' : 'none';
+                   instBtn.textContent = `Install v${data.latest} & restart`; }
+    if (dlBtn)   { dlBtn.style.display = (!canApply && data.download_url) ? '' : 'none';
+                   dlBtn.textContent = `Download v${data.latest}`; }
   } else {
-    if (badge)  badge.style.display = 'none';
-    if (status) status.textContent = data.error ? data.error : `Up to date (v${data.current})`;
-    if (aboutS) aboutS.textContent = data.error ? data.error : `Up to date (v${data.current})`;
-    if (dlBtn)  dlBtn.style.display = 'none';
+    if (badge)   badge.style.display = 'none';
+    if (status)  status.textContent = data.error ? data.error : `Up to date (v${data.current})`;
+    if (aboutS)  aboutS.textContent = data.error ? data.error : `Up to date (v${data.current})`;
+    if (dlBtn)   dlBtn.style.display = 'none';
+    if (instBtn) instBtn.style.display = 'none';
+  }
+}
+
+async function _installUpdate() {
+  if (!_updateInfo || !_updateInfo.download_url) { _openReleasePage(); return; }
+  const ok = confirm(`Download v${_updateInfo.latest} and restart to install it?\n\n`
+    + `Your library, settings and Telegram session are kept. TGDownloader will `
+    + `close and reopen automatically.`);
+  if (!ok) return;
+  const instBtn = document.getElementById('btn-about-install');
+  const aboutS  = document.getElementById('about-update-status');
+  if (instBtn) { instBtn.disabled = true; instBtn.textContent = 'Downloading…'; }
+  if (aboutS)    aboutS.textContent = 'Downloading update…';
+  try {
+    const r = await (await fetch('/apply-update',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json();
+    if (r.ok && r.restarting) {
+      if (aboutS)  aboutS.textContent = 'Installing… the app will restart and this tab will reconnect.';
+      if (instBtn) instBtn.textContent = 'Restarting…';
+    } else {
+      if (aboutS)  aboutS.textContent = r.error || 'Update failed.';
+      if (instBtn) { instBtn.disabled = false; instBtn.textContent = `Install v${_updateInfo.latest} & restart`; }
+    }
+  } catch (_) {
+    // Expected on success: the server drops the connection as it exits to swap.
+    if (aboutS) aboutS.textContent = 'Installing… the app will restart and this tab will reconnect.';
   }
 }
 
