@@ -192,8 +192,8 @@ else:
     _BACKEND_PY  = BUNDLE_DIR / "TGDownloader.py"
     _BACKEND_CMD = [sys.executable, "-u", str(_BACKEND_PY)]
 
-HTTP_PORT = 7842
-LOCK_PORT = 7843   # single-instance sentinel — we bind this; nobody else does
+HTTP_PORT = int(os.environ.get("TGD_HTTP_PORT", "7842"))
+LOCK_PORT = HTTP_PORT + 1   # single-instance sentinel — we bind this; nobody else does
 
 logger = logging.getLogger("gui_server")
 
@@ -620,6 +620,23 @@ def _save_sessions(data: dict) -> None:
 _FLOOD_RE = re.compile(r"Flood-wait (\d+)s for (.+?) \(attempt")
 _flood_events: "deque[dict]" = deque(maxlen=200)
 
+# The backend speaks JSON-lines: one message per stdout line, each a dict with a
+# "type".  Anything else on the pipe (stray prints, tracebacks merged in from
+# stderr) is not structured and is surfaced to the user as a raw log line.
+_PROTOCOL_TYPES = frozenset({"log", "result", "progress", "paused", "resumed"})
+
+
+def _parse_backend_line(raw: str) -> "dict | None":
+    s = raw.strip()
+    if s[:1] == "{" and s[-1:] == "}":
+        try:
+            obj = json.loads(s)
+        except Exception:
+            return None
+        if isinstance(obj, dict) and obj.get("type") in _PROTOCOL_TYPES:
+            return obj
+    return None
+
 
 def _flood_health(events: "list[dict] | None" = None,
                   now: "float | None" = None) -> dict:
@@ -712,6 +729,14 @@ class ProcessManager:
         with self._lock:
             return self._proc is not None and self._proc.poll() is None
 
+    @staticmethod
+    def _note_flood(text: str) -> None:
+        m = _FLOOD_RE.search(text)
+        if m:
+            _flood_events.append({"t": time.time(),
+                                  "wait": int(m.group(1)),
+                                  "file": m.group(2)[:200]})
+
     def start(self, stdin_data: str):
         with self._lock:
             if self._proc and self._proc.poll() is None:
@@ -744,19 +769,28 @@ class ProcessManager:
         def _stream():
             try:
                 for line in iter(self._proc.stdout.readline, ""):
-                    if line.startswith("##RESULT## "):
-                        try:
-                            result = json.loads(line[11:])
-                            self.broadcast({"type": "result", **result})
-                        except Exception:
-                            pass
+                    msg = _parse_backend_line(line)
+                    if msg is None:
+                        # Not JSON: a legacy marker or stray stdout/stderr.
+                        if line.startswith("##RESULT## "):
+                            try:
+                                self.broadcast({"type": "result", **json.loads(line[11:])})
+                            except Exception:
+                                pass
+                            continue
+                        self._note_flood(line)
+                        self.broadcast({"type": "log", "text": line})
                         continue
-                    m_fw = _FLOOD_RE.search(line)
-                    if m_fw:
-                        _flood_events.append({"t": time.time(),
-                                              "wait": int(m_fw.group(1)),
-                                              "file": m_fw.group(2)[:200]})
-                    self.broadcast({"type": "log", "text": line})
+                    t = msg["type"]
+                    if t == "log":
+                        text = msg.get("text", "")
+                        self._note_flood(text)
+                        self.broadcast({"type": "log", "text": text})
+                    elif t == "result":
+                        self.broadcast({"type": "result",
+                                        **{k: v for k, v in msg.items() if k != "type"}})
+                    else:  # progress / paused / resumed pass straight through
+                        self.broadcast(msg)
                 self._proc.wait()
                 rc = self._proc.returncode
             except Exception as ex:
@@ -2613,12 +2647,12 @@ def handle_ws(conn, key: str):
             elif action == "pause":
                 try: (DATA_DIR / "pause.flag").touch()
                 except Exception: pass
-                MANAGER.broadcast({"type": "log", "text": "##PAUSED##\n"})
+                MANAGER.broadcast({"type": "paused"})
 
             elif action == "resume":
                 try: (DATA_DIR / "pause.flag").unlink(missing_ok=True)
                 except Exception: pass
-                MANAGER.broadcast({"type": "log", "text": "##RESUMED##\n"})
+                MANAGER.broadcast({"type": "resumed"})
 
             elif action == "ping":
                 _ws_send(conn, json.dumps({"type": "pong"}))
