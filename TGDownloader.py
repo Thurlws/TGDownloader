@@ -74,8 +74,10 @@ from tgd_common import (                            # noqa: E402
     DEFAULT_CONFIG,
     ffmpeg_available as _check_ffmpeg,
     load_config,
+    load_session_string as _load_kr_session,
     require_api_credentials as _get_api_creds,
     save_config,
+    save_session_string as _save_kr_session,
 )
 
 BOT_BUSY_PHRASES = [
@@ -2061,7 +2063,13 @@ async def main() -> None:
 
     _log("\n  Connecting to Telegram...")
     _api_id, _api_hash = _get_api_creds()
-    main_client = TelegramClient(SESSION_FILE, _api_id, _api_hash)
+    # Prefer the keyring-stored StringSession (use_keyring); fall back to the
+    # plaintext SQLite file. Keeps the account credential off disk when enabled.
+    _kr_sess = _load_kr_session()
+    if _kr_sess:
+        main_client = TelegramClient(StringSession(_kr_sess), _api_id, _api_hash)
+    else:
+        main_client = TelegramClient(SESSION_FILE, _api_id, _api_hash)
     await main_client.connect()
     if not await main_client.is_user_authorized():
         _log("\n  ERROR: Not logged in to Telegram.")
@@ -2076,6 +2084,9 @@ async def main() -> None:
     me = await main_client.get_me()
     _log(f"  Logged in as: {me.first_name}")
     session_string = StringSession.save(main_client.session)
+    # Persist any session changes (e.g. DC migration) back to the keyring.
+    # No-op unless use_keyring is on, so the file path is unaffected.
+    _save_kr_session(session_string)
 
     # ── First-run gate: join + mute each bot profile's required channel ──
     for _bot in _resolve_bot_profiles(cfg):
