@@ -613,6 +613,24 @@ function _sendPlayEvent(meta) {
   }).catch(() => {});
 }
 
+// Discord Rich Presence — the server pushes the current track to the local
+// Discord client (opt-in; no-ops server-side when the feature is off). op is
+// 'resume' | 'pause' | 'stop'; play/resume carry the track meta + position.
+function _sendPresence(op) {
+  const body = { op };
+  if (op === 'resume' || op === 'play') {
+    const m = (_mpScrobbleState && _mpScrobbleState.meta) || {};
+    if (!m.title && !m.artist) return;   // nothing worth showing yet
+    body.title = m.title || ''; body.artist = m.artist || ''; body.album = m.album || '';
+    body.position = _mpAudio.currentTime || 0;
+  }
+  fetch('/presence', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).catch(() => {});
+}
+
 // ── OS media integration (hardware keys, Windows media overlay) ──────────────
 function _mpUpdateMediaSession(track, alb, coverSrc) {
   if (!('mediaSession' in navigator)) return;
@@ -715,6 +733,7 @@ function _mpStop() {
   _mpPlaying = false;
   _mpUpdatePlayBtn();
   _mpHighlightRow(-1);
+  _sendPresence('stop');
 }
 
 // Format seconds as m:ss for the player scrubber labels.
@@ -801,11 +820,13 @@ function _mpOnPlay(e) {
   if (e.target !== _mpAudio) return;
   _mpPlaying = true;  _mpUpdatePlayBtn(); _mpSaveState();
   try { if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing'; } catch (_) {}
+  _sendPresence('resume');   // covers both a new track starting and a resume
 }
 function _mpOnPause(e) {
   if (e.target !== _mpAudio) return;
   _mpPlaying = false; _mpUpdatePlayBtn(); _mpSaveState();
   try { if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused'; } catch (_) {}
+  _sendPresence('pause');
 }
 window.addEventListener('beforeunload', () => _mpSaveState());
 // A track that actually starts producing audio clears the error streak.
@@ -934,6 +955,7 @@ function _mpOnEnded(e) {
   }
   _mpUpdatePlayBtn();
   _mpHighlightRow(-1);
+  _sendPresence('stop');
 }
 
 // Attach the full handler set to a pooled audio element. Called for the DOM

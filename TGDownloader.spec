@@ -82,6 +82,7 @@ a = Analysis(
         'TGDownloader',
         'TGDownloader_GUI',
         'tgd_common',
+        'discord_presence',
         # ── Stdlib that PyInstaller sometimes misses ──────────
         'asyncio',
         'asyncio.events',

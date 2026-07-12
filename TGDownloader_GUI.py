@@ -976,6 +976,68 @@ def _apply_lib_watcher(cfg: dict) -> dict:
     return _stop_lib_watcher()
 
 
+# ── Discord Rich Presence (opt-in) ────────────────────────────────────────────
+# Shows the current track on the user's Discord profile. Entirely best-effort:
+# the IPC client no-ops when Discord isn't running or no client id is set, and
+# every update runs on a daemon thread so it can never stall an HTTP request.
+_presence = None                       # discord_presence.DiscordPresence | None
+_presence_meta: dict = {}              # last {title, artist, album, position}
+
+
+def _presence_client():
+    global _presence
+    if _presence is None:
+        try:
+            import discord_presence
+            _presence = discord_presence.DiscordPresence()
+        except Exception as exc:
+            logger.debug("Discord presence unavailable: %s", exc)
+    return _presence
+
+
+def _presence_apply(cfg: dict) -> None:
+    """Connect or disconnect to match the `discord_rich_presence` flag. The
+    blocking connect/close runs on a daemon thread."""
+    client = _presence_client()
+    if client is None:
+        return
+    enabled = bool(cfg.get("discord_rich_presence"))
+    cid     = (cfg.get("discord_client_id") or "").strip()
+    if enabled and cid:
+        threading.Thread(target=client.connect, args=(cid,),
+                         daemon=True, name="discord-connect").start()
+    else:
+        threading.Thread(target=client.close, daemon=True).start()
+
+
+def _presence_update(op: str, meta: dict) -> None:
+    """Apply a play / resume / pause / stop presence change on a worker thread."""
+    client = _presence_client()
+    if client is None or not client.connected:
+        return
+
+    def _run():
+        global _presence_meta
+        try:
+            import discord_presence
+            if op == "stop":
+                _presence_meta = {}
+                client.clear()
+                return
+            if op in ("play", "resume") and (meta.get("title") or meta.get("artist")):
+                _presence_meta = dict(meta)
+            m = _presence_meta
+            act = discord_presence.build_activity(
+                m.get("title", ""), m.get("artist", ""), m.get("album", ""),
+                float(m.get("position") or 0), paused=(op == "pause"))
+            if act:
+                client.set_activity(act)
+        except Exception as exc:
+            logger.debug("Discord presence update failed: %s", exc)
+
+    threading.Thread(target=_run, daemon=True, name="discord-presence").start()
+
+
 # ── Library tab caches (process lifetime) ─────────────────────────────────────
 _cover_cache:         dict[str, str]          = {}   # deezer album_id → cover_medium URL
 _path_hash_map:       dict[str, "Path"]       = {}   # path_hash[:16] → album_dir Path
@@ -5362,6 +5424,8 @@ class Handler(BaseHTTPRequestHandler):
             # not just persist the value — do it whenever the flag is in the patch.
             if "watch_library" in body:
                 _apply_lib_watcher(cfg)
+            if "discord_rich_presence" in body or "discord_client_id" in body:
+                _presence_apply(cfg)
             self._send_json(200, {"ok": True})
             return
 
@@ -5375,6 +5439,20 @@ class Handler(BaseHTTPRequestHandler):
                 "album":  body.get("album"),
             }, now_playing=(kind == "now_playing"))
             self._send_json(200, result)
+            return
+
+        if path == "/presence":
+            # Discord Rich Presence updates from the player (fire-and-forget).
+            try:
+                _presence_update((body.get("op") or "").strip(), {
+                    "title":    body.get("title", ""),
+                    "artist":   body.get("artist", ""),
+                    "album":    body.get("album", ""),
+                    "position": body.get("position", 0),
+                })
+            except Exception:
+                logger.debug("presence endpoint error", exc_info=True)
+            self._send_json(200, {"ok": True})
             return
 
         if path == "/watchlist":
@@ -6164,13 +6242,15 @@ def main():
     threading.Thread(target=SERVER.serve_forever, daemon=True).start()
     # Restore session on startup so quality works without pressing TG button
     asyncio.run_coroutine_threadsafe(_silent_auth_check(), _tg_loop)
-    # Resume the on-disk library watcher if the user left it enabled
+    # Resume opt-in background integrations if the user left them enabled
     try:
         _wcfg = _tgd_import().load_config()
         if _wcfg.get("watch_library"):
             _apply_lib_watcher(_wcfg)
+        if _wcfg.get("discord_rich_presence") and _wcfg.get("discord_client_id"):
+            _presence_apply(_wcfg)
     except Exception:
-        logger.exception("Could not resume library watcher at startup")
+        logger.exception("Could not resume background integrations at startup")
 
     url = f"http://127.0.0.1:{HTTP_PORT}/"
     logger.info("Server listening on %s", url)
