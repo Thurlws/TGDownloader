@@ -406,22 +406,41 @@ def get_home_music_folder(cfg: dict) -> Path:
 #  LOGGING
 # ═════════════════════════════════════════════
 
+# The GUI launches us with stdout wired to a pipe; a person running the CLI has
+# a real terminal.  When piped we speak the JSON-lines protocol the GUI parses;
+# on a terminal we keep the old human-readable text.  isatty() is the reliable
+# signal here — it holds in both the dev backend (plain `TGDownloader.py`) and
+# the frozen backend (`--backend`), where an argv check would not.
+try:
+    _PIPED = not sys.stdout.isatty()
+except Exception:
+    _PIPED = True
+
+
+def _emit(obj: dict) -> None:
+    """One structured message, one line of JSON, on the pipe to the GUI."""
+    print(json.dumps(obj), flush=True)
+
+
 def _log(msg: str) -> None:
-    print(msg, flush=True)
+    if _PIPED:
+        _emit({"type": "log", "text": msg + "\n"})
+    else:
+        print(msg, flush=True)
 
 
 def _check_pause_flag() -> None:
-    """Pause if DATA_DIR/pause.flag exists; emit ##PAUSED## / ##RESUMED## signals."""
+    """Pause while DATA_DIR/pause.flag exists, signalling the state change."""
     flag = _DATA_DIR / "pause.flag"
     was_paused = _pause_event.is_set()
     if flag.exists():
         if not was_paused:
             _pause_event.set()
-            print("##PAUSED##", flush=True)
+            _emit({"type": "paused"}) if _PIPED else print("##PAUSED##", flush=True)
     else:
         if was_paused:
             _pause_event.clear()
-            print("##RESUMED##", flush=True)
+            _emit({"type": "resumed"}) if _PIPED else print("##RESUMED##", flush=True)
 
 
 # ═════════════════════════════════════════════
@@ -446,7 +465,10 @@ def _emit_result(
         "dupes_skipped": dupes_skipped,
         "error":         error,
     }
-    print(f"##RESULT## {json.dumps(payload)}", flush=True)
+    if _PIPED:
+        _emit({"type": "result", **payload})
+    else:
+        print(f"##RESULT## {json.dumps(payload)}", flush=True)
 
 
 # ═════════════════════════════════════════════
@@ -496,6 +518,24 @@ def _run_post_download_hook(cfg: dict, dest: Path, url: str,
 # ═════════════════════════════════════════════
 #  PROGRESS DISPLAY
 # ═════════════════════════════════════════════
+
+def _progress_snapshot(start_time: float, total_files: int, done_files: int) -> dict:
+    """Raw progress numbers for the GUI's progress bar (no formatting)."""
+    elapsed     = max(time.monotonic() - start_time, 0.001)
+    total_bytes = sum(t for _, t in _progress.values())
+    done_bytes  = sum(d for d, _ in _progress.values())
+    speed_mb    = done_bytes / elapsed / 1_048_576
+    pct         = done_bytes / total_bytes if total_bytes > 0 else 0
+    eta         = int((1 - pct) / (pct / elapsed)) if 0 < pct < 1 else 0
+    return {
+        "filesDone": done_files, "filesTotal": total_files,
+        "mbDone":    round(done_bytes / 1_048_576, 1),
+        "mbTotal":   round(total_bytes / 1_048_576, 1),
+        "speedMBs":  round(speed_mb, 2),
+        "pct":       round(pct, 4),
+        "eta":       eta,
+    }
+
 
 def _render_progress(start_time: float, total_files: int, done_files: int) -> str:
     elapsed     = max(time.monotonic() - start_time, 0.001)
@@ -1466,8 +1506,12 @@ async def download_all_async(
 
     def _emit_progress_ts() -> None:
         """Thread-safe progress — print() holds the GIL per call."""
-        line = _render_progress(start_time, total, done_counter[0]).strip()
-        print(f"##PROG##  {line}", flush=True)
+        if _PIPED:
+            _emit({"type": "progress",
+                   **_progress_snapshot(start_time, total, done_counter[0])})
+        else:
+            line = _render_progress(start_time, total, done_counter[0]).strip()
+            print(f"##PROG##  {line}", flush=True)
 
     def _dl_one_threaded(ev, stagger_idx: int):
         """

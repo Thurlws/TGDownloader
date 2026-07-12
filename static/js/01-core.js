@@ -111,6 +111,21 @@ const _prog = {
 };
 const EMA_ALPHA = 0.12;   // lower = smoother, higher = more responsive
 let   _rafId    = null;
+
+// Feed one progress reading into the smoothed bar. Fields come straight from the
+// backend's structured "progress" message; the render loop reads _prog at 60fps.
+function _applyProgress(p) {
+  const rawSpeed = +p.speedMBs;
+  _prog.smoothSpeed = _prog.smoothSpeed === 0
+    ? rawSpeed
+    : EMA_ALPHA * rawSpeed + (1 - EMA_ALPHA) * _prog.smoothSpeed;
+  _prog.raw = {
+    filesDone: +p.filesDone, filesTotal: +p.filesTotal,
+    mbDone: +p.mbDone, mbTotal: +p.mbTotal, speedMBs: rawSpeed,
+  };
+  currentProgress = _prog.raw;
+  if (!_rafId) _startProgressRaf();
+}
 // ─────────────────────────────────────────────────────────────────────────
 
 let searchHistory = JSON.parse(localStorage.getItem('tgd_search_history') || '[]');
@@ -135,23 +150,18 @@ function connectWS() {
       if (msg.text.startsWith('##PAUSED##'))  { setPauseBtn(true);  return; }
       if (msg.text.startsWith('##RESUMED##')) { setPauseBtn(false); return; }
       appendLog(msg.text);
-      if (msg.text.startsWith('##PROG##')) {
+      if (msg.text.startsWith('##PROG##')) {   // legacy fallback: raw-CLI backend
         const m = msg.text.match(/(\d+)\/(\d+) files\s+([\d.]+)\/([\d.]+) MB\s+([\d.]+) MB\/s/);
-        if (m) {
-          const rawSpeed = +m[5];
-          // EMA: only update smooth value, don't touch DOM here
-          _prog.smoothSpeed = _prog.smoothSpeed === 0
-            ? rawSpeed
-            : EMA_ALPHA * rawSpeed + (1 - EMA_ALPHA) * _prog.smoothSpeed;
-          _prog.raw = {
-            filesDone: +m[1], filesTotal: +m[2],
-            mbDone: +m[3], mbTotal: +m[4], speedMBs: rawSpeed,
-          };
-          currentProgress = _prog.raw;
-          // Kick off rAF loop if not already running
-          if (!_rafId) _startProgressRaf();
-        }
+        if (m) _applyProgress({
+          filesDone: m[1], filesTotal: m[2], mbDone: m[3], mbTotal: m[4], speedMBs: m[5],
+        });
       }
+    } else if (msg.type === 'progress') {
+      _applyProgress(msg);
+    } else if (msg.type === 'paused')  {
+      setPauseBtn(true);
+    } else if (msg.type === 'resumed') {
+      setPauseBtn(false);
     } else if (msg.type === 'result') {
       sessionResults[msg.url] = msg;
       if (msg.status === 'ok' || msg.status === 'partial') manifestUrls.add(msg.url);
