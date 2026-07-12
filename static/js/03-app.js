@@ -691,6 +691,7 @@ document.querySelectorAll('.settings-nav-item').forEach(btn =>
   btn.addEventListener('click', () => _settingsShowPanel(btn.dataset.spanel)));
 document.getElementById('btn-about-check-update')?.addEventListener('click', () => _checkForUpdate(true));
 document.getElementById('btn-about-download')?.addEventListener('click', _downloadUpdate);
+document.getElementById('btn-about-install')?.addEventListener('click', _installUpdate);
 // Lazy arrows, not bare identifiers: these three live in 04-library.js, which
 // loads AFTER this file — a direct reference here is evaluated at load time,
 // throws ReferenceError, and silently kills every listener wired below

@@ -41,12 +41,15 @@ import logging
 import os
 import re
 import struct
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
 import webbrowser
+import zipfile
 
 from base64 import b64encode
 from collections import deque
@@ -281,23 +284,191 @@ def _check_for_update(force: bool = False) -> dict:
 
     latest_tag = (rel.get("tag_name") or rel.get("name") or "").strip()
     available  = _parse_version(latest_tag) > _parse_version(APP_VERSION)
-    # Direct link to the built Windows zip so the UI can offer a one-click
-    # download (v1.8.0) — release.yml attaches exactly one .zip per release.
-    download_url = next(
-        (a.get("browser_download_url") for a in (rel.get("assets") or [])
-         if str(a.get("name", "")).lower().endswith(".zip")), "")
+    # The built Windows zip: release.yml attaches exactly one .zip per release.
+    # Grab its size too so the apply step can sanity-check the download (v1.15.0).
+    zip_asset = next(
+        (a for a in (rel.get("assets") or [])
+         if str(a.get("name", "")).lower().endswith(".zip")), {})
     data = {
         "current":          APP_VERSION,
         "latest":           latest_tag.lstrip("vV") or latest_tag,
         "update_available": available,
         "url":              rel.get("html_url", f"https://github.com/{GITHUB_REPO}/releases"),
-        "download_url":     download_url,
+        "download_url":     zip_asset.get("browser_download_url", ""),
+        "download_size":    int(zip_asset.get("size") or 0),
+        "can_apply":        _update_supported(),
         "name":             rel.get("name") or latest_tag,
         "notes":            (rel.get("body") or "")[:4000],
         "published_at":     rel.get("published_at", ""),
     }
     _UPDATE_CACHE.update(ts=now, data=data)
     return data
+
+
+# ══════════════════════════════════════════════
+#  SELF-UPDATE APPLY  (frozen Windows builds only)
+# ══════════════════════════════════════════════
+#
+# The app ships as a one-dir PyInstaller bundle: TGDownloader.exe beside an
+# _internal/ folder, with user data (config, session, caches) in that same
+# folder as the exe. Windows won't overwrite a running exe or its loaded DLLs,
+# so applying an update is: download the release zip, stage it, then hand off to
+# a small .bat that waits for us to exit, swaps _internal/ + the exe (keeping
+# .old backups for rollback), and relaunches. User data is never touched — it
+# sits beside the exe, not inside _internal/.
+
+_UPDATE_STAGING   = DATA_DIR / "_update"        # extracted new bundle lives here
+_UPDATE_MAX_BYTES = 500 * 1024 * 1024           # sanity ceiling on the download
+
+
+def _update_supported() -> bool:
+    return bool(getattr(sys, "frozen", False)) and os.name == "nt"
+
+
+def _app_dir() -> Path:
+    """Folder holding TGDownloader.exe (frozen) — same as DATA_DIR there."""
+    return Path(sys.executable).parent
+
+
+def _cleanup_update_leftovers() -> None:
+    """We only reach this by running again after a successful swap, so the .old
+    backups and staging folder from the last apply are safe to delete."""
+    if not _update_supported():
+        return
+    app = _app_dir()
+    try:
+        shutil.rmtree(app / "_internal.old", ignore_errors=True)
+        shutil.rmtree(_UPDATE_STAGING,       ignore_errors=True)
+        (app / "TGDownloader.old.exe").unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _download_zip(url: str, dest: Path, expected_size: int = 0) -> None:
+    """Stream a release zip to `dest`, size-capped and validated as a real zip."""
+    req = urllib.request.Request(url, headers={"User-Agent": f"TGDownloader/{APP_VERSION}"})
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    written = 0
+    with urllib.request.urlopen(req, timeout=60) as resp, open(dest, "wb") as fh:
+        while True:
+            chunk = resp.read(262144)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > _UPDATE_MAX_BYTES:
+                raise ValueError("update download exceeded the size limit")
+            fh.write(chunk)
+    if written == 0:
+        raise ValueError("update download was empty")
+    if expected_size and abs(written - expected_size) > 4096:
+        raise ValueError(f"update size mismatch: got {written}, expected {expected_size}")
+    if not zipfile.is_zipfile(dest):
+        raise ValueError("downloaded update is not a valid zip")
+
+
+def _stage_update(zip_path: Path, staging: Path) -> Path:
+    """Extract the release zip into `staging` (guarding against zip-slip) and
+    return the folder holding the new TGDownloader.exe + _internal/."""
+    if staging.exists():
+        shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True, exist_ok=True)
+    root = str(staging.resolve())
+    with zipfile.ZipFile(zip_path) as zf:
+        for name in zf.namelist():
+            target = str((staging / name).resolve())
+            if os.path.commonpath([root, target]) != root:
+                raise ValueError(f"unsafe path in update zip: {name}")
+        zf.extractall(staging)
+    exe = next(iter(staging.rglob("TGDownloader.exe")), None)
+    if exe is None:
+        raise ValueError("update zip has no TGDownloader.exe")
+    if not (exe.parent / "_internal").is_dir():
+        raise ValueError("update zip has no _internal/ next to the exe")
+    return exe.parent
+
+
+def _build_update_script(pid: int, app_dir: Path, new_root: Path) -> str:
+    """Windows .bat: wait for our PID to exit, back up + swap _internal/ and the
+    exe from new_root into app_dir, relaunch, then delete staging and itself.
+    On any move failure it rolls the .old backups back and relaunches."""
+    return f"""@echo off
+setlocal
+set "PID={pid}"
+set "APP={app_dir}"
+set "NEW={new_root}"
+
+rem 1. Wait (up to ~60s) for TGDownloader to exit so its files unlock.
+set /a n=0
+:wait
+tasklist /FI "PID eq %PID%" 2>nul | find "%PID%" >nul
+if not errorlevel 1 (
+  set /a n+=1
+  if %n% GEQ 60 goto giveup
+  ping -n 2 127.0.0.1 >nul
+  goto wait
+)
+ping -n 3 127.0.0.1 >nul
+
+rem 2. Swap _internal/ (keep the old copy as a rollback backup).
+if exist "%APP%\\_internal.old" rmdir /S /Q "%APP%\\_internal.old"
+if exist "%APP%\\_internal" ren "%APP%\\_internal" "_internal.old"
+move "%NEW%\\_internal" "%APP%\\_internal" >nul || goto rollback
+
+rem 3. Swap the exe (keep the old one too).
+if exist "%APP%\\TGDownloader.old.exe" del /Q "%APP%\\TGDownloader.old.exe"
+if exist "%APP%\\TGDownloader.exe" ren "%APP%\\TGDownloader.exe" "TGDownloader.old.exe"
+move "%NEW%\\TGDownloader.exe" "%APP%\\TGDownloader.exe" >nul || goto rollback
+
+rem 4. Relaunch and clean up staging.
+start "" "%APP%\\TGDownloader.exe"
+rmdir /S /Q "%NEW%" 2>nul
+goto done
+
+:rollback
+if exist "%APP%\\_internal.old" if not exist "%APP%\\_internal" ren "%APP%\\_internal.old" "_internal"
+if exist "%APP%\\TGDownloader.old.exe" if not exist "%APP%\\TGDownloader.exe" ren "%APP%\\TGDownloader.old.exe" "TGDownloader.exe"
+start "" "%APP%\\TGDownloader.exe"
+
+:done
+:giveup
+(goto) 2>nul & del "%~f0"
+"""
+
+
+def _apply_update() -> dict:
+    """Download + stage the latest release and launch the swap helper. On success
+    the app schedules its own exit so the helper can replace the locked files."""
+    if not _update_supported():
+        return {"ok": False, "error": "In-place update is only available in the "
+                "packaged Windows app. Use Download and replace the folder manually."}
+    if MANAGER.is_running():
+        return {"ok": False, "error": "A download is in progress — stop it first."}
+    info = _check_for_update(force=True)
+    if not info.get("update_available"):
+        return {"ok": False, "error": "Already up to date."}
+    if not info.get("download_url"):
+        return {"ok": False, "error": "This release has no downloadable build attached."}
+    try:
+        zip_path = _UPDATE_STAGING.parent / "_update.zip"
+        _download_zip(info["download_url"], zip_path, info.get("download_size", 0))
+        new_root = _stage_update(zip_path, _UPDATE_STAGING)
+        zip_path.unlink(missing_ok=True)
+        bat = _app_dir() / "_apply_update.bat"
+        bat.write_text(_build_update_script(os.getpid(), _app_dir(), new_root),
+                       encoding="utf-8")
+    except Exception as exc:
+        logger.exception("Update staging failed")
+        return {"ok": False, "error": f"Update failed: {exc}"}
+    try:
+        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP so it outlives our exit.
+        subprocess.Popen(["cmd", "/c", str(bat)],
+                         creationflags=0x00000008 | 0x00000200, close_fds=True)
+    except Exception as exc:
+        logger.exception("Failed to launch update helper")
+        return {"ok": False, "error": f"Could not start the updater: {exc}"}
+    logger.info("Update helper launched; exiting so it can swap the files")
+    threading.Timer(1.5, lambda: os._exit(0)).start()
+    return {"ok": True, "restarting": True, "latest": info.get("latest", "")}
 
 
 def _load_api_credentials() -> "tuple[int | None, str | None]":
@@ -5419,6 +5590,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": f"Invalid JSON body: {exc}"})
             return
 
+        if path == "/apply-update":
+            # Downloads + stages the latest release, then relaunches into it.
+            self._send_json(200, _apply_update())
+            return
+
         if path == "/setup":
             api_id      = body.get("api_id")
             api_hash    = (body.get("api_hash") or "").strip().lower()
@@ -6239,6 +6415,10 @@ async def _silent_auth_check() -> None:
 
 def main():
     global SERVER
+
+    # If we're here, a previous self-update (if any) succeeded — clear its
+    # rollback backups and staging folder.
+    _cleanup_update_leftovers()
 
     # ── Single-instance guard ─────────────────────────────────────────────
     # We bind a private "lock" port.  If it's already taken, another instance
