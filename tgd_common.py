@@ -36,6 +36,11 @@ JSON file then only holds empty placeholders.  The overlay is transparent:
 where a secret physically lives.  If keyring is enabled but the package is
 missing, secrets stay in the JSON file and a warning is logged — nothing is
 ever lost.
+
+The same flag also moves the Telegram *session* off disk: with keyring on, the
+Telethon auth key is kept as a StringSession in the keyring instead of the
+plaintext ``tg_audio_session.session`` file.  See the session helpers below
+(``load_session_string`` / ``save_session_string`` / ``migrate_session_to_keyring``).
 """
 
 from __future__ import annotations
@@ -47,7 +52,7 @@ import shutil
 import sys
 from pathlib import Path
 
-__version__ = "1.15.0"   # single source — bump this when you cut a new release
+__version__ = "1.16.0"   # single source — bump this when you cut a new release
 
 logger = logging.getLogger("tgd_common")
 
@@ -244,6 +249,128 @@ def require_api_credentials() -> "tuple[int, str]":
         "Telegram API credentials not found.\n"
         "Run TGDownloader and complete the setup wizard first."
     )
+
+
+# ── Telegram session storage (opt-in OS keyring) ──────────────────────────────
+# By default the Telethon auth key lives in a plaintext SQLite session file
+# (`tg_audio_session.session`) beside the app — a full-account credential sitting
+# on disk in the clear. With use_keyring on, the session is kept as a Telethon
+# StringSession in the OS keyring instead and the plaintext file is removed.
+# Everything degrades safely: an empty keyring falls back to the file, and if
+# that's gone too the user just signs in again. Both processes go through here.
+
+_SESSION_KEYRING_KEY = "telegram_session"
+
+
+def session_file() -> Path:
+    return DATA_DIR / "tg_audio_session.session"
+
+
+def remove_session_file() -> None:
+    """Delete the plaintext SQLite session and its journals (best-effort)."""
+    try:
+        for f in DATA_DIR.glob("tg_audio_session*"):
+            f.unlink(missing_ok=True)
+    except Exception as exc:
+        logger.debug("Could not remove session file: %s", exc)
+
+
+def read_session_file_string() -> "str | None":
+    """The plaintext SQLite session as a Telethon StringSession, or None. Pure
+    sqlite3 + struct (no telethon import), so any process can call it."""
+    import base64 as _b64, socket as _sock, sqlite3 as _sq3, struct as _st
+    db = session_file()
+    if not db.exists():
+        return None
+    try:
+        conn = _sq3.connect(str(db), timeout=8.0, check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        row = conn.execute(
+            "SELECT dc_id, server_address, port, auth_key FROM sessions"
+        ).fetchone()
+        conn.close()
+        if not row:
+            return None
+        dc_id, server, port, auth_key = row
+        # StringSession wire format: dc_id(B) + ip(4s) + port(H) + auth_key(256s), "1"-prefixed.
+        data = _st.pack(">B4sH256s", dc_id, _sock.inet_aton(server), port, bytes(auth_key))
+        return "1" + _b64.urlsafe_b64encode(data).decode("ascii")
+    except Exception as exc:
+        logger.debug("Could not read session string from file: %s", exc)
+        return None
+
+
+def load_session_string() -> "str | None":
+    """The StringSession from the keyring, or None when keyring storage is
+    off/unavailable/empty (callers then fall back to the plaintext file)."""
+    if not load_config().get("use_keyring"):
+        return None
+    kr = _keyring()
+    if kr is None:
+        _warn_keyring_missing()
+        return None
+    try:
+        return kr.get_password(_KEYRING_SERVICE, _SESSION_KEYRING_KEY) or None
+    except Exception as exc:
+        logger.warning("Keyring session read failed: %s", exc)
+        return None
+
+
+def save_session_string(session_string: str) -> bool:
+    """Store the StringSession in the keyring when use_keyring is on. Returns
+    False and does nothing otherwise, so non-keyring installs are untouched."""
+    if not session_string or not load_config().get("use_keyring"):
+        return False
+    kr = _keyring()
+    if kr is None:
+        _warn_keyring_missing()
+        return False
+    try:
+        kr.set_password(_KEYRING_SERVICE, _SESSION_KEYRING_KEY, session_string)
+        return True
+    except Exception as exc:
+        logger.warning("Keyring session write failed: %s", exc)
+        return False
+
+
+def clear_session_string() -> None:
+    """Remove the keyring-stored session (used on logout). Best-effort."""
+    kr = _keyring()
+    if kr is None:
+        return
+    try:
+        kr.delete_password(_KEYRING_SERVICE, _SESSION_KEYRING_KEY)
+    except Exception:
+        pass
+
+
+def has_session() -> bool:
+    """True when a Telegram session exists in either store."""
+    return bool(load_session_string()) or session_file().exists()
+
+
+def migrate_session_to_keyring() -> bool:
+    """When use_keyring is on and the session is still a plaintext file, copy it
+    into the keyring (write, then verify by reading it back) and only then delete
+    the file. Returns True when a migration actually happened; safe no-op else."""
+    if not load_config().get("use_keyring"):
+        return False
+    kr = _keyring()
+    if kr is None:
+        _warn_keyring_missing()
+        return False
+    if load_session_string():
+        remove_session_file()          # already in keyring — file is redundant
+        return False
+    s = read_session_file_string()
+    if not s:
+        return False
+    if not save_session_string(s) or load_session_string() != s:
+        logger.warning("Session keyring migration failed verification — keeping the file")
+        return False
+    remove_session_file()
+    logger.info("Telegram session moved to the OS keyring; plaintext file removed")
+    return True
 
 
 # ── Loudness analysis / ReplayGain ────────────────────────────────────────────

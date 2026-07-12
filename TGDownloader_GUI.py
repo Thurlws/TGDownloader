@@ -517,39 +517,17 @@ _quality_session_lock   = threading.Lock()
 
 
 def _read_session_string_from_file() -> "str | None":
-    """Read the Telethon SQLite session and return it as a StringSession string.
-    Uses raw sqlite3 with WAL mode so it can read even while the downloader has
-    the file open for writes.
-    Fixed: correct column name (server_address) and Telethon struct layout."""
-    import sqlite3 as _sq3, struct as _st, base64 as _b64, socket as _sock
-    db = DATA_DIR / "tg_audio_session.session"
-    if not db.exists():
-        return None
-    try:
-        conn = _sq3.connect(str(db), timeout=8.0, check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL")
-        row = conn.execute(
-            "SELECT dc_id, server_address, port, auth_key FROM sessions"
-        ).fetchone()
-        conn.close()
-        if not row:
-            return None
-        dc_id, server, port, auth_key = row
-        # Telethon StringSession wire format: dc_id(B) + ip(4s) + port(H) + auth_key(256s), prefixed "1"
-        ip_bytes = _sock.inet_aton(server)
-        data = _st.pack(">B4sH256s", dc_id, ip_bytes, port, bytes(auth_key))
-        return "1" + _b64.urlsafe_b64encode(data).decode("ascii")
-    except Exception as exc:
-        logger.debug("Could not read session string from file: %s", exc)
-        return None
+    """StringSession from the plaintext SQLite session (shared reader)."""
+    return tgd_common.read_session_file_string()
 
 
 def _get_quality_session() -> "str | None":
-    """Return a cached StringSession string, loading it if needed."""
+    """Cached StringSession — from the OS keyring when enabled, else the file."""
     global _quality_session_string
     with _quality_session_lock:
         if not _quality_session_string:
-            _quality_session_string = _read_session_string_from_file()
+            _quality_session_string = (tgd_common.load_session_string()
+                                       or tgd_common.read_session_file_string())
         return _quality_session_string
 
 async def _do_telegram_auth() -> None:
@@ -595,23 +573,34 @@ async def _do_telegram_auth() -> None:
         if str(BUNDLE_DIR) not in sys.path:
             sys.path.insert(0, str(BUNDLE_DIR))
         from telethon import TelegramClient as _TGClient  # type: ignore
+        from telethon.sessions import StringSession as _SS
 
-        session_file = str(DATA_DIR / "tg_audio_session")
         _api_id, _api_hash = _load_api_credentials()
-        client = _TGClient(session_file, _api_id, _api_hash)
+        _use_keyring = bool(tgd_common.load_config().get("use_keyring"))
+        if _use_keyring:
+            # Keep the auth key off disk: authorise into an in-memory
+            # StringSession (seeded from the keyring if we already have one).
+            _existing = tgd_common.load_session_string()
+            client = _TGClient(_SS(_existing) if _existing else _SS(),
+                               _api_id, _api_hash)
+        else:
+            client = _TGClient(str(DATA_DIR / "tg_audio_session"), _api_id, _api_hash)
         await client.start(
             phone=_get_phone,
             code_callback=_get_code,
             password=_get_pw,
         )
         me = await client.get_me()
-        # Cache as StringSession so quality checks never need to open the SQLite file
+        # Cache the StringSession so quality checks never touch disk; persist it to
+        # the keyring (and drop any plaintext file) when keyring storage is on.
         try:
-            from telethon.sessions import StringSession as _SS
             _sess_str = _SS.save(client.session)
             with _quality_session_lock:
                 global _quality_session_string
                 _quality_session_string = _sess_str
+            if _use_keyring:
+                tgd_common.save_session_string(_sess_str)
+                tgd_common.remove_session_file()
         except Exception:
             pass
         with _auth_lock:
@@ -4571,9 +4560,9 @@ class Handler(BaseHTTPRequestHandler):
 
             # Telegram session (required before any download works)
             try:
-                sess = DATA_DIR / "tg_audio_session.session"
-                _add(sess.exists(), "Telegram session",
-                     "Connected" if sess.exists() else "Not connected — use the TG button")
+                _has_sess = tgd_common.has_session()
+                _add(_has_sess, "Telegram session",
+                     "Connected" if _has_sess else "Not connected — use the TG button")
             except Exception as exc:
                 _add(False, "Telegram session", str(exc))
 
@@ -4803,9 +4792,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": str(exc)})
             return
 
-        # Telegram session status — file check only, no network call
+        # Telegram session status — local check only, no network call
         if path == "/telegram-status":
-            session_exists = (DATA_DIR / "tg_audio_session.session").exists()
+            session_exists = tgd_common.has_session()
             with _auth_lock:
                 self._send_json(200, {
                     "session_exists": session_exists,
@@ -6151,12 +6140,13 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             if action == "disconnect":
-                session_path = DATA_DIR / "tg_audio_session.session"
                 try:
-                    session_path.unlink(missing_ok=True)
-                    # Also wipe any .session-journal
-                    for f in DATA_DIR.glob("tg_audio_session*"):
-                        f.unlink(missing_ok=True)
+                    # Remove the session from BOTH stores: plaintext file + keyring.
+                    tgd_common.remove_session_file()
+                    tgd_common.clear_session_string()
+                    with _quality_session_lock:
+                        global _quality_session_string
+                        _quality_session_string = None
                     with _auth_lock:
                         _auth_state.update({"step": "idle", "username": None, "error": None})
                     logger.info("Telegram session disconnected by user")
@@ -6383,12 +6373,8 @@ class Server(ThreadingMixIn, HTTPServer):
 
 
 async def _silent_auth_check() -> None:
-    """On startup, reuse an existing SQLite session without any prompts.
-    Populates _quality_session_string and _auth_state so the quality badge
-    works immediately without pressing the TG button."""
-    db = DATA_DIR / "tg_audio_session.session"
-    if not db.exists():
-        return
+    """On startup, reuse an existing session (keyring or file) without prompts,
+    so the quality badge works immediately without pressing the TG button."""
     try:
         if str(BUNDLE_DIR) not in sys.path:
             sys.path.insert(0, str(BUNDLE_DIR))
@@ -6397,7 +6383,13 @@ async def _silent_auth_check() -> None:
         _api_id, _api_hash = _load_api_credentials()
         if not _api_id:
             return
-        client = _TGC(str(DATA_DIR / "tg_audio_session"), _api_id, _api_hash)
+        _kr_sess = tgd_common.load_session_string()
+        if _kr_sess:
+            client = _TGC(_SS(_kr_sess), _api_id, _api_hash)
+        elif (DATA_DIR / "tg_audio_session.session").exists():
+            client = _TGC(str(DATA_DIR / "tg_audio_session"), _api_id, _api_hash)
+        else:
+            return
         await client.connect()
         if await client.is_user_authorized():
             sess_str = _SS.save(client.session)
@@ -6419,6 +6411,13 @@ def main():
     # If we're here, a previous self-update (if any) succeeded — clear its
     # rollback backups and staging folder.
     _cleanup_update_leftovers()
+
+    # If keyring storage is on but the session is still a plaintext file, move it
+    # into the OS keyring and delete the file (no-op unless use_keyring is set).
+    try:
+        tgd_common.migrate_session_to_keyring()
+    except Exception as exc:
+        logger.debug("Session keyring migration skipped: %s", exc)
 
     # ── Single-instance guard ─────────────────────────────────────────────
     # We bind a private "lock" port.  If it's already taken, another instance
