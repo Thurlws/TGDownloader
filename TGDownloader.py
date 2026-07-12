@@ -1192,7 +1192,36 @@ def convert_directory_quality(directory: Path, target_quality: str) -> tuple[int
 #  FIRST-RUN BOT SETUP
 # ═════════════════════════════════════════════
 
-async def _ensure_bot_initialized(client, cfg: dict) -> None:
+def _resolve_bot_profiles(cfg: dict) -> "list[str]":
+    """Ordered bot usernames to try: the primary `bot_username` first, then any
+    `bot_failover` backups (list, or comma / newline-separated string). Purely
+    additive — with no backups configured this is just `[bot_username]`, so
+    existing single-bot setups are unchanged."""
+    primary = str(cfg.get("bot_username") or "").strip()
+    raw = cfg.get("bot_failover") or cfg.get("bot_usernames")   # accept either key
+    extras: list = []
+    if isinstance(raw, list):
+        extras = [str(b).strip() for b in raw if str(b).strip()]
+    elif isinstance(raw, str) and raw.strip():
+        extras = [b.strip() for b in re.split(r"[,\n]+", raw) if b.strip()]
+    seen: set = set()
+    out:  list = []
+    for b in ([primary] if primary else []) + extras:           # de-dupe, keep order
+        key = b.lower().lstrip("@")
+        if b and key not in seen:
+            seen.add(key)
+            out.append(b)
+    return out or [primary]
+
+
+def _bot_init_flag(bot_username: str) -> Path:
+    """Per-bot 'initialised' flag, so each profile joins its channel once."""
+    safe = re.sub(r"[^a-z0-9]+", "_",
+                  (bot_username or "").strip().lower().lstrip("@")).strip("_")
+    return _DATA_DIR / f"bot_initialized_{safe or 'default'}.flag"
+
+
+async def _ensure_bot_initialized(client, cfg: dict, bot_username: "str | None" = None) -> None:
     """First-run gate: if the bot requires channel membership, join the channel
     automatically, mute it permanently, and write a flag file so this logic is
     skipped on every subsequent launch.
@@ -1204,13 +1233,17 @@ async def _ensure_bot_initialized(client, cfg: dict) -> None:
       4. Mute the channel permanently (mute_until = INT32_MAX).
       5. Touch _BOT_INIT_FLAG and log "Telegram bot ready to use".
     """
-    if _BOT_INIT_FLAG.exists():
+    BOT_USERNAME = (bot_username or cfg["bot_username"]).strip()
+    _init_flag   = _bot_init_flag(BOT_USERNAME)
+    # Back-compat: the pre-1.13 single flag counts for the primary bot.
+    _legacy_ok   = (BOT_USERNAME == str(cfg.get("bot_username") or "").strip()
+                    and _BOT_INIT_FLAG.exists())
+    if _init_flag.exists() or _legacy_ok:
         # Already initialised on a previous launch — nothing to do.
-        _log("  ✓ Telegram bot ready to use")
+        _log(f"  ✓ Telegram bot ready to use ({BOT_USERNAME})")
         return
 
-    BOT_USERNAME = cfg["bot_username"]
-    _log("\n  First-time setup — checking bot channel requirements…")
+    _log(f"\n  First-time setup — checking bot channel requirements ({BOT_USERNAME})…")
 
     try:
         bot_entity = await client.get_entity(BOT_USERNAME)
@@ -1334,18 +1367,48 @@ async def _ensure_bot_initialized(client, cfg: dict) -> None:
         # Non-fatal — write the flag anyway so we don't retry every launch
 
     try:
-        _BOT_INIT_FLAG.touch()
+        _init_flag.touch()
+        if BOT_USERNAME == str(cfg.get("bot_username") or "").strip():
+            _BOT_INIT_FLAG.touch()   # keep the legacy flag fresh for the primary
     except Exception:
         pass
 
     _log(f"\n{'─'*52}")
-    _log("  ✓ Telegram bot ready to use")
+    _log(f"  ✓ Telegram bot ready to use ({BOT_USERNAME})")
     _log(f"{'─'*52}\n")
 
 
 # ═════════════════════════════════════════════
 #  ASYNC DOWNLOAD
 # ═════════════════════════════════════════════
+
+# ── Bandwidth cap ─────────────────────────────────────────────────────────────
+# A global token bucket shared across the parallel download threads (each runs
+# its own event loop, so the guard is a plain threading.Lock, not asyncio). A
+# rate of 0 disables it — the common case — so there's zero overhead when off.
+class _BandwidthLimiter:
+    def __init__(self, rate_bps: float):
+        self.rate       = float(rate_bps or 0)
+        self._lock      = threading.Lock()
+        self._allowance = self.rate
+        self._last      = time.monotonic()
+
+    def consume(self, nbytes: int) -> float:
+        """Account for nbytes just written; return seconds to sleep to stay
+        under the cap (0 when unlimited or still within budget)."""
+        if self.rate <= 0:
+            return 0.0
+        with self._lock:
+            now = time.monotonic()
+            self._allowance = min(self.rate,
+                                  self._allowance + (now - self._last) * self.rate)
+            self._last = now
+            self._allowance -= nbytes
+            return 0.0 if self._allowance >= 0 else (-self._allowance / self.rate)
+
+
+_bw_limiter: "_BandwidthLimiter | None" = None
+
 
 async def download_all_async(
     client,
@@ -1367,6 +1430,16 @@ async def download_all_async(
 
     # 1 MB per GetFile request (Telethon effective ceiling).
     _CHUNK_SIZE = 1024 * 1024
+
+    # Optional global bandwidth cap (KB/s), shared across all parallel threads.
+    global _bw_limiter
+    try:
+        _bw_kbps = int((cfg or {}).get("bandwidth_limit_kbps") or 0)
+    except (TypeError, ValueError):
+        _bw_kbps = 0
+    _bw_limiter = _BandwidthLimiter(_bw_kbps * 1024)
+    if _bw_kbps > 0:
+        _log(f"  Bandwidth cap: {_bw_kbps} KB/s (shared across parallel downloads)\n")
 
     # ── Why one OS thread + one event loop per file ────────────────────────
     # When all downloads share one asyncio event loop every client's
@@ -1427,6 +1500,10 @@ async def download_all_async(
                             received += len(chunk)
                             _progress[filename] = (received, total_size)
                             _emit_progress_ts()
+                            if _bw_limiter is not None:
+                                _bw_sleep = _bw_limiter.consume(len(chunk))
+                                if _bw_sleep > 0:
+                                    await asyncio.sleep(_bw_sleep)
 
                     break   # success; exit retry loop
 
@@ -1627,8 +1704,9 @@ async def process_url(
     tmp_dir:        Path,
     session_string: str,
     cfg:            dict,
+    bot_username:   "str | None" = None,
 ) -> tuple[list[Path], int | None]:
-    BOT_USERNAME     = cfg["bot_username"]
+    BOT_USERNAME     = (bot_username or cfg["bot_username"]).strip()
     REPLY_TIMEOUT    = cfg["reply_timeout"]
     BOT_BUSY_WAIT    = cfg["bot_busy_wait"]
     BOT_BUSY_RETRIES = cfg["bot_busy_retries"]
@@ -1955,8 +2033,12 @@ async def main() -> None:
     _log(f"  Logged in as: {me.first_name}")
     session_string = StringSession.save(main_client.session)
 
-    # ── First-run gate: join + mute the bot's required channel if needed ──
-    await _ensure_bot_initialized(main_client, cfg)
+    # ── First-run gate: join + mute each bot profile's required channel ──
+    for _bot in _resolve_bot_profiles(cfg):
+        try:
+            await _ensure_bot_initialized(main_client, cfg, _bot)
+        except Exception as _binit_exc:
+            _log(f"  ⚠ Could not initialise bot {_bot}: {_binit_exc}")
 
     await main_client.disconnect()
 
@@ -1987,19 +2069,38 @@ async def main() -> None:
         url_tmp = _DATA_DIR / "tg_tmp_downloads" / f"url_{i}"
         url_tmp.mkdir(parents=True, exist_ok=True)
 
-        try:
-            downloaded, expected = await process_url(
-                entry, i, len(entries), url_tmp, session_string, cfg,
-            )
-        except Exception as e:
-            _log(f"\n  ERROR processing {entry.url}: {e}")
-            traceback.print_exc()
+        # Try each bot profile in turn — fail over to the next when one errors
+        # or returns nothing. With a single profile this runs exactly once, so
+        # existing single-bot setups behave identically.
+        _profiles = _resolve_bot_profiles(cfg)
+        downloaded, expected = 0, None
+        _proc_error: "Exception | None" = None
+        for _pi, _bot in enumerate(_profiles):
+            _proc_error = None
+            try:
+                downloaded, expected = await process_url(
+                    entry, i, len(entries), url_tmp, session_string, cfg,
+                    bot_username=_bot,
+                )
+            except Exception as e:
+                _proc_error = e
+                downloaded, expected = 0, None
+                _log(f"\n  ERROR processing {entry.url} via {_bot}: {e}")
+                traceback.print_exc()
+            if downloaded:
+                if _pi > 0:
+                    _log(f"  ✓ Recovered via failover bot {_bot}")
+                break
+            if _pi + 1 < len(_profiles):
+                _log(f"  ↻ No files from {_bot} — failing over to {_profiles[_pi + 1]}…")
+
+        if _proc_error is not None and not downloaded:
             results.append(URLResult(
                 url=entry.url, artist=entry.artist,
                 expected=None, downloaded=0, dupes_skipped=0,
-                dest=artist_dir, status="error", error=str(e),
+                dest=artist_dir, status="error", error=str(_proc_error),
             ))
-            _emit_result(entry.url, entry.artist, "error", error=str(e))
+            _emit_result(entry.url, entry.artist, "error", error=str(_proc_error))
             shutil.rmtree(url_tmp, ignore_errors=True)
             continue
 

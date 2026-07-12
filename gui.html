@@ -415,6 +415,10 @@
               <input type="text" id="cfg-bot" placeholder="@YourMusicBot">
             </div>
             <div class="modal-field">
+              <label>Backup Bots — failover <span style="color:var(--fg3);font-weight:400">(one @username per line; tried in order if the main bot is down or rate-limited)</span></label>
+              <textarea id="cfg-bot-failover" rows="2" placeholder="@BackupBot1&#10;@BackupBot2" autocomplete="off" spellcheck="false" style="width:100%;background:var(--bg3);color:var(--fg);border:1px solid var(--border2);border-radius:4px;padding:6px 8px;font-family:var(--mono);font-size:11px;resize:vertical;"></textarea>
+            </div>
+            <div class="modal-field">
               <label>Reply Timeout (s)</label>
               <input type="text" id="cfg-reply-timeout">
             </div>
@@ -468,6 +472,10 @@
             <div class="modal-field">
               <label>Max Queue Size</label>
               <input type="text" id="cfg-max-queue">
+            </div>
+            <div class="modal-field">
+              <label>Bandwidth Cap — KB/s <span style="color:var(--fg3);font-weight:400">(0 = unlimited; shared across all parallel downloads)</span></label>
+              <input type="text" id="cfg-bandwidth" placeholder="0" inputmode="numeric">
             </div>
             <div class="modal-field">
               <label>Post-download command (optional)</label>

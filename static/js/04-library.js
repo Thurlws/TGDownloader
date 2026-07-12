@@ -1360,6 +1360,45 @@ function _renderLibBreadcrumb() {
   }
 }
 
+// ── Mouse back/forward (X1/X2 side buttons) navigate the library hierarchy ────
+// Back climbs up: album tracks → artist albums → Home overview. Forward
+// re-descends into the last item you backed out of (single-step memory). Only
+// acts on the Library tab; the browser's own back/forward is suppressed
+// app-wide so a side-button press never navigates away from the app.
+let _libFwd = null;   // { kind:'album'|'artist', ... } — last thing backed out of
+
+function _libNavBack() {
+  if (_libView === 'tracks') {
+    _libFwd = { kind: 'album', album: _libActiveAlbum };
+    document.getElementById('bc-back')?.click();   // reuse the breadcrumb path
+  } else if (_libView === 'albums') {
+    _libFwd = { kind: 'artist', artist: _libActiveArtist };
+    const home = (_libArtistList || []).find(a => a.is_home_group);
+    if (home) _selectLibArtist(home, true);
+  }
+}
+function _libNavForward() {
+  if (!_libFwd) return;
+  if (_libFwd.kind === 'artist' && _libView === 'home') {
+    const a = _libFwd.artist; _libFwd = null;
+    if (a) _selectLibArtist(a, true);
+  } else if (_libFwd.kind === 'album' && _libView === 'albums') {
+    const alb = _libFwd.album; _libFwd = null;
+    if (alb) _openLibAlbum(alb);
+  }
+}
+// X1 = button 3 (back), X2 = button 4 (forward). Block the browser default on
+// these buttons everywhere, and drive the library when it's the active tab.
+document.addEventListener('mousedown', (e) => {
+  if (e.button === 3 || e.button === 4) e.preventDefault();
+});
+document.addEventListener('mouseup', (e) => {
+  if (e.button !== 3 && e.button !== 4) return;
+  e.preventDefault();
+  if (typeof activeTab !== 'undefined' && activeTab !== 'library') return;
+  if (e.button === 3) _libNavBack(); else _libNavForward();
+});
+
 // ── Album grid — owned + full discography ──────────────────────────────────
 let _libAlbumSort = 'az';   // az | za | tracks | recent
 function _sortAlbums(list) {
@@ -1591,6 +1630,7 @@ function _renderLibAlbums(ownedAlbums, discog) {
         card.classList.toggle('not-owned', !on);
         if (!addBtn) return;
         addBtn.classList.toggle('queued', on);
+        if (!on) addBtn.classList.remove('just-added');
         addBtn.innerHTML = on ? ICON.check : ICON.plus;
         addBtn.title     = on ? 'In queue — click to remove' : 'Add to queue';
         addBtn.style.opacity = on ? '1' : '';
@@ -1627,6 +1667,8 @@ function _renderLibAlbums(ownedAlbums, discog) {
           if (addBtn.classList.contains('queued')) addBtn.innerHTML = ICON.close;
         });
         addBtn.addEventListener('mouseleave', () => {
+          // Pointer left — re-arm the red "remove" affordance for the next hover.
+          addBtn.classList.remove('just-added');
           if (addBtn.classList.contains('queued')) addBtn.innerHTML = ICON.check;
         });
         addBtn.addEventListener('click', ev => {
@@ -1637,12 +1679,14 @@ function _renderLibAlbums(ownedAlbums, discog) {
             return;
           }
           _albAdd();
-          // Animate: button pop + card glow flash, then settle into queued state
+          // Animate: button pop + card glow flash, then settle into queued state.
+          // `just-added` keeps the settled green look (not the red remove state)
+          // while the cursor is still resting on the button after the click.
           addBtn.classList.add('popping');
           card.classList.add('queue-flash');
           addBtn.addEventListener('animationend', () => addBtn.classList.remove('popping'), { once: true });
           card.addEventListener('animationend', () => card.classList.remove('queue-flash'), { once: true });
-          setTimeout(() => _setAlbQueued(true), 220);
+          setTimeout(() => { _setAlbQueued(true); addBtn.classList.add('just-added'); }, 120);
         });
       }
       // Not-owned kebab menu — offer add or remove depending on current state
@@ -1938,11 +1982,19 @@ function _paintHomeRecs(el, recs) {
     </div>`).join('');
   el.querySelectorAll('.rec-add').forEach(btn => btn.addEventListener('click', (ev) => {
     ev.stopPropagation();
+    if (btn.classList.contains('queued')) return;        // already added
     const a = recs[+btn.dataset.ri]; if (!a) return;
     entries.push({ url: a.link || `https://www.deezer.com/album/${a.id}`, artist: a.artist,
       albumTitle: a.title, coverUrl: a.cover || null, nbTracks: a.nb_tracks || null });
     renderQueue();
-    btn.innerHTML = ICON.check; btn.disabled = true;
+    // Play the same pop + card-flash as the artist page (this shelf used to just
+    // swap the icon with no animation), then settle into the queued state.
+    const card = btn.closest('.lib-album-card');
+    btn.classList.add('popping');
+    if (card) card.classList.add('queue-flash');
+    btn.addEventListener('animationend', () => btn.classList.remove('popping'), { once: true });
+    if (card) card.addEventListener('animationend', () => card.classList.remove('queue-flash'), { once: true });
+    setTimeout(() => { btn.innerHTML = ICON.check; btn.classList.add('queued', 'just-added'); }, 120);
     _toast(`Queued "${a.title}" by ${a.artist}.`, 'success');
   }));
 }
