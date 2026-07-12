@@ -80,6 +80,11 @@ function openSettings() {
     // Auto-refresh library watcher (v1.11.0)
     const watchLib = document.getElementById('cfg-watch-library');
     if (watchLib) watchLib.checked = !!cfg.watch_library;
+    // Discord Rich Presence (v1.12.0)
+    const discordRp = document.getElementById('cfg-discord-rp');
+    if (discordRp) discordRp.checked = !!cfg.discord_rich_presence;
+    const discordId = document.getElementById('cfg-discord-client-id');
+    if (discordId) discordId.value = cfg.discord_client_id || '';
     _loadTgHealth();
     _syncScrobbleService();
     // Theme + notifications
@@ -170,6 +175,13 @@ function saveSettings() {
   // server (re)starts or stops the watcher thread when this key is present.
   const watchLibEl = document.getElementById('cfg-watch-library');
   if (watchLibEl) patch.watch_library = watchLibEl.checked;
+
+  // Discord Rich Presence — always sent so toggling off / clearing the id
+  // applies immediately (the server connects or disconnects on these keys).
+  const discordRpEl = document.getElementById('cfg-discord-rp');
+  if (discordRpEl) patch.discord_rich_presence = discordRpEl.checked;
+  const discordIdEl = document.getElementById('cfg-discord-client-id');
+  if (discordIdEl) patch.discord_client_id = discordIdEl.value.trim();
 
   // Theme
   const theme = document.getElementById('cfg-theme-light').checked ? 'light' : 'dark';
