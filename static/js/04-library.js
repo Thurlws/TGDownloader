@@ -1399,6 +1399,75 @@ document.addEventListener('mouseup', (e) => {
   if (e.button === 3) _libNavBack(); else _libNavForward();
 });
 
+// Shared "+" add-to-queue wiring for an album card. Used by BOTH the artist page
+// and the Recommended shelf so they behave identically — one source of truth.
+// `alb` is a normalised {id, url, artist, title, cover, nb_tracks}. On add: pop +
+// card flash, then the card drops `not-owned` (brightening the dimmed cover — the
+// "it's queued now" signal) and the button shows a check with a `just-added`
+// guard so it doesn't flash the red remove state under the resting cursor. A
+// queued album can be removed by clicking again (✕ on hover). Returns handles so
+// the kebab menu can drive the same add / remove / paint.
+function _wireAddButton(card, addBtn, alb, opts = {}) {
+  const url   = alb.url || `https://www.deezer.com/album/${alb.id}`;
+  const albId = String(alb.id || '');
+  if (albId) card.dataset.albumId = albId;
+
+  const _add = () => {
+    if (!entries.some(e => e.url === url)) {
+      entries.push({
+        url,
+        artist:     alb.artist || '',
+        albumTitle: alb.title || '',
+        coverUrl:   alb.cover || null,
+        nbTracks:   alb.nb_tracks || null,
+      });
+    }
+    if (albId) _libQueuedAlbumIds.add(albId);
+    renderQueue();
+    if (opts.onAdd) { try { opts.onAdd(); } catch (_) {} }
+  };
+  const _remove = () => {
+    for (let i = entries.length - 1; i >= 0; i--) {
+      if (entries[i].url === url) entries.splice(i, 1);
+    }
+    if (albId) _libQueuedAlbumIds.delete(albId);
+    renderQueue();
+  };
+  const _setQueued = (on) => {
+    card.classList.toggle('not-owned', !on);
+    if (!addBtn) return;
+    addBtn.classList.toggle('queued', on);
+    if (!on) addBtn.classList.remove('just-added');
+    addBtn.innerHTML = on ? ICON.check : ICON.plus;
+    addBtn.title     = on ? 'In queue — click to remove' : 'Add to queue';
+    addBtn.style.opacity = on ? '1' : '';
+    addBtn.style.pointerEvents = '';
+  };
+
+  if (albId && _libQueuedAlbumIds.has(albId)) _setQueued(true);
+
+  if (addBtn) {
+    addBtn.addEventListener('mouseenter', () => {
+      if (addBtn.classList.contains('queued')) addBtn.innerHTML = ICON.close;
+    });
+    addBtn.addEventListener('mouseleave', () => {
+      addBtn.classList.remove('just-added');   // re-arm the red remove affordance
+      if (addBtn.classList.contains('queued')) addBtn.innerHTML = ICON.check;
+    });
+    addBtn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      if (addBtn.classList.contains('queued')) { _remove(); _setQueued(false); return; }
+      _add();
+      addBtn.classList.add('popping');
+      card.classList.add('queue-flash');
+      addBtn.addEventListener('animationend', () => addBtn.classList.remove('popping'), { once: true });
+      card.addEventListener('animationend', () => card.classList.remove('queue-flash'), { once: true });
+      setTimeout(() => { _setQueued(true); addBtn.classList.add('just-added'); }, 120);
+    });
+  }
+  return { add: _add, remove: _remove, setQueued: _setQueued, url };
+}
+
 // ── Album grid — owned + full discography ──────────────────────────────────
 let _libAlbumSort = 'az';   // az | za | tracks | recent
 function _sortAlbums(list) {
@@ -1616,87 +1685,25 @@ function _renderLibAlbums(ownedAlbums, discog) {
       // Drag to reorder owned albums
       _attachAlbumDrag(card, alb, () => card.closest('.lib-album-grid'));
     } else {
-      // Not-owned: + button toggles the album in/out of the download queue
+      // Not-owned: + button toggles the album in/out of the download queue —
+      // shared logic with the Recommended shelf (see _wireAddButton).
       const addBtn = card.querySelector('.lib-add-btn');
-      const _thisAlbId = String(alb.id || '');
-      if (_thisAlbId) card.dataset.albumId = _thisAlbId;
-      const deezerUrl  = `https://www.deezer.com/album/${alb.id}`;
-      const artistName = _libActiveArtist?.name || alb.artist_name || '';
-
-      // Paint the card's queued / not-queued state. The button stays clickable
-      // in both states so the album can be deselected right here, without
-      // having to open the Log tab and remove it from the queue manually.
-      const _setAlbQueued = (on) => {
-        card.classList.toggle('not-owned', !on);
-        if (!addBtn) return;
-        addBtn.classList.toggle('queued', on);
-        if (!on) addBtn.classList.remove('just-added');
-        addBtn.innerHTML = on ? ICON.check : ICON.plus;
-        addBtn.title     = on ? 'In queue — click to remove' : 'Add to queue';
-        addBtn.style.opacity = on ? '1' : '';
-        addBtn.style.pointerEvents = '';
-      };
-
-      const _albAdd = () => {
-        if (!entries.some(e => e.url === deezerUrl)) {
-          entries.push({
-            url:        deezerUrl,
-            artist:     artistName,
-            albumTitle: alb.title || alb.album || '',
-            coverUrl:   alb.cover_medium || alb.cover_small || null,
-            nbTracks:   alb.nb_tracks || null,
-          });
-        }
-        if (_thisAlbId) _libQueuedAlbumIds.add(_thisAlbId);
-        renderQueue();
-      };
-      const _albRemove = () => {
-        for (let i = entries.length - 1; i >= 0; i--) {
-          if (entries[i].url === deezerUrl) entries.splice(i, 1);
-        }
-        if (_thisAlbId) _libQueuedAlbumIds.delete(_thisAlbId);
-        renderQueue();
-      };
-
-      // Restore queued state if this album was already added earlier this session
-      if (_thisAlbId && _libQueuedAlbumIds.has(_thisAlbId)) _setAlbQueued(true);
-
-      if (addBtn) {
-        // When already queued, reveal an ✕ on hover to signal "click to remove"
-        addBtn.addEventListener('mouseenter', () => {
-          if (addBtn.classList.contains('queued')) addBtn.innerHTML = ICON.close;
-        });
-        addBtn.addEventListener('mouseleave', () => {
-          // Pointer left — re-arm the red "remove" affordance for the next hover.
-          addBtn.classList.remove('just-added');
-          if (addBtn.classList.contains('queued')) addBtn.innerHTML = ICON.check;
-        });
-        addBtn.addEventListener('click', ev => {
-          ev.stopPropagation();
-          if (addBtn.classList.contains('queued')) {   // deselect
-            _albRemove();
-            _setAlbQueued(false);
-            return;
-          }
-          _albAdd();
-          // Animate: button pop + card glow flash, then settle into queued state.
-          // `just-added` keeps the settled green look (not the red remove state)
-          // while the cursor is still resting on the button after the click.
-          addBtn.classList.add('popping');
-          card.classList.add('queue-flash');
-          addBtn.addEventListener('animationend', () => addBtn.classList.remove('popping'), { once: true });
-          card.addEventListener('animationend', () => card.classList.remove('queue-flash'), { once: true });
-          setTimeout(() => { _setAlbQueued(true); addBtn.classList.add('just-added'); }, 120);
-        });
-      }
+      const _h = _wireAddButton(card, addBtn, {
+        id:        alb.id,
+        url:       `https://www.deezer.com/album/${alb.id}`,
+        artist:    _libActiveArtist?.name || alb.artist_name || '',
+        title:     alb.title || alb.album || '',
+        cover:     alb.cover_medium || alb.cover_small || null,
+        nb_tracks: alb.nb_tracks || null,
+      });
       // Not-owned kebab menu — offer add or remove depending on current state
       if (kb) kb.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        const queued = entries.some(e => e.url === deezerUrl);
+        const queued = entries.some(e => e.url === _h.url);
         openKebabMenu(ev.currentTarget, [
           queued
-            ? { label: 'Remove from queue', icon: ICON.close, action: () => { _albRemove();  _setAlbQueued(false); } }
-            : { label: 'Add to queue',      icon: ICON.plus,  action: () => { _albAdd();     _setAlbQueued(true);  } },
+            ? { label: 'Remove from queue', icon: ICON.close, action: () => { _h.remove(); _h.setQueued(false); } }
+            : { label: 'Add to queue',      icon: ICON.plus,  action: () => { _h.add();    _h.setQueued(true);  } },
         ]);
       });
     }
@@ -1980,23 +1987,18 @@ function _paintHomeRecs(el, recs) {
         <div class="lib-album-artist" title="${escHtml(a.artist)}">${escHtml(a.artist)}</div>
       </div>
     </div>`).join('');
-  el.querySelectorAll('.rec-add').forEach(btn => btn.addEventListener('click', (ev) => {
-    ev.stopPropagation();
-    if (btn.classList.contains('queued')) return;        // already added
-    const a = recs[+btn.dataset.ri]; if (!a) return;
-    entries.push({ url: a.link || `https://www.deezer.com/album/${a.id}`, artist: a.artist,
-      albumTitle: a.title, coverUrl: a.cover || null, nbTracks: a.nb_tracks || null });
-    renderQueue();
-    // Play the same pop + card-flash as the artist page (this shelf used to just
-    // swap the icon with no animation), then settle into the queued state.
-    const card = btn.closest('.lib-album-card');
-    btn.classList.add('popping');
-    if (card) card.classList.add('queue-flash');
-    btn.addEventListener('animationend', () => btn.classList.remove('popping'), { once: true });
-    if (card) card.addEventListener('animationend', () => card.classList.remove('queue-flash'), { once: true });
-    setTimeout(() => { btn.innerHTML = ICON.check; btn.classList.add('queued', 'just-added'); }, 120);
-    _toast(`Queued "${a.title}" by ${a.artist}.`, 'success');
-  }));
+  // Identical add behaviour to the artist page — one shared code path.
+  el.querySelectorAll('.lib-album-card').forEach(card => {
+    const a = recs[+card.dataset.ri]; if (!a) return;
+    _wireAddButton(card, card.querySelector('.rec-add'), {
+      id:        a.id,
+      url:       a.link || `https://www.deezer.com/album/${a.id}`,
+      artist:    a.artist,
+      title:     a.title,
+      cover:     a.cover || null,
+      nb_tracks: a.nb_tracks || null,
+    }, { onAdd: () => _toast(`Queued "${a.title}" by ${a.artist}.`, 'success') });
+  });
 }
 
 // ── Open album → track list ────────────────────────────────────────────────
