@@ -85,6 +85,12 @@ function openSettings() {
     if (discordRp) discordRp.checked = !!cfg.discord_rich_presence;
     const discordId = document.getElementById('cfg-discord-client-id');
     if (discordId) discordId.value = cfg.discord_client_id || '';
+    // Download pipeline (v1.13.0)
+    const botFailover = document.getElementById('cfg-bot-failover');
+    if (botFailover) botFailover.value = Array.isArray(cfg.bot_failover)
+      ? cfg.bot_failover.join('\n') : (cfg.bot_failover || '');
+    const bwCap = document.getElementById('cfg-bandwidth');
+    if (bwCap) bwCap.value = cfg.bandwidth_limit_kbps || '';
     _loadTgHealth();
     _syncScrobbleService();
     // Theme + notifications
@@ -182,6 +188,15 @@ function saveSettings() {
   if (discordRpEl) patch.discord_rich_presence = discordRpEl.checked;
   const discordIdEl = document.getElementById('cfg-discord-client-id');
   if (discordIdEl) patch.discord_client_id = discordIdEl.value.trim();
+
+  // Download pipeline (v1.13.0) — always sent so clearing them takes effect.
+  const botFailoverEl = document.getElementById('cfg-bot-failover');
+  if (botFailoverEl) patch.bot_failover = botFailoverEl.value.trim();
+  const bwCapEl = document.getElementById('cfg-bandwidth');
+  if (bwCapEl) {
+    const bw = parseInt(bwCapEl.value, 10);
+    patch.bandwidth_limit_kbps = (isNaN(bw) || bw < 0) ? 0 : bw;
+  }
 
   // Theme
   const theme = document.getElementById('cfg-theme-light').checked ? 'light' : 'dark';
