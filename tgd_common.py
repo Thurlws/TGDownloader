@@ -52,7 +52,7 @@ import shutil
 import sys
 from pathlib import Path
 
-__version__ = "1.16.0"   # single source — bump this when you cut a new release
+__version__ = "1.17.0"   # single source — bump this when you cut a new release
 
 logger = logging.getLogger("tgd_common")
 
@@ -112,6 +112,15 @@ DEFAULT_CONFIG: dict = {
     # "{status}" / "{url}" placeholders are substituted; with no placeholder
     # the destination folder is appended as a quoted argument.  Empty = off.
     "post_download_command":   "",
+    # ── File / folder naming (v1.17.0; applies to NEW downloads only) ──
+    # file_naming_template renames tracks on sort from their tags.  Empty (the
+    # default) keeps the original filename — i.e. unchanged behaviour.  Fields:
+    # {track} {track2} {disc} {disc2} {title} {artist} {albumartist} {album} {year}.
+    "file_naming_template":    "",
+    # multidisc_mode: how albums that span more than one disc are laid out.
+    # "off" = one folder (default) · "subfolders" = Disc N/ subfolders ·
+    # "prefix" = prefix each filename with its disc number.
+    "multidisc_mode":          "off",
     # ── UI preferences ──
     "theme":                   "dark",   # "dark" | "light"
     # ── Secrets storage: keep tokens in the OS keyring instead of the JSON
