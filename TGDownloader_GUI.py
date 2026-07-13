@@ -59,6 +59,7 @@ from socketserver import ThreadingMixIn
 from urllib.parse import urlparse, quote as url_quote, unquote_plus
 
 import tgd_common
+import tgd_store
 
 
 # ── App-window launcher ───────────────────────────────────────────────────────
@@ -2490,22 +2491,12 @@ def _liked_key(path_hash: str, name: str) -> str:
 def _load_liked() -> "list[dict]":
     """Return the persisted list of liked songs (newest first). Each entry:
     {path_hash, name, title, artist, album, cover_url, added}."""
-    try:
-        if LIKED_SONGS_FILE.exists():
-            data = json.loads(LIKED_SONGS_FILE.read_text(encoding="utf-8"))
-            if isinstance(data, list):
-                return data
-    except Exception as exc:
-        logger.debug("Could not read liked songs: %s", exc)
-    return []
+    data = tgd_store.get_json("liked_songs", [], LIKED_SONGS_FILE)
+    return data if isinstance(data, list) else []
 
 
 def _save_liked(items: "list[dict]") -> None:
-    try:
-        LIKED_SONGS_FILE.write_text(
-            json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception as exc:
-        logger.debug("Could not write liked songs: %s", exc)
+    tgd_store.set_json("liked_songs", items)
 
 
 def _toggle_liked(entry: dict) -> dict:
@@ -2550,24 +2541,29 @@ RATINGS_FILE = DATA_DIR / "ratings.json"
 
 def _load_ratings(path: "Path | None" = None) -> dict:
     """{key: {rating, title, artist, album, updated}} where key is the same
-    path_hash + NUL + filename compound used for liked songs."""
-    p = path or RATINGS_FILE
-    try:
-        if p.exists():
-            data = json.loads(p.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                return data
-    except Exception as exc:
-        logger.debug("Could not read ratings: %s", exc)
-    return {}
+    path_hash + NUL + filename compound used for liked songs. Stored in SQLite;
+    an explicit `path` still reads a JSON file (tests / legacy)."""
+    if path is not None:
+        try:
+            if path.exists():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    return data
+        except Exception as exc:
+            logger.debug("Could not read ratings: %s", exc)
+        return {}
+    data = tgd_store.get_json("ratings", {}, RATINGS_FILE)
+    return data if isinstance(data, dict) else {}
 
 
 def _save_ratings(data: dict, path: "Path | None" = None) -> None:
-    try:
-        (path or RATINGS_FILE).write_text(
-            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception as exc:
-        logger.debug("Could not write ratings: %s", exc)
+    if path is not None:
+        try:
+            path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception as exc:
+            logger.debug("Could not write ratings: %s", exc)
+        return
+    tgd_store.set_json("ratings", data)
 
 
 def _set_rating(entry: dict, path: "Path | None" = None) -> dict:
@@ -2609,22 +2605,12 @@ WATCHLIST_FILE = DATA_DIR / "watchlist.json"   # {artist_id: {...}}
 
 def _load_watchlist() -> dict:
     """Return {artist_id: {name, cover_url, added, last_checked, known_album_ids}}."""
-    try:
-        if WATCHLIST_FILE.exists():
-            data = json.loads(WATCHLIST_FILE.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                return data
-    except Exception as exc:
-        logger.debug("Could not read watchlist: %s", exc)
-    return {}
+    data = tgd_store.get_json("watchlist", {}, WATCHLIST_FILE)
+    return data if isinstance(data, dict) else {}
 
 
 def _save_watchlist(data: dict) -> None:
-    try:
-        WATCHLIST_FILE.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    except Exception as exc:
-        logger.debug("Could not write watchlist: %s", exc)
+    tgd_store.set_json("watchlist", data)
 
 
 def _fetch_artist_albums(artist_id: str) -> "list[dict]":
@@ -3459,13 +3445,16 @@ def _record_play_event(meta: dict, path: "Path | None" = None) -> bool:
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "title": title, "artist": artist, "album": album,
     }
-    with open(path or PLAY_HISTORY_FILE, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    if path is not None:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    else:
+        tgd_store.append_play_event(entry)
     return True
 
 
-def _load_play_events(path: "Path | None" = None) -> "list[dict]":
-    p = path or PLAY_HISTORY_FILE
+def _read_play_events_file(p: "Path") -> "list[dict]":
+    """Parse a play-history .jsonl file (tolerating a torn final line)."""
     events: "list[dict]" = []
     if not p.exists():
         return events
@@ -3480,9 +3469,18 @@ def _load_play_events(path: "Path | None" = None) -> "list[dict]":
                     if isinstance(ev, dict):
                         events.append(ev)
                 except Exception:
-                    continue        # tolerate a torn final line
+                    continue
     except Exception as exc:
         logger.warning("Could not read play history: %s", exc)
+    return events
+
+
+def _load_play_events(path: "Path | None" = None) -> "list[dict]":
+    if path is not None:
+        return _read_play_events_file(path)
+    events = tgd_store.read_play_events()
+    if not events:      # not migrated yet / empty DB — fall back to the legacy file
+        events = _read_play_events_file(PLAY_HISTORY_FILE)
     return events
 
 
@@ -4698,15 +4696,26 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/backup":
             import io, zipfile
             buf = io.BytesIO()
-            state_files = ["liked_songs.json", "watchlist.json",
-                           "tg_sessions.json", "album_id_cache.json",
-                           "ratings.json"]
+            # Still plain files on disk:
+            state_files = ["tg_sessions.json", "album_id_cache.json"]
+            # Now in SQLite — emit them under their legacy filenames so the backup
+            # format (and older backups) stay compatible.
+            store_files = {"liked_songs.json": "liked_songs",
+                           "watchlist.json":   "watchlist",
+                           "ratings.json":     "ratings"}
             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
                 for name in state_files:
                     fp = DATA_DIR / name
                     if fp.exists():
                         try:
                             zf.writestr(name, fp.read_bytes())
+                        except Exception:
+                            pass
+                for name, key in store_files.items():
+                    obj = tgd_store.get_json(key, None, DATA_DIR / name)
+                    if obj is not None:
+                        try:
+                            zf.writestr(name, json.dumps(obj, ensure_ascii=False, indent=2))
                         except Exception:
                             pass
                 # Drop credentials from the archived config copy
@@ -6199,6 +6208,10 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._send_json(400, {"error": f"Not a valid backup zip: {exc}"})
                 return
+            # Basenames now living in SQLite → import into the store, not a file.
+            _restore_store_keys = {"ratings.json": "ratings",
+                                   "liked_songs.json": "liked_songs",
+                                   "watchlist.json": "watchlist"}
             restored: "list[str]" = []
             try:
                 for base, data_bytes in accepted.items():
@@ -6211,6 +6224,9 @@ class Handler(BaseHTTPRequestHandler):
                         cfg = tgd_common.load_config()
                         cfg.update(incoming)
                         tgd_common.save_config(cfg)
+                    elif base in _restore_store_keys:
+                        tgd_store.set_json(_restore_store_keys[base],
+                                           json.loads(data_bytes.decode("utf-8")))
                     else:
                         (DATA_DIR / base).write_bytes(data_bytes)
                     restored.append(base)
@@ -6418,6 +6434,13 @@ def main():
         tgd_common.migrate_session_to_keyring()
     except Exception as exc:
         logger.debug("Session keyring migration skipped: %s", exc)
+
+    # One-time, non-destructive import of the legacy JSON state files into SQLite
+    # (ratings / liked songs / watchlist / play history). Originals kept as .bak.
+    try:
+        tgd_store.migrate()
+    except Exception as exc:
+        logger.warning("State-store migration skipped: %s", exc)
 
     # ── Single-instance guard ─────────────────────────────────────────────
     # We bind a private "lock" port.  If it's already taken, another instance
