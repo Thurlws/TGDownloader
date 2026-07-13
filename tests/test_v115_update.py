@@ -1,4 +1,4 @@
-"""Tests for the self-update apply helpers (v1.15.0).
+"""Tests for the self-update apply helpers.
 
 Covers the pure/testable pieces — staging a release zip (with zip-slip and
 shape guards), the download validator, the swap-script generation, and the

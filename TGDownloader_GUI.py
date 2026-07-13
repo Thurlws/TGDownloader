@@ -286,7 +286,7 @@ def _check_for_update(force: bool = False) -> dict:
     latest_tag = (rel.get("tag_name") or rel.get("name") or "").strip()
     available  = _parse_version(latest_tag) > _parse_version(APP_VERSION)
     # The built Windows zip: release.yml attaches exactly one .zip per release.
-    # Grab its size too so the apply step can sanity-check the download (v1.15.0).
+    # Grab its size too so the apply step can sanity-check the download.
     zip_asset = next(
         (a for a in (rel.get("assets") or [])
          if str(a.get("name", "")).lower().endswith(".zip")), {})
@@ -774,7 +774,7 @@ def _save_sessions(data: dict) -> None:
 #  PROCESS MANAGER
 # ══════════════════════════════════════════════
 
-# ── Telegram flood-wait health (v1.8.0) ───────────────────────────────────────
+# ── Telegram flood-wait health ───────────────────────────────────────
 # The backend logs "⏳ Flood-wait Ns for <file> (attempt …" when Telegram
 # rate-limits DC auth; the stdout relay below records them so /telegram-health
 # can show how often the account is being throttled.
@@ -983,7 +983,7 @@ SERVER: "Server | None" = None
 
 
 # ══════════════════════════════════════════════
-#  SCHEDULED QUEUE RUN  (v1.9.0 — one pending schedule, in-memory)
+#  SCHEDULED QUEUE RUN  (one pending schedule, in-memory)
 # ══════════════════════════════════════════════
 
 def _build_backend_stdin(entries: list) -> str:
@@ -2211,7 +2211,7 @@ def _last_played_map(events: "list[dict]") -> dict:
 def _create_smart_playlist(home_path: Path, name: str, opts: dict) -> dict:
     """Materialise a playlist folder from rule-based filters over the library:
     format / genre / artist substrings, "added within N days", "min star
-    rating", "not played in N days" (v1.7.0), "BPM range" (v1.11.0 — needs a
+    rating", "not played in N days", "BPM range" (needs a
     Tempo Analysis scan), sort + limit."""
     import shutil, time
 
@@ -2533,7 +2533,7 @@ def _toggle_liked(entry: dict) -> dict:
 
 
 # ══════════════════════════════════════════════
-#  STAR RATINGS  (v1.7.0 — same keying as liked songs, feeds smart playlists)
+#  STAR RATINGS  (same keying as liked songs, feeds smart playlists)
 # ══════════════════════════════════════════════
 
 RATINGS_FILE = DATA_DIR / "ratings.json"
@@ -3806,7 +3806,7 @@ def _bpm_scan(limit: int = 40) -> dict:
 
 
 # ══════════════════════════════════════════════
-#  LIBRARY INTELLIGENCE  (v1.6.0)
+#  LIBRARY INTELLIGENCE
 # ══════════════════════════════════════════════
 
 _AUDIO_EXT = {".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac",
@@ -3915,7 +3915,7 @@ def _tag_janitor(apply: bool = False, limit: int = 500,
                     fixes["albumartist"] = artist_folder
             except (ValueError, IndexError):
                 pass
-        # Release year from Deezer for files with no date tag (v1.7.0, opt-in)
+        # Release year from Deezer for files with no date tag (opt-in)
         if fill_year and not (audio.get("date") or [""])[0]:
             album_dir = p.parent
             if album_dir not in year_cache and year_lookups < _YEAR_LOOKUP_CAP:
@@ -4251,7 +4251,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(content)
             return
 
-        # PWA manifest + service worker (v1.10.0). The SW must be served from
+        # PWA manifest + service worker. The SW must be served from
         # the root so its scope covers the whole app.
         if path in ("/manifest.webmanifest", "/sw.js"):
             fname = "manifest.webmanifest" if path.endswith("webmanifest") else "sw.js"
@@ -4829,19 +4829,19 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, _aggregate_play_stats(_load_play_events()))
             return
 
-        # ── Scheduled queue run status (v1.9.0) ───────────────────────────
+        # ── Scheduled queue run status ───────────────────────────
         if path == "/schedule-queue":
             self._send_json(200, _schedule_status())
             return
 
-        # ── Telegram flood-wait health (v1.8.0) ───────────────────────────
+        # ── Telegram flood-wait health ───────────────────────────
         if path == "/telegram-health":
             data = _flood_health()
             data["backend_running"] = MANAGER.is_running()
             self._send_json(200, data)
             return
 
-        # ── Export debug bundle (v1.8.0) ──────────────────────────────────
+        # ── Export debug bundle ──────────────────────────────────
         if path == "/debug-bundle":
             import io as _io
             import platform as _platform
@@ -4894,14 +4894,14 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             return
 
-        # ── Star ratings map for the library UI (v1.7.0) ──────────────────
+        # ── Star ratings map for the library UI ──────────────────
         if path == "/ratings":
             items = _load_ratings()
             self._send_json(200, {"ratings": {k: v.get("rating", 0)
                                               for k, v in items.items()}})
             return
 
-        # ── Browsable listening history (v1.7.0) ──────────────────────────
+        # ── Browsable listening history ──────────────────────────
         if path == "/play-history":
             qs = urlparse(self.path).query
             params = dict(part.split("=", 1) for part in qs.split("&") if "=" in part)
@@ -4914,7 +4914,7 @@ class Handler(BaseHTTPRequestHandler):
                                                      q=q, limit=limit, offset=offset))
             return
 
-        # ── Year-end Wrapped summary (v1.7.0) ─────────────────────────────
+        # ── Year-end Wrapped summary ─────────────────────────────
         if path == "/wrapped":
             qs = urlparse(self.path).query
             params = dict(part.split("=", 1) for part in qs.split("&") if "=" in part)
@@ -5965,7 +5965,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": str(exc)})
             return
 
-        # ── Schedule / cancel a queue run (v1.9.0) ────────────────────────
+        # ── Schedule / cancel a queue run ────────────────────────
         if path == "/schedule-queue":
             try:
                 result = _schedule_set(float(body.get("at") or 0),
@@ -5981,7 +5981,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, _schedule_cancel())
             return
 
-        # ── Set a track's star rating (v1.7.0) ────────────────────────────
+        # ── Set a track's star rating ────────────────────────────
         if path == "/rate":
             try:
                 result = _set_rating(body or {})
@@ -6258,7 +6258,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": str(exc)})
             return
 
-        # ── Library intelligence (v1.6.0) ─────────────────────────────────
+        # ── Library intelligence ─────────────────────────────────
         if path == "/tag-janitor":
             try:
                 result = _tag_janitor(apply=bool(body.get("apply")),

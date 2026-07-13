@@ -2323,7 +2323,7 @@
   .lib-track-like:hover { opacity: 1 !important; color: var(--fg); }
   .lib-track-like.liked { opacity: 1; color: var(--accent); }
   .lib-track-like svg { width: 13px; height: 13px; display: block; }
-  /* Star rating badge shown next to the track title when rated (v1.7.0) */
+  /* Star rating badge shown next to the track title when rated */
   .lib-track-stars {
     color: var(--accent); font-size: 9px; letter-spacing: 1px;
     margin-left: 6px; white-space: nowrap; flex-shrink: 0;

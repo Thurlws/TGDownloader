@@ -444,8 +444,8 @@ async function _checkForUpdate(force = false) {
     if (status)  status.textContent = `Update available: v${data.latest} (you have v${data.current})`;
     if (aboutS)  { aboutS.innerHTML = `<a href="#" id="about-update-link" style="color:var(--accent)">Update available: v${data.latest} ↗</a>`;
                    document.getElementById('about-update-link')?.addEventListener('click', (e) => { e.preventDefault(); _openReleasePage(); }); }
-    // Packaged Windows app installs in place and restarts (v1.15.0); everywhere
-    // else falls back to opening the zip for a manual folder replace (v1.8.0).
+    // Packaged Windows app installs in place and restarts; everywhere
+    // else falls back to opening the zip for a manual folder replace.
     const canApply = data.can_apply && data.download_url;
     if (instBtn) { instBtn.style.display = canApply ? '' : 'none';
                    instBtn.textContent = `Install v${data.latest} & restart`; }

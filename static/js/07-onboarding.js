@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════
-//  ONBOARDING TOUR  (v1.10.0)
+//  ONBOARDING TOUR
 //  A first-run guided spotlight over the core workflow. Self-contained and
 //  loaded last, so it may safely reference anything from earlier modules and
 //  nothing references it (no load-order landmines — see the v1.9.1 fix).

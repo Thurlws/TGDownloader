@@ -1,4 +1,4 @@
-// TGDownloader service worker (v1.10.0).
+// TGDownloader service worker.
 // Its only job is to exist so the app satisfies PWA install criteria and can be
 // added to a phone home screen. It deliberately does NO caching: the app is a
 // live localhost server that talks to a local backend, so a cached shell could

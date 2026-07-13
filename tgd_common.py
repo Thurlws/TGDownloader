@@ -95,7 +95,7 @@ DEFAULT_CONFIG: dict = {
     # Analyze + tag loudness (REPLAYGAIN_TRACK_GAIN) on every new download.
     # Off by default: adds one ffmpeg decode pass per file.
     "replaygain_on_download":  False,
-    # AcoustID fingerprinting (v1.6.0) — optional; needs Chromaprint's fpcalc
+    # AcoustID fingerprinting — optional; needs Chromaprint's fpcalc
     # binary on PATH and a free API key from https://acoustid.org/.
     "acoustid_api_key":        "",
     # ── Scrobbling (opt-in; off unless a token/key is provided) ──
@@ -107,12 +107,12 @@ DEFAULT_CONFIG: dict = {
     "lastfm_session_key":      "",
     # ── Artist watchlist / new-release radar ──
     "watchlist_autocheck":     True,
-    # ── Post-download user hook (v1.8.0) ──
+    # ── Post-download user hook ──
     # Command run after each finished queue entry.  "{folder}" / "{artist}" /
     # "{status}" / "{url}" placeholders are substituted; with no placeholder
     # the destination folder is appended as a quoted argument.  Empty = off.
     "post_download_command":   "",
-    # ── File / folder naming (v1.17.0; applies to NEW downloads only) ──
+    # ── File / folder naming (applies to NEW downloads only) ──
     # file_naming_template renames tracks on sort from their tags.  Empty (the
     # default) keeps the original filename — i.e. unchanged behaviour.  Fields:
     # {track} {track2} {disc} {disc2} {title} {artist} {albumartist} {album} {year}.

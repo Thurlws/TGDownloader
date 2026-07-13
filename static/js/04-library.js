@@ -145,7 +145,7 @@ async function _toggleLike(track, alb) {
   }
 }
 
-// ── Star ratings (v1.7.0) ────────────────────────────────────────────────────
+// ── Star ratings ────────────────────────────────────────────────────
 let _ratingsMap = new Map();       // "path_hash\x00name" → 1..5
 
 async function _loadRatings() {
@@ -1818,7 +1818,7 @@ async function _renderHomeView() {
     </div>`;
   };
 
-  // Recently added shelf (v1.7.0): album-folder mtime, so folder imports and
+  // Recently added shelf: album-folder mtime, so folder imports and
   // manual copies surface here too — not just bot downloads.
   const addedRecently = regularAlbums
     .filter(a => a.mtime)
@@ -1924,7 +1924,7 @@ async function _renderHomeView() {
     });
   });
 
-  // Recently-added shelf cards → open that album (v1.7.0)
+  // Recently-added shelf cards → open that album
   content.querySelectorAll('.home-added-card').forEach(el => {
     el.addEventListener('click', () => {
       const a = addedRecently[+el.dataset.ai];
@@ -1937,7 +1937,7 @@ async function _renderHomeView() {
   document.getElementById('btn-home-surprise')?.addEventListener('click', _libSurpriseMe);
 }
 
-// ── Surprise me: open a random album from the library (v1.7.0) ──────────────
+// ── Surprise me: open a random album from the library ──────────────
 function _libSurpriseMe() {
   const pool = (_libAllAlbums || []).filter(a => !a.is_playlist);
   if (!pool.length) { _toast('No albums in your library yet.', 'info'); return; }
@@ -2106,7 +2106,7 @@ function _refreshTrackHearts(tracks, alb) {
   });
 }
 
-// Repaint the star-rating badges in the visible track rows (v1.7.0)
+// Repaint the star-rating badges in the visible track rows
 function _refreshTrackStars(tracks, alb) {
   document.querySelectorAll('.lib-track-row').forEach(r => {
     const t = tracks[+r.dataset.idx];
@@ -2178,7 +2178,7 @@ function _openTrackCtx(rowEl, tracks, alb, opts, point) {
       } });
   }
 
-  // ── Star rating (v1.7.0): 1–5 submenu + clear ──
+  // ── Star rating: 1–5 submenu + clear ──
   {
     const current = n === 1 ? _trackRating(selTracks[0], alb) : 0;
     items.push({

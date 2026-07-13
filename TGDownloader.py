@@ -474,7 +474,7 @@ def _emit_result(
 
 
 # ═════════════════════════════════════════════
-#  POST-DOWNLOAD USER HOOK  (v1.8.0)
+#  POST-DOWNLOAD USER HOOK
 # ═════════════════════════════════════════════
 
 def _format_hook_command(cmd: str, dest: "Path | str", artist: str,

@@ -1,4 +1,4 @@
-"""Tests for the SQLite state store (v1.18.0).
+"""Tests for the SQLite state store.
 
 Covers the KV round-trip + file fallback, the play-events table, and the one-time
 non-destructive migration from the legacy JSON/JSONL files.
