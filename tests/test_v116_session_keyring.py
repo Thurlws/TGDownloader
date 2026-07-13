@@ -1,4 +1,4 @@
-"""Tests for opt-in Telegram-session keyring storage (v1.16.0).
+"""Tests for opt-in Telegram-session keyring storage.
 
 The session helpers live in tgd_common so both processes share them. These use a
 fake in-memory keyring and a synthetic Telethon SQLite session; no real Telegram.

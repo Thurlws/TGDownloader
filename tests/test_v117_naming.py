@@ -1,4 +1,4 @@
-"""Tests for folder/file naming templates + multi-disc handling (v1.17.0).
+"""Tests for folder/file naming templates + multi-disc handling.
 
 The defaults (empty template, multidisc "off") must reproduce the original sort
 behaviour exactly; the opt-in modes rename files and lay out discs.

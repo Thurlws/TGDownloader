@@ -1,4 +1,4 @@
-"""Tests for the JSON-lines backend protocol (v1.14.0).
+"""Tests for the JSON-lines backend protocol.
 
 The backend writes one JSON object per stdout line; the GUI parses it back.
 These cover the GUI-side parser's accept/reject rules and the backend's raw

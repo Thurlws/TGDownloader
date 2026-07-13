@@ -488,7 +488,6 @@ function _mpPlayTrack(idx, alb, autoplay = true) {
   if (_c) _c.textContent = '0:00';
   if (_t) _t.textContent = '0:00';
 
-  // Show player
   document.getElementById('mini-player').classList.remove('hidden');
 
   // Cover — per-file embedded art (playlists carry a collage folder cover)

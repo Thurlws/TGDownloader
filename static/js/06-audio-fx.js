@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════
-//  AUDIO FX  (v1.5.0)
+//  AUDIO FX
 //  WebAudio EQ + visualizer + ReplayGain application, crossfade engine,
 //  per-track resume for long files, waveform seekbar, karaoke mode,
 //  synced-lyrics .lrc export.

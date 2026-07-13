@@ -1262,7 +1262,7 @@ function renderStats() {
 }
 
 // ═══════════════════════════════════════
-//  WRAPPED + LISTENING HISTORY  (v1.7.0)
+//  WRAPPED + LISTENING HISTORY
 // ═══════════════════════════════════════
 async function openWrapped(year) {
   document.getElementById('wrapped-overlay')?.classList.add('open');
@@ -1566,7 +1566,7 @@ function retryAllFailed() {
 
 
 // ═══════════════════════════════════════
-//  SCHEDULED QUEUE RUN  (v1.9.0)
+//  SCHEDULED QUEUE RUN
 // ═══════════════════════════════════════
 async function _refreshScheduleBanner() {
   const el = document.getElementById('schedule-banner');

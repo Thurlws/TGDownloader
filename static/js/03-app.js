@@ -74,24 +74,24 @@ function openSettings() {
     // Spotify search API credentials
     document.getElementById('cfg-spotify-id').value         = cfg.spotify_client_id || '';
     document.getElementById('cfg-spotify-secret').value     = cfg.spotify_client_secret || '';
-    // Post-download hook (v1.8.0)
+    // Post-download hook
     const postCmd = document.getElementById('cfg-post-cmd');
     if (postCmd) postCmd.value = cfg.post_download_command || '';
-    // Auto-refresh library watcher (v1.11.0)
+    // Auto-refresh library watcher
     const watchLib = document.getElementById('cfg-watch-library');
     if (watchLib) watchLib.checked = !!cfg.watch_library;
-    // Discord Rich Presence (v1.12.0)
+    // Discord Rich Presence
     const discordRp = document.getElementById('cfg-discord-rp');
     if (discordRp) discordRp.checked = !!cfg.discord_rich_presence;
     const discordId = document.getElementById('cfg-discord-client-id');
     if (discordId) discordId.value = cfg.discord_client_id || '';
-    // Download pipeline (v1.13.0)
+    // Download pipeline
     const botFailover = document.getElementById('cfg-bot-failover');
     if (botFailover) botFailover.value = Array.isArray(cfg.bot_failover)
       ? cfg.bot_failover.join('\n') : (cfg.bot_failover || '');
     const bwCap = document.getElementById('cfg-bandwidth');
     if (bwCap) bwCap.value = cfg.bandwidth_limit_kbps || '';
-    // File naming template + multi-disc layout (v1.17.0)
+    // File naming template + multi-disc layout
     const fileTpl = document.getElementById('cfg-file-template');
     if (fileTpl) fileTpl.value = cfg.file_naming_template || '';
     const multidisc = document.getElementById('cfg-multidisc');
@@ -111,7 +111,7 @@ function openSettings() {
   });
 }
 
-// Telegram flood-wait health block on the Connection panel (v1.8.0)
+// Telegram flood-wait health block on the Connection panel
 async function _loadTgHealth() {
   const el = document.getElementById('tg-health');
   if (!el) return;
@@ -194,7 +194,7 @@ function saveSettings() {
   const discordIdEl = document.getElementById('cfg-discord-client-id');
   if (discordIdEl) patch.discord_client_id = discordIdEl.value.trim();
 
-  // Download pipeline (v1.13.0) — always sent so clearing them takes effect.
+  // Download pipeline — always sent so clearing them takes effect.
   const botFailoverEl = document.getElementById('cfg-bot-failover');
   if (botFailoverEl) patch.bot_failover = botFailoverEl.value.trim();
   const bwCapEl = document.getElementById('cfg-bandwidth');
@@ -203,7 +203,7 @@ function saveSettings() {
     patch.bandwidth_limit_kbps = (isNaN(bw) || bw < 0) ? 0 : bw;
   }
 
-  // File naming template + multi-disc mode (v1.17.0) — always sent so clearing
+  // File naming template + multi-disc mode — always sent so clearing
   // the template (back to original filenames) takes effect.
   const fileTplEl = document.getElementById('cfg-file-template');
   if (fileTplEl) patch.file_naming_template = fileTplEl.value.trim();
@@ -787,7 +787,7 @@ document.getElementById('btn-loudness')?.addEventListener('click', async () => {
   }
   btn.disabled = false;
 });
-// Tempo Analysis — Deezer BPM lookup feeding smart-playlist tempo rules (v1.11.0)
+// Tempo Analysis — Deezer BPM lookup feeding smart-playlist tempo rules
 document.getElementById('btn-bpm-scan')?.addEventListener('click', async () => {
   const out = document.getElementById('bpm-scan-results');
   const btn = document.getElementById('btn-bpm-scan');
@@ -807,7 +807,7 @@ document.getElementById('btn-bpm-scan')?.addEventListener('click', async () => {
   }
   btn.disabled = false;
 });
-// ── Library Intelligence (v1.6.0) ────────────────────────────────────────────
+// ── Library Intelligence ────────────────────────────────────────────
 function _libIntelOut(html) {
   const el = document.getElementById('libintel-results');
   if (el) el.innerHTML = html;
