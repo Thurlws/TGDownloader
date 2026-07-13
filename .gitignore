@@ -15,6 +15,11 @@ ratings.json
 watchlist.json
 tg_sessions.json
 play_history.jsonl
+# SQLite state store (v1.18.0) + its WAL sidecars and migration backups
+tgd_state.db
+tgd_state.db-wal
+tgd_state.db-shm
+*.pre-sqlite.bak
 bot_initialized.flag
 tgdownloader_debug.log
 pause.flag
