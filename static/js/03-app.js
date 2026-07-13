@@ -91,6 +91,11 @@ function openSettings() {
       ? cfg.bot_failover.join('\n') : (cfg.bot_failover || '');
     const bwCap = document.getElementById('cfg-bandwidth');
     if (bwCap) bwCap.value = cfg.bandwidth_limit_kbps || '';
+    // File naming template + multi-disc layout (v1.17.0)
+    const fileTpl = document.getElementById('cfg-file-template');
+    if (fileTpl) fileTpl.value = cfg.file_naming_template || '';
+    const multidisc = document.getElementById('cfg-multidisc');
+    if (multidisc) multidisc.value = cfg.multidisc_mode || 'off';
     _loadTgHealth();
     _syncScrobbleService();
     // Theme + notifications
@@ -197,6 +202,13 @@ function saveSettings() {
     const bw = parseInt(bwCapEl.value, 10);
     patch.bandwidth_limit_kbps = (isNaN(bw) || bw < 0) ? 0 : bw;
   }
+
+  // File naming template + multi-disc mode (v1.17.0) — always sent so clearing
+  // the template (back to original filenames) takes effect.
+  const fileTplEl = document.getElementById('cfg-file-template');
+  if (fileTplEl) patch.file_naming_template = fileTplEl.value.trim();
+  const multidiscEl = document.getElementById('cfg-multidisc');
+  if (multidiscEl) patch.multidisc_mode = multidiscEl.value;
 
   // Theme
   const theme = document.getElementById('cfg-theme-light').checked ? 'light' : 'dark';

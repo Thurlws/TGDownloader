@@ -482,6 +482,20 @@
               <input type="text" id="cfg-post-cmd" placeholder='e.g. beet import "{folder}"' autocomplete="off" spellcheck="false">
             </div>
             <div style="font-size:11px;color:var(--fg3);margin-top:-6px">Runs after each finished download. <span style="font-family:var(--mono)">{folder}</span>, <span style="font-family:var(--mono)">{artist}</span>, <span style="font-family:var(--mono)">{status}</span> and <span style="font-family:var(--mono)">{url}</span> are substituted; without a placeholder the folder path is appended. Leave empty to disable.</div>
+            <div class="modal-field" style="margin-top:14px">
+              <label>File naming template <span style="color:var(--fg3);font-weight:400">(new downloads only; empty = keep original filenames)</span></label>
+              <input type="text" id="cfg-file-template" placeholder="e.g. {track2} - {title}" autocomplete="off" spellcheck="false">
+            </div>
+            <div style="font-size:11px;color:var(--fg3);margin-top:-6px">Renames tracks from their tags as they sort. Fields: <span style="font-family:var(--mono)">{track}</span> <span style="font-family:var(--mono)">{track2}</span> <span style="font-family:var(--mono)">{disc}</span> <span style="font-family:var(--mono)">{disc2}</span> <span style="font-family:var(--mono)">{title}</span> <span style="font-family:var(--mono)">{artist}</span> <span style="font-family:var(--mono)">{albumartist}</span> <span style="font-family:var(--mono)">{album}</span> <span style="font-family:var(--mono)">{year}</span>. Untagged files keep their original name. Your existing library isn't touched.</div>
+            <div class="modal-field" style="margin-top:14px">
+              <label>Multi-disc albums</label>
+              <select id="cfg-multidisc">
+                <option value="off">One folder (default)</option>
+                <option value="subfolders">Disc N/ subfolders</option>
+                <option value="prefix">Prefix filenames with disc number</option>
+              </select>
+            </div>
+            <div style="font-size:11px;color:var(--fg3);margin-top:-6px">Only affects albums whose tags span more than one disc.</div>
           </div>
 
           <!-- Interface -->

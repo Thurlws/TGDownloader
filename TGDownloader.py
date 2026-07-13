@@ -833,6 +833,68 @@ def _get_artist(path: Path) -> str:
     return ""
 
 
+def _parse_leading_int(s: str) -> int:
+    """'3/12' or '03' → 3; anything without a leading number → 0."""
+    m = re.match(r"\s*(\d+)", s or "")
+    return int(m.group(1)) if m else 0
+
+
+def _read_sort_tags(path: Path) -> dict:
+    """Tags used by the naming template. Missing values become ''/0."""
+    tags = {"title": "", "artist": "", "albumartist": "", "album": "",
+            "year": "", "track": 0, "disc": 0}
+    try:
+        audio = MutagenFile(path, easy=True)
+        if audio is None:
+            return tags
+        def _first(key: str) -> str:
+            v = audio.get(key)
+            return str(v[0]).strip() if v and str(v[0]).strip() else ""
+        tags["title"]       = _first("title")
+        tags["artist"]      = _first("artist")
+        tags["albumartist"] = _first("albumartist") or tags["artist"]
+        tags["album"]       = _first("album")
+        tags["year"]        = _first("date")[:4]
+        tags["track"]       = _parse_leading_int(_first("tracknumber"))
+        tags["disc"]        = _parse_leading_int(_first("discnumber"))
+    except Exception:
+        pass
+    return tags
+
+
+def _render_name_template(template: str, tags: dict, ext: str) -> "str | None":
+    """Render a file-naming template from tags into a sanitised filename with
+    `ext`. Returns None (→ keep the original name) when the template is empty or
+    the track has no title, so a badly-tagged file is never renamed to junk."""
+    if not template.strip() or not tags.get("title"):
+        return None
+    trk, dsc = tags.get("track", 0), tags.get("disc", 0)
+    values = {
+        "title":       tags.get("title", ""),
+        "artist":      tags.get("artist", ""),
+        "albumartist": tags.get("albumartist", ""),
+        "album":       tags.get("album", ""),
+        "year":        tags.get("year", ""),
+        "track":       str(trk) if trk else "",
+        "track2":      f"{trk:02d}" if trk else "",
+        "disc":        str(dsc) if dsc else "",
+        "disc2":       f"{dsc:02d}" if dsc else "",
+    }
+
+    class _Fill(dict):
+        def __missing__(self, key):   # unknown {placeholder} → empty, never crash
+            return ""
+
+    try:
+        rendered = template.format_map(_Fill(values))
+    except Exception:
+        return None
+    name = _sanitise_path(rendered.strip())
+    if not name or name == "_unnamed":
+        return None
+    return name + ext
+
+
 def sort_by_album(source: Path, dest: Path,
                   hash_index: set[str] | None = None) -> tuple[int, list[str]]:
     _log(f"\n{'─'*50}")
@@ -868,6 +930,12 @@ def sort_by_album(source: Path, dest: Path,
     dest.mkdir(parents=True, exist_ok=True)
 
     moved = errors = dupes = 0
+    # Naming template + multi-disc layout (new downloads only). Empty template +
+    # "off" mode reproduce the original behaviour exactly.
+    cfg           = load_config()
+    file_template = (cfg.get("file_naming_template") or "").strip()
+    multidisc     = cfg.get("multidisc_mode", "off")
+    naming_on     = bool(file_template) or multidisc != "off"
     for album, tracks in sorted(groups.items()):
         # Fuzzy-match an existing album folder so tracks land in the right place
         # even when the bot returns a slightly different album name.
@@ -876,6 +944,12 @@ def sort_by_album(source: Path, dest: Path,
         if album_dir != album_dir_exact and album_dir.name != album:
             _log(f"    Fuzzy album match: '{album}' → existing folder '{album_dir.name}'")
         album_dir.mkdir(parents=True, exist_ok=True)
+
+        # Read tags once per album only when a template or multi-disc mode is on.
+        tags_by_track = {t: _read_sort_tags(t) for t in tracks} if naming_on else {}
+        disc_nums     = {tags_by_track[t]["disc"] for t in tracks
+                         if tags_by_track.get(t, {}).get("disc", 0) > 0}
+        is_multidisc  = multidisc != "off" and len(disc_nums) > 1
 
         for track in tracks:
             # ── 1. Filename-based duplicate check (fast, existing behaviour) ──
@@ -897,10 +971,24 @@ def sort_by_album(source: Path, dest: Path,
                 except OSError as exc:
                     _log(f"    WARN  Could not hash {track.name}: {exc}")
 
-            target  = album_dir / track.name
+            tags     = tags_by_track.get(track)
+            new_name = (_render_name_template(file_template, tags, track.suffix)
+                        if (file_template and tags) else None)
+            base     = new_name or track.name
+            disc_no  = (tags or {}).get("disc", 0)
+
+            sub_dir = album_dir
+            if is_multidisc and disc_no > 0:
+                if multidisc == "subfolders":
+                    sub_dir = album_dir / f"Disc {disc_no}"
+                    sub_dir.mkdir(parents=True, exist_ok=True)
+                elif multidisc == "prefix":
+                    base = f"{disc_no}-{base}"
+
+            target  = sub_dir / base
             counter = 1
             while target.exists():
-                target = album_dir / f"{track.stem} ({counter}){track.suffix}"
+                target = sub_dir / f"{Path(base).stem} ({counter}){Path(base).suffix}"
                 counter += 1
             try:
                 shutil.move(str(track), str(target))
