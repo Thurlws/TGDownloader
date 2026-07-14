@@ -44,7 +44,6 @@ import struct
 import shutil
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import urllib.request
@@ -149,6 +148,12 @@ def _open_app_window(url: str) -> bool:
     try:
         subprocess.Popen(
             [exe, f"--app={url}",
+             # A dedicated profile gives the app window its own taskbar identity
+             # (so it shows OUR favicon, not the host browser's icon, and doesn't
+             # group under the user's Edge) and isolates its localStorage — the
+             # onboarding tour, prefs etc. are per-install, not shared with the
+             # user's normal browsing on 127.0.0.1.
+             f"--user-data-dir={_APP_PROFILE_DIR}",
              "--disable-extensions",        # cleaner appearance
              "--no-first-run",              # skip "welcome" screens
              "--no-default-browser-check",  # suppress nag dialogs
@@ -177,6 +182,8 @@ else:
 LOG_FILE           = Path(os.environ.get("TGD_LOG_FILE", DATA_DIR / "tgdownloader_debug.log"))
 GUI_HTML           = BUNDLE_DIR / "gui.html"
 SETUP_WIZARD_HTML  = BUNDLE_DIR / "setup_wizard.html"
+FAVICON_FILE       = BUNDLE_DIR / "icon.ico"                 # served at /favicon.ico
+_APP_PROFILE_DIR   = DATA_DIR   / "browser_profile"         # isolated Chromium profile for the app window
 SESSIONS_FILE      = DATA_DIR   / "tg_sessions.json"
 _ALBUM_ID_CACHE_FILE = DATA_DIR / "album_id_cache.json"  # persists album search results
 LIKED_SONGS_FILE   = DATA_DIR   / "liked_songs.json"     # persists "Liked Songs" library
@@ -200,6 +207,23 @@ HTTP_PORT = int(os.environ.get("TGD_HTTP_PORT", "7842"))
 LOCK_PORT = HTTP_PORT + 1   # single-instance sentinel — we bind this; nobody else does
 
 logger = logging.getLogger("gui_server")
+
+# Content-Security-Policy for the served HTML. Defense-in-depth behind the
+# frontend's escHtml/textContent discipline. 'unsafe-inline' is required by the
+# app's inline styles + inline event handlers; module scripts load from /static.
+# Remote album art / 30s previews are reached over https (img/media only);
+# fetch/XHR and the live WebSocket stay same-origin.
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: https:; "
+    "media-src 'self' blob: https:; "
+    f"connect-src 'self' ws://127.0.0.1:{HTTP_PORT} ws://localhost:{HTTP_PORT}; "
+    "font-src 'self' data:; "
+    "object-src 'none'; "
+    "base-uri 'self'"
+)
 
 
 # ── Request-origin guard ──────────────────────────────────────────────────────
@@ -290,6 +314,10 @@ def _check_for_update(force: bool = False) -> dict:
     zip_asset = next(
         (a for a in (rel.get("assets") or [])
          if str(a.get("name", "")).lower().endswith(".zip")), {})
+    # Optional integrity checksum attached beside the zip (older releases have none).
+    sha_asset = next(
+        (a for a in (rel.get("assets") or [])
+         if str(a.get("name", "")).lower().endswith(".sha256")), {})
     data = {
         "current":          APP_VERSION,
         "latest":           latest_tag.lstrip("vV") or latest_tag,
@@ -297,6 +325,7 @@ def _check_for_update(force: bool = False) -> dict:
         "url":              rel.get("html_url", f"https://github.com/{GITHUB_REPO}/releases"),
         "download_url":     zip_asset.get("browser_download_url", ""),
         "download_size":    int(zip_asset.get("size") or 0),
+        "sha256_url":       sha_asset.get("browser_download_url", ""),
         "can_apply":        _update_supported(),
         "name":             rel.get("name") or latest_tag,
         "notes":            (rel.get("body") or "")[:4000],
@@ -365,6 +394,46 @@ def _download_zip(url: str, dest: Path, expected_size: int = 0) -> None:
         raise ValueError(f"update size mismatch: got {written}, expected {expected_size}")
     if not zipfile.is_zipfile(dest):
         raise ValueError("downloaded update is not a valid zip")
+
+
+def _sha256_file(path: Path) -> str:
+    """SHA-256 hex digest of a file, read in 1 MB chunks."""
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _parse_sha256(text: str) -> "str | None":
+    """First token of a `.sha256` file body (`<hex>  <filename>` is the usual
+    form), validated as exactly 64 lowercase hex chars, or None if malformed."""
+    tok = (str(text).strip().split() or [""])[0].lower()
+    if len(tok) == 64 and all(c in "0123456789abcdef" for c in tok):
+        return tok
+    return None
+
+
+def _verify_update_checksum(zip_path: Path, sha256_url: str) -> None:
+    """Verify the downloaded zip against the release's published `.sha256`.
+
+    Defensive by design: no URL (older releases ship none) → skip, so updates
+    never break. Present but unfetchable/malformed/mismatched → raise, so a
+    corrupted or tampered download is rejected before the swap."""
+    if not sha256_url:
+        return
+    try:
+        req = urllib.request.Request(
+            sha256_url, headers={"User-Agent": f"TGDownloader/{APP_VERSION}"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read().decode("utf-8", "replace")
+    except Exception as exc:
+        raise ValueError(f"could not fetch update checksum: {exc}")
+    published = _parse_sha256(body)
+    if published is None:
+        raise ValueError("published update checksum is malformed")
+    if _sha256_file(zip_path) != published:
+        raise ValueError("update checksum mismatch — download rejected")
 
 
 def _stage_update(zip_path: Path, staging: Path) -> Path:
@@ -452,6 +521,9 @@ def _apply_update() -> dict:
     try:
         zip_path = _UPDATE_STAGING.parent / "_update.zip"
         _download_zip(info["download_url"], zip_path, info.get("download_size", 0))
+        # Integrity check against the published .sha256 when the release ships one
+        # (no-op for older releases that don't). Rejects a corrupted/tampered zip.
+        _verify_update_checksum(zip_path, info.get("sha256_url", ""))
         new_root = _stage_update(zip_path, _UPDATE_STAGING)
         zip_path.unlink(missing_ok=True)
         bat = _app_dir() / "_apply_update.bat"
@@ -715,20 +787,43 @@ def _ws_handshake(conn, key: str):
     ).encode())
 
 
+def _recv_exact(conn, n: int) -> "bytes | None":
+    """Read exactly n bytes, looping until they all arrive. A single recv() can
+    return fewer bytes than asked for, so a large frame (a big queue in a 'start'
+    message) would otherwise be truncated and silently dropped."""
+    buf = bytearray()
+    while len(buf) < n:
+        chunk = conn.recv(n - len(buf))
+        if not chunk:
+            return None
+        buf.extend(chunk)
+    return bytes(buf)
+
+
 def _ws_recv(conn) -> str | None:
     try:
-        h = conn.recv(2)
-        if len(h) < 2:
+        h = _recv_exact(conn, 2)
+        if h is None:
             return None
         b1, b2 = h
         masked = bool(b2 & 0x80)
         n = b2 & 0x7F
         if n == 126:
-            n = struct.unpack(">H", conn.recv(2))[0]
+            ext = _recv_exact(conn, 2)
+            if ext is None:
+                return None
+            n = struct.unpack(">H", ext)[0]
         elif n == 127:
-            n = struct.unpack(">Q", conn.recv(8))[0]
-        mask = conn.recv(4) if masked else b"\x00\x00\x00\x00"
-        data = conn.recv(n)
+            ext = _recv_exact(conn, 8)
+            if ext is None:
+                return None
+            n = struct.unpack(">Q", ext)[0]
+        mask = _recv_exact(conn, 4) if masked else b"\x00\x00\x00\x00"
+        if mask is None:
+            return None
+        data = _recv_exact(conn, n) if n else b""
+        if data is None:
+            return None
         return bytes(b ^ mask[i % 4] for i, b in enumerate(data)).decode("utf-8", errors="replace")
     except Exception:
         return None
@@ -1251,10 +1346,19 @@ try:
 except Exception:
     pass
 
+_album_cache_lock = threading.Lock()
+
+
 def _save_album_id_cache() -> None:
+    # /library-albums mutates _album_search_cache from an 8-worker pool. Snapshot
+    # it (dict() is atomic under the GIL) before json.dumps so serialising a dict
+    # another thread is writing can't raise "changed size during iteration", and
+    # take the lock so two savers don't interleave writes into the same file.
     try:
+        with _album_cache_lock:
+            snapshot = dict(_album_search_cache)
         _ALBUM_ID_CACHE_FILE.write_text(
-            json.dumps(_album_search_cache, ensure_ascii=False),
+            json.dumps(snapshot, ensure_ascii=False),
             encoding="utf-8",
         )
     except Exception:
@@ -4251,6 +4355,22 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(content)
             return
 
+        # Favicon: the app window's taskbar/title icon. A real multi-resolution
+        # .ico (16→256) gives Windows a crisp icon; browsers auto-request
+        # /favicon.ico and the app window uses it in --app mode.
+        if path == "/favicon.ico":
+            if FAVICON_FILE.is_file():
+                content = FAVICON_FILE.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/x-icon")
+                self.send_header("Content-Length", str(len(content)))
+                self.send_header("Cache-Control", "max-age=604800")
+                self.end_headers()
+                self.wfile.write(content)
+            else:
+                self.send_error(404)
+            return
+
         # PWA manifest + service worker. The SW must be served from
         # the root so its scope covers the whole app.
         if path in ("/manifest.webmanifest", "/sw.js"):
@@ -4286,6 +4406,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Security-Policy", _CSP)
             self.send_header("Content-Length", len(content))
             self.end_headers()
             self.wfile.write(content)
@@ -5845,9 +5966,11 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(400, {"error": "No home music folder configured"})
                     return
                 album_dir = Path(album_dir_str)
-                # Security: must be inside home music folder
+                # Security: must be strictly inside the home music folder. A
+                # parents check, not startswith — the latter let a sibling like
+                # "Music_backup" pass the guard when the library was "Music".
                 home_path = Path(home).resolve()
-                if not str(album_dir.resolve()).startswith(str(home_path)):
+                if home_path not in album_dir.resolve().parents:
                     self._send_json(403, {"error": "Album dir outside music folder"})
                     return
                 if album_dir.exists() and album_dir.is_dir():
@@ -6173,14 +6296,33 @@ class Handler(BaseHTTPRequestHandler):
             if not folder_path:
                 self._send_json(400, {"error": "Missing path"})
                 return
+            # Only ever open an existing directory inside the library. On Windows
+            # `explorer <path>` shell-executes its argument, so an arbitrary path
+            # (e.g. a .exe) would be launched rather than shown — restrict it.
+            home = _tgd_import().load_config().get("home_music_folder") or ""
+            if not home:
+                self._send_json(400, {"error": "No home music folder configured"})
+                return
+            try:
+                home_path = Path(home).resolve()
+                target    = Path(folder_path).resolve()
+            except Exception:
+                self._send_json(400, {"error": "Invalid path"})
+                return
+            if not target.is_dir():
+                self._send_json(400, {"error": "Not a folder"})
+                return
+            if target != home_path and home_path not in target.parents:
+                self._send_json(403, {"error": "Refusing to open a folder outside the library"})
+                return
             try:
                 import subprocess as _sp
                 if sys.platform == "win32":
-                    _sp.Popen(["explorer", folder_path])
+                    _sp.Popen(["explorer", str(target)])
                 elif sys.platform == "darwin":
-                    _sp.Popen(["open", folder_path])
+                    _sp.Popen(["open", str(target)])
                 else:
-                    _sp.Popen(["xdg-open", folder_path])
+                    _sp.Popen(["xdg-open", str(target)])
                 self._send_json(200, {"ok": True})
             except Exception as exc:
                 logger.warning("open-folder failed: %s", exc)

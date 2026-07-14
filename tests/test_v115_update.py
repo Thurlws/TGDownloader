@@ -108,3 +108,43 @@ def test_apply_update_refuses_when_not_frozen():
 def test_cleanup_leftovers_noop_when_not_frozen():
     # Must not raise (and must not touch anything) outside a frozen build.
     gui._cleanup_update_leftovers()
+
+
+# ── Update checksum verification (defensive; skips when no .sha256 shipped) ────
+
+def test_parse_sha256_valid_and_invalid():
+    good = "a" * 64
+    assert gui._parse_sha256(f"{good}  TGDownloader.zip") == good
+    assert gui._parse_sha256(f"{good.upper()}\n") == good        # lower-cased
+    assert gui._parse_sha256("") is None
+    assert gui._parse_sha256("deadbeef") is None                 # too short
+    assert gui._parse_sha256("z" * 64) is None                   # non-hex
+
+
+def test_verify_update_checksum_accepts_matching(tmp_path):
+    zip_path = _make_bundle_zip(tmp_path / "rel.zip")
+    digest   = gui._sha256_file(zip_path)
+    sha = tmp_path / "rel.zip.sha256"
+    sha.write_text(f"{digest}  rel.zip\n", encoding="ascii")
+    gui._verify_update_checksum(zip_path, sha.resolve().as_uri())   # must not raise
+
+
+def test_verify_update_checksum_rejects_tampered(tmp_path):
+    zip_path = _make_bundle_zip(tmp_path / "rel.zip")
+    sha = tmp_path / "rel.zip.sha256"
+    sha.write_text(("b" * 64) + "  rel.zip\n", encoding="ascii")     # wrong hash
+    with pytest.raises(ValueError, match="mismatch"):
+        gui._verify_update_checksum(zip_path, sha.resolve().as_uri())
+
+
+def test_verify_update_checksum_absent_is_noop(tmp_path):
+    zip_path = _make_bundle_zip(tmp_path / "rel.zip")
+    gui._verify_update_checksum(zip_path, "")     # older release, no hash → skip
+
+
+def test_verify_update_checksum_rejects_malformed(tmp_path):
+    zip_path = _make_bundle_zip(tmp_path / "rel.zip")
+    sha = tmp_path / "rel.zip.sha256"
+    sha.write_text("not-a-valid-hash\n", encoding="ascii")
+    with pytest.raises(ValueError, match="malformed"):
+        gui._verify_update_checksum(zip_path, sha.resolve().as_uri())

@@ -49,8 +49,18 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path dist/TGDownloader/* -DestinationPath "TGDownloader-${{ github.ref_name }}-windows.zip"
 
+      # Integrity checksum the in-app updater verifies before swapping files.
+      - name: Checksum bundle
+        shell: pwsh
+        run: |
+          $zip  = "TGDownloader-${{ github.ref_name }}-windows.zip"
+          $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+          "$hash  $zip" | Out-File -Encoding ascii "$zip.sha256"
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: TGDownloader-${{ github.ref_name }}-windows.zip
+          files: |
+            TGDownloader-${{ github.ref_name }}-windows.zip
+            TGDownloader-${{ github.ref_name }}-windows.zip.sha256
           generate_release_notes: true
