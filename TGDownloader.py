@@ -36,6 +36,7 @@ Requirements:
 import asyncio
 import concurrent.futures
 import difflib
+import glob
 import hashlib
 import json
 import re
@@ -603,7 +604,11 @@ def _check_cryptg() -> None:
 
 
 def _exists_in_tree(filename: str, root: Path) -> bool:
-    return any(True for _ in root.rglob(filename))
+    # glob.escape so a name with glob metacharacters — brackets are the common
+    # case ("Song [Remix].flac", "[Explicit]") — is matched literally. Without
+    # it rglob reads "[Remix]" as a character class and never matches the real
+    # file, which made is_url_complete re-download such albums every run.
+    return any(True for _ in root.rglob(glob.escape(filename)))
 
 
 # ═════════════════════════════════════════════
@@ -952,8 +957,12 @@ def sort_by_album(source: Path, dest: Path,
         is_multidisc  = multidisc != "off" and len(disc_nums) > 1
 
         for track in tracks:
-            # ── 1. Filename-based duplicate check (fast, existing behaviour) ──
-            if dest.exists() and _exists_in_tree(track.name, dest):
+            # ── 1. Filename-based duplicate check, scoped to THIS album folder ──
+            # Not the whole artist tree: two different albums by one artist can
+            # legitimately share a track filename ("01 Intro.flac", "Interlude.flac"),
+            # and checking artist-wide silently deleted the second as a "dupe".
+            # True byte-level duplicates are still caught by the hash index below.
+            if _exists_in_tree(track.name, album_dir):
                 _log(f"    SKIP (filename dupe)  {track.name}")
                 dupes += 1
                 track.unlink(missing_ok=True)
@@ -1553,8 +1562,11 @@ async def download_all_async(
 
     _progress.clear()
     for ev in pending_events:
-        fn = _get_filename(ev.message)
-        _progress[fn] = (0, ev.message.document.size)
+        # Key progress by the stable message id, not the filename. The worker
+        # writes its updates under the same id; keying by name would seed a raw
+        # name here but update a sanitised one there, leaving a stale (0, size)
+        # entry that double-counts the total (bar stuck below 100%).
+        _progress[ev.message.id] = (0, ev.message.document.size)
 
     _log(f"\n  Downloading {total} file(s) in parallel...\n")
 
@@ -1616,10 +1628,11 @@ async def download_all_async(
             filename   = _sanitise_filename(_get_filename(ev.message))
             save_path  = tmp_dir / filename
             total_size = ev.message.document.size
+            pkey       = ev.message.id          # progress key (matches the seed loop)
 
             for attempt in range(1, _MAX_AUTH_TRIES + 1):
                 received = 0
-                _progress[filename] = (0, total_size)
+                _progress[pkey] = (0, total_size)
                 _api_id, _api_hash = _get_api_creds()
                 dl_client = TelegramClient(StringSession(session_string), _api_id, _api_hash)
                 try:
@@ -1632,7 +1645,7 @@ async def download_all_async(
                         ):
                             fh.write(chunk)
                             received += len(chunk)
-                            _progress[filename] = (received, total_size)
+                            _progress[pkey] = (received, total_size)
                             _emit_progress_ts()
                             if _bw_limiter is not None:
                                 _bw_sleep = _bw_limiter.consume(len(chunk))
@@ -1744,6 +1757,10 @@ async def collect_files(
     IDLE_CHECK         = cfg["idle_check_interval"]
 
     pending_events: list  = []
+    # De-dupe by message id: on_new AND on_edit both feed this queue, so a bot
+    # that edits a file message (e.g. tweaks a caption) would otherwise re-add
+    # the same document — downloaded and counted twice.
+    seen_ids: set = set()
     # last_file_time tracks when the last *audio document* arrived, not when
     # any message arrived.  Initialised to 0 so we never start the idle clock
     # until at least one file has actually been received.
@@ -1760,6 +1777,9 @@ async def collect_files(
             msg  = ev.message
             text = (msg.message or "").strip()
             if msg.document is not None:
+                if msg.id in seen_ids:
+                    continue                      # already collected (edited re-send)
+                seen_ids.add(msg.id)
                 pending_events.append(ev)
                 last_file_time = time.monotonic()
                 count_str = f"/{expected_total}" if expected_total is not None else ""
