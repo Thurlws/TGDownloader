@@ -32,6 +32,8 @@ a = Analysis(
         (str(HERE / 'setup_wizard.html'), '.'),
         # Split-out frontend assets (served at /static/…)
         (str(HERE / 'static'), 'static'),
+        # Multi-res app icon, served at /favicon.ico so the app window shows it.
+        (str(HERE / 'icon.ico'), '.'),
     ],
     hiddenimports=[
         # ── Telethon ──────────────────────────────────────────

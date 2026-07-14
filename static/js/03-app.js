@@ -34,11 +34,16 @@ fetch('/config').then(r => r.json()).then(cfg => { if (cfg.theme) applyTheme(cfg
 function applyScale(v) {
   const n   = Math.min(2.0, Math.max(0.6, parseFloat(v) || 1.0));
   const app = document.getElementById('app');
-  const inv = (100 / n).toFixed(6);
-  app.style.transformOrigin = 'top left';
-  app.style.transform  = `scale(${n})`;
-  app.style.width  = `${inv}vw`;
-  app.style.height = `${inv}vh`;
+  // CSS zoom, not transform: scale(). transform scales the rasterised layer, so
+  // text and inputs blur at non-integer scales — most visibly inside the
+  // settings modal. zoom re-lays-out and re-rasterises at the target scale, so
+  // everything stays crisp. (#app is width/height:100% so it fills the window
+  // at any zoom.) Clear the old transform hacks in case of an in-place upgrade.
+  app.style.transform = '';
+  app.style.transformOrigin = '';
+  app.style.width = '';
+  app.style.height = '';
+  app.style.zoom = n;
   return n;
 }
 
@@ -53,6 +58,21 @@ function applyScale(v) {
   text.addEventListener('change', () => syncFrom(text.value));
   fetch('/config').then(r => r.json()).then(cfg => syncFrom(cfg.ui_scale ?? 1.0)).catch(() => syncFrom(1.0));
 })();
+
+// Stop the Edge/Chrome autofill + "save password" dropdown from popping up over
+// our config/search fields — none of them are credentials the browser should
+// offer to fill or save. Blanket autocomplete="off" on every field that hasn't
+// explicitly opted in (covers the settings modal and every other input).
+function _suppressAutofill(root = document) {
+  root.querySelectorAll('input, textarea').forEach(el => {
+    if (!el.hasAttribute('autocomplete')) el.setAttribute('autocomplete', 'off');
+  });
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => _suppressAutofill());
+} else {
+  _suppressAutofill();
+}
 
 function openSettings() {
   fetch('/config').then(r => r.json()).then(cfg => {

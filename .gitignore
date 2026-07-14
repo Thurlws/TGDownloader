@@ -20,7 +20,8 @@ tgd_state.db
 tgd_state.db-wal
 tgd_state.db-shm
 *.pre-sqlite.bak
-bot_initialized.flag
+# Per-bot first-run flags: bot_initialized.flag (legacy) + bot_initialized_<name>.flag
+bot_initialized*.flag
 tgdownloader_debug.log
 pause.flag
 
@@ -31,6 +32,8 @@ TGDownloader Context Vault/
 tg_tmp_downloads/
 tg_transcode_cache/
 tg_waveform_cache/
+# Isolated Chromium profile for the --app window (created next to the exe)
+browser_profile/
 
 # ── Python ────────────────────────────────────────────────────────────────
 __pycache__/
@@ -46,11 +49,21 @@ venv/
 env/
 .venv/
 
+# ── Test / lint caches ────────────────────────────────────────────────────
+.pytest_cache/
+.ruff_cache/
+
 # ── PyInstaller bundle output ─────────────────────────────────────────────
+# (dist/ and build/ are already ignored under Python above)
 *.spec
 !TGDownloader.spec
-dist/
-build/
+
+# ── In-place self-updater leftovers (frozen Windows build writes these) ───
+_update/
+_update.zip
+_apply_update.bat
+_internal.old/
+TGDownloader.old.exe
 
 # ── OS junk ───────────────────────────────────────────────────────────────
 .DS_Store
