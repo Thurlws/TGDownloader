@@ -1,4 +1,4 @@
-# TGDownloader — Disclaimer & Legal Notice
+# TGDownloader: Disclaimer & Legal Notice
 
 *Last updated: 2026-07-08*
 
@@ -6,7 +6,7 @@ This notice supplements the [MIT License](LICENSE). The License governs your rig
 
 ---
 
-## 1. What TGDownloader is — and is not
+## 1. What TGDownloader is (and is not)
 
 TGDownloader is a self-hosted **Telegram client and local music library manager**. It runs entirely on the user's own machine, under the user's own Telegram account, using API credentials the user obtains directly from Telegram.
 
@@ -14,7 +14,7 @@ The software, as published in this repository:
 
 - does **not** host, store, cache, index, catalogue, or distribute any audio content or other copyrighted material;
 - does **not** include, ship with, embed, recommend, advertise, or link to any Telegram bot, channel, server, or other source of content;
-- does **not** contain any search, discovery, or browsing capability for content sources — the user must independently know of and configure any bot themselves;
+- does **not** contain any search, discovery, or browsing capability for content sources; the user must independently know of and configure any bot themselves;
 - does **not** circumvent, remove, or weaken any technological protection measure (DRM) or access control of any kind;
 - communicates exclusively with: (a) Telegram's official API, authenticated as the user's own account; (b) Telegram bots that the **user alone** selects and configures; and (c) public metadata APIs (Deezer, and optionally Spotify, ListenBrainz, and Last.fm, each using the user's own credentials) solely for album artwork, metadata, and scrobbling.
 
@@ -29,7 +29,7 @@ TGDownloader is intended **solely** for managing audio files that the user is le
 - works licensed to the user (including Creative Commons and similarly licensed works);
 - works in the public domain.
 
-Any other use — in particular configuring the software to obtain copyrighted works that the user has no right to possess — is **misuse**, is contrary to the software's intended purpose, and is expressly not endorsed, encouraged, facilitated, or condoned by the authors or contributors.
+Any other use (in particular configuring the software to obtain copyrighted works that the user has no right to possess) is **misuse**, is contrary to the software's intended purpose, and is expressly not endorsed, encouraged, facilitated, or condoned by the authors or contributors.
 
 ## 3. User responsibility
 
@@ -49,7 +49,7 @@ The authors and contributors do not endorse, encourage, induce, facilitate, or c
 
 ## 5. Third-party names and trademarks
 
-Telegram, Deezer, Spotify, Last.fm, ListenBrainz, and any other product or service names mentioned in this repository are trademarks of their respective owners. Their use here is purely nominative — to identify interoperability — and does not imply any affiliation with, sponsorship by, or endorsement from those owners. This project is an independent work and is not associated with Telegram FZ-LLC or any of the services named above.
+Telegram, Deezer, Spotify, Last.fm, ListenBrainz, and any other product or service names mentioned in this repository are trademarks of their respective owners. Their use here is purely nominative (to identify interoperability) and does not imply any affiliation with, sponsorship by, or endorsement from those owners. This project is an independent work and is not associated with Telegram FZ-LLC or any of the services named above.
 
 ## 6. No warranty; limitation of liability
 
@@ -63,4 +63,4 @@ This repository contains source code only. It hosts no media, links to no media,
 
 If any provision of this notice is held unenforceable, the remaining provisions remain in full effect. Failure to enforce any provision is not a waiver of it. This notice may be updated from time to time; the version in the repository's default branch is the current one.
 
-*This document is provided for clarity of intent. It is not legal advice — to either users or redistributors.*
+*This document is provided for clarity of intent. It is not legal advice, for users or redistributors alike.*

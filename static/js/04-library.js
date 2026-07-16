@@ -59,7 +59,7 @@ function _syncLibQueuedState() {
 let _mpQueue     = [];
 let _mpIdx       = -1;
 let _mpPlaying   = false;
-let _mpCurrentAlb = null;  // album that owns the current playback queue — never changes mid-queue
+let _mpCurrentAlb = null;  // album that owns the current playback queue, never changes mid-queue
 let _mpShuffle   = false;          // shuffle on/off
 let _mpRepeat    = 'off';          // 'off' | 'all' | 'one'
 let _mpShuffleOrder = [];          // remaining indices to play when shuffling
@@ -94,7 +94,7 @@ async function _mpStartRadio() {
 let _likedKeys   = new Set();      // "path_hash\x00name" keys of liked songs
 const _likedAlbum = { album: 'Liked Songs', artist: '', path_hash: '', cover_url: null, is_liked: true };
 // `let` (not const): crossfade swaps the active element between the DOM
-// <audio> and a second pooled Audio() — see 06-audio-fx.js.
+// <audio> and a second pooled Audio(), see 06-audio-fx.js.
 let _mpAudio  = document.getElementById('mini-audio');
 let _mpAudioB = null;              // crossfade partner element (lazy)
 
@@ -276,7 +276,7 @@ async function loadLibrary(opts = {}) {
       if (!artistMap[key].cover_url && alb.cover_url) {
         artistMap[key].cover_url = alb.cover_url;
       }
-      // Take first non-empty artist_id from any album — some albums may not have it
+      // Take first non-empty artist_id from any album, some albums may not have it
       if (!artistMap[key].artist_id && alb.artist_id) {
         artistMap[key].artist_id = alb.artist_id;
       }
@@ -451,7 +451,7 @@ function _renderLibArtistGrid() {
   }
 
   _libArtistList.forEach((artist, idx) => {
-    // Synthetic "Home" overview — distinct row, no drag / delete-artist
+    // Synthetic "Home" overview, distinct row, no drag / delete-artist
     if (artist.is_home_group) {
       const hrow = document.createElement('div');
       hrow.className = 'lib-artist-row lib-home-group';
@@ -477,7 +477,7 @@ function _renderLibArtistGrid() {
       list.appendChild(div);
     }
 
-    // Synthetic "Liked Songs" group — distinct row, no drag / delete-artist
+    // Synthetic "Liked Songs" group, distinct row, no drag / delete-artist
     if (artist.is_liked_group) {
       const lrow = document.createElement('div');
       lrow.className = 'lib-artist-row lib-liked-group';
@@ -494,7 +494,7 @@ function _renderLibArtistGrid() {
       return;
     }
 
-    // Synthetic "Playlists" group — distinct row, no drag / delete-artist (Item 2)
+    // Synthetic "Playlists" group, distinct row, no drag / delete-artist (Item 2)
     if (artist.is_playlist_group) {
       const prow = document.createElement('div');
       prow.className = 'lib-artist-row lib-playlist-group';
@@ -511,7 +511,7 @@ function _renderLibArtistGrid() {
       return;
     }
 
-    // Pinned artists are already shown in the pinned section above — don't
+    // Pinned artists are already shown in the pinned section above, don't
     // also list them again under ARTISTS.
     if (_isPinned('artists', artist.name)) return;
 
@@ -610,7 +610,7 @@ function _renderLibArtistGrid() {
       openKebabMenu(row, _artistMenuItems(), { atPoint: { x: ev.clientX, y: ev.clientY } });
     });
 
-    // Drag to reorder — insert before/after based on cursor Y position
+    // Drag to reorder: insert before/after based on cursor Y position
     row.addEventListener('dragstart', ev => {
       _libArtistDragSrc = idx;
       ev.dataTransfer.effectAllowed = 'move';
@@ -655,7 +655,7 @@ function _renderLibArtistGrid() {
   });
 
   // If there were no regular artists, the pinned section never got appended
-  // above — add it now so pinned playlists still show.
+  // above, add it now so pinned playlists still show.
   if (!list.querySelector('[data-label="ARTISTS"]')) _appendPinnedSection(list);
 
   // Pre-fetch artist photos for all artists that don't have one yet
@@ -688,7 +688,7 @@ function _updateArtistCardAvatar(artistName, picUrl) {
 
 async function _prefetchArtistAvatars() {
   // Fire all artist metadata fetches concurrently for maximum speed.
-  // Skip the pinned "Liked Songs" / "Playlists" groups — they keep their own
+  // Skip the pinned "Liked Songs" / "Playlists" groups, they keep their own
   // icons and must never be overwritten with a Deezer artist-search image.
   const artists = _libArtistList.filter(a =>
     !a._meta && !a.is_liked_group && !a.is_playlist_group && !a.is_home_group);
@@ -730,7 +730,7 @@ async function _prefetchArtistAvatars() {
     } catch (_) {}
   }
 
-  // Run in parallel — browsers handle concurrency limits automatically
+  // Run in parallel, browsers handle concurrency limits automatically
   await Promise.all(artists.map(a => _fetchOneMeta(a)));
 }
 
@@ -749,10 +749,10 @@ async function _selectLibArtist(artist, scroll) {
     if (activeRow) activeRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
-  // Home overview — its own dashboard view, no album grid / discography
+  // Home overview: its own dashboard view, no album grid / discography
   if (artist.is_home_group) {
     _libView = 'home';
-    // Home overview has no album grid — hide the whole sort/search toolbar group.
+    // Home overview has no album grid, hide the whole sort/search toolbar group.
     const af = document.getElementById('lib-album-filter');
     if (af) af.closest('#lib-album-tools').style.display = 'none';
     document.getElementById('lib-artist-hero').style.display = 'none';
@@ -774,13 +774,13 @@ async function _selectLibArtist(artist, scroll) {
         a.album.toLowerCase().includes(filter) || a.artist.toLowerCase().includes(filter))
     : artist.albums;
 
-  // Playlists / Liked Songs are local-only — never fetch or show a Deezer
+  // Playlists / Liked Songs are local-only, never fetch or show a Deezer
   // discography (so no "Loading full discography…" placeholder appears).
   const _localOnly = artist.is_playlist_group || artist.is_liked_group;
 
   // Liked Songs: render the saved tracks directly. The track-list header
   // already shows "Liked Songs", so suppress the artist hero (avoids the
-  // duplicate title + the meaningless 0/—/— album stats).
+  // duplicate title + the meaningless 0/blank/blank album stats).
   if (artist.is_liked_group) {
     _libView = 'tracks';
     document.getElementById('lib-artist-hero').style.display = 'none';
@@ -811,7 +811,7 @@ async function _selectLibArtist(artist, scroll) {
       }
 
       if (!meta) {
-        // No ID yet — search by name (same fallback as _prefetchArtistAvatars)
+        // No ID yet, search by name (same fallback as _prefetchArtistAvatars)
         const resp = await fetch(`/artist-search?q=${encodeURIComponent(artist.name)}`);
         const data = await resp.json();
         if (data.data && data.data.length) {
@@ -850,7 +850,7 @@ async function _selectLibArtist(artist, scroll) {
       }
     } catch (_) {}
   } else if (artist._discog && _libActiveArtist === artist) {
-    // Already cached — re-render with discog immediately
+    // Already cached, re-render with discog immediately
     const f = (document.getElementById('lib-album-filter')?.value || '').trim().toLowerCase();
     const vis = f
       ? artist.albums.filter(a => a.album.toLowerCase().includes(f))
@@ -1237,7 +1237,7 @@ function _renderLibHero(artist) {
   const localAlbs = artist.albums.length;
   const totalAlbs = meta.nb_album != null ? meta.nb_album : null;
 
-  // About blurb — strip HTML tags from Deezer biography if present
+  // About blurb: strip HTML tags from Deezer biography if present
   const rawBio    = meta.biography || '';
   const cleanBio  = rawBio.replace(/<[^>]*>/g, ' ').replace(/\s{2,}/g, ' ').trim();
 
@@ -1248,7 +1248,7 @@ function _renderLibHero(artist) {
   bg.style.backgroundImage = isPlaylists ? '' : (bgUrl ? `url(${JSON.stringify(bgUrl)})` : '');
 
   if (isPlaylists) {
-    // Distinct collection look — a playlist tile, not an artist avatar
+    // Distinct collection look: a playlist tile, not an artist avatar
     av.style.display = 'none';
     ph.style.display = 'flex';
     ph.innerHTML = ICON.playlist;
@@ -1304,7 +1304,7 @@ function _renderLibHero(artist) {
   const seps = hero.querySelectorAll('.lib-hero-stat-sep');
   const statsWrap = document.getElementById('lib-hero-stats');
   if (artist.is_playlist_group) {
-    // Counts live in the subtitle now — hide the artist-style stat boxes entirely
+    // Counts live in the subtitle now, hide the artist-style stat boxes entirely
     if (statsWrap) statsWrap.style.display = 'none';
     if (aboutEl)   aboutEl.style.display = 'none';
     return;
@@ -1333,7 +1333,7 @@ function _renderLibBreadcrumb() {
   const rootLabel  = _libActiveArtist?.is_playlist_group ? 'Playlists' : 'Albums';
 
   if (_libView === 'albums') {
-    // Root view: no "Albums"/"Playlists" crumb — the hero + the "In Your Library"
+    // Root view: no "Albums"/"Playlists" crumb, the hero + the "In Your Library"
     // section header already convey context. Keep the crumb only in track view.
     bc.innerHTML = '';
     if (albFilter) albFilter.closest('#lib-album-tools').style.display = 'flex';
@@ -1353,7 +1353,7 @@ function _renderLibBreadcrumb() {
         ? _libActiveArtist.albums.filter(a =>
             a.album.toLowerCase().includes(filter))
         : _libActiveArtist.albums;
-      // Local-only groups (Playlists) have no Deezer discography — pass [] so the
+      // Local-only groups (Playlists) have no Deezer discography, pass [] so the
       // "Loading full discography…" placeholder never appears; else cached discog.
       _renderLibAlbums(visible, _localOnly ? [] : (_libActiveArtist._discog || null));
     });
@@ -1365,7 +1365,7 @@ function _renderLibBreadcrumb() {
 // re-descends into the last item you backed out of (single-step memory). Only
 // acts on the Library tab; the browser's own back/forward is suppressed
 // app-wide so a side-button press never navigates away from the app.
-let _libFwd = null;   // { kind:'album'|'artist', ... } — last thing backed out of
+let _libFwd = null;   // { kind:'album'|'artist', ... }, last thing backed out of
 
 function _libNavBack() {
   if (_libView === 'tracks') {
@@ -1400,9 +1400,9 @@ document.addEventListener('mouseup', (e) => {
 });
 
 // Shared "+" add-to-queue wiring for an album card. Used by BOTH the artist page
-// and the Recommended shelf so they behave identically — one source of truth.
+// and the Recommended shelf so they behave identically: one source of truth.
 // `alb` is a normalised {id, url, artist, title, cover, nb_tracks}. On add: pop +
-// card flash, then the card drops `not-owned` (brightening the dimmed cover — the
+// card flash, then the card drops `not-owned` (brightening the dimmed cover, the
 // "it's queued now" signal) and the button shows a check with a `just-added`
 // guard so it doesn't flash the red remove state under the resting cursor. A
 // queued album can be removed by clicking again (✕ on hover). Returns handles so
@@ -1468,7 +1468,7 @@ function _wireAddButton(card, addBtn, alb, opts = {}) {
   return { add: _add, remove: _remove, setQueued: _setQueued, url };
 }
 
-// ── Album grid — owned + full discography ──────────────────────────────────
+// ── Album grid: owned + full discography ──────────────────────────────────
 let _libAlbumSort = 'az';   // az | za | tracks | recent
 function _sortAlbums(list) {
   const byName = (a, b) => (a.album || '').localeCompare(b.album || '', undefined, { sensitivity: 'base' });
@@ -1484,8 +1484,8 @@ function _renderLibAlbums(ownedAlbums, discog) {
   const content = document.getElementById('lib-content');
   content.innerHTML = '';
 
-  // Put the "In Your Library" header on the toolbar row — the same line as the
-  // A–Z / search controls — so the separator visibly runs from the header across
+  // Put the "In Your Library" header on the toolbar row, the same line as the
+  // A–Z / search controls, so the separator visibly runs from the header across
   // to those controls. (The controls live in #lib-album-tools, to the right of
   // the breadcrumb.) The matching owned section header inside the scroll area is
   // therefore suppressed below to avoid showing it twice.
@@ -1685,7 +1685,7 @@ function _renderLibAlbums(ownedAlbums, discog) {
       // Drag to reorder owned albums
       _attachAlbumDrag(card, alb, () => card.closest('.lib-album-grid'));
     } else {
-      // Not-owned: + button toggles the album in/out of the download queue —
+      // Not-owned: + button toggles the album in/out of the download queue,
       // shared logic with the Recommended shelf (see _wireAddButton).
       const addBtn = card.querySelector('.lib-add-btn');
       const _h = _wireAddButton(card, addBtn, {
@@ -1696,7 +1696,7 @@ function _renderLibAlbums(ownedAlbums, discog) {
         cover:     alb.cover_medium || alb.cover_small || null,
         nb_tracks: alb.nb_tracks || null,
       });
-      // Not-owned kebab menu — offer add or remove depending on current state
+      // Not-owned kebab menu: offer add or remove depending on current state
       if (kb) kb.addEventListener('click', (ev) => {
         ev.stopPropagation();
         const queued = entries.some(e => e.url === _h.url);
@@ -1711,7 +1711,7 @@ function _renderLibAlbums(ownedAlbums, discog) {
   }
 
   // ── Owned section ───────────────────────────────────────────────────────
-  // (Header lives on the toolbar row now — see the breadcrumb block above.)
+  // (Header lives on the toolbar row now, see the breadcrumb block above.)
   if (ownedAlbums.length) {
     const ownedGrid = document.createElement('div');
     ownedGrid.className = 'lib-album-grid';
@@ -1819,7 +1819,7 @@ async function _renderHomeView() {
   };
 
   // Recently added shelf: album-folder mtime, so folder imports and
-  // manual copies surface here too — not just bot downloads.
+  // manual copies surface here too, not just bot downloads.
   const addedRecently = regularAlbums
     .filter(a => a.mtime)
     .sort((x, y) => (y.mtime || 0) - (x.mtime || 0))
@@ -1906,7 +1906,7 @@ async function _renderHomeView() {
   renderReleases();
   _loadWatchlist().then(() => { renderReleases(); checkReleases(false); });
 
-  // Recommended for you — seeded from the library's most-stocked artists
+  // Recommended for you: seeded from the library's most-stocked artists
   _renderHomeRecs();
 
   content.querySelectorAll('.home-recent-card').forEach(el => {
@@ -1987,7 +1987,7 @@ function _paintHomeRecs(el, recs) {
         <div class="lib-album-artist" title="${escHtml(a.artist)}">${escHtml(a.artist)}</div>
       </div>
     </div>`).join('');
-  // Identical add behaviour to the artist page — one shared code path.
+  // Identical add behaviour to the artist page, one shared code path.
   el.querySelectorAll('.lib-album-card').forEach(card => {
     const a = recs[+card.dataset.ri]; if (!a) return;
     _wireAddButton(card, card.querySelector('.rec-add'), {
@@ -2357,7 +2357,7 @@ function _renderLibTracks(tracks, alb, opts) {
       <div style="font-size:11px;color:var(--accent);font-family:var(--mono);margin-top:3px">${escHtml(alb.artist)}</div>
       ${opts.hideMeta ? '' : `<div style="font-size:10px;color:var(--fg3);font-family:var(--mono);margin-top:2px">${meta}</div>`}
     `;
-    // Export-as-m3u — only for local folders (those backed by a path_hash)
+    // Export-as-m3u: only for local folders (those backed by a path_hash)
     if (alb.path_hash) {
       const exp = document.createElement('button');
       exp.className = 'btn-secondary';
@@ -2400,7 +2400,7 @@ function _renderLibTracks(tracks, alb, opts) {
   const reorderable = !!(alb && alb.is_playlist && alb.path_hash);
   let _plDragFrom = -1;
 
-  // Column header row (Spotify-style) — for playlists with album/date columns
+  // Column header row (Spotify-style), for playlists with album/date columns
   if (opts.showAlbum) {
     const head = document.createElement('div');
     head.className = 'lib-track-head';
@@ -2634,13 +2634,13 @@ async function _renderLikedSongs(artist) {
   _likedKeys = new Set(tracks.map(t => (t.path_hash || '') + '\x00' + (t.name || '')));
 
   // Synthetic album wrapper (stable singleton so playback highlight survives
-  // re-renders) — each track carries its own path_hash/cover_url.
+  // re-renders), each track carries its own path_hash/cover_url.
   _likedAlbum.artist = `${tracks.length} song${tracks.length !== 1 ? 's' : ''}`;
   _libActiveAlbum = _likedAlbum;
   _renderLibTracks(tracks, _likedAlbum, {
     showArtist: true,
     headerIcon: 'heartFilled',
-    hideMeta: true,   // the artist line already shows "N songs" — avoid duplicate count
+    hideMeta: true,   // the artist line already shows "N songs", avoid duplicate count
     emptyMsg: 'No liked songs yet. Tap the heart on any track to add it here.',
   });
 }

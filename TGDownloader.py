@@ -200,7 +200,7 @@ def _dir_has_audio(d: Path) -> bool:
 
 def migrate_artists_layout(home: Path) -> int:
     """One-time, idempotent migration: move top-level artist folders into
-    <home>/Artists/.  Conservative & non-destructive — only moves directories
+    <home>/Artists/.  Conservative & non-destructive: only moves directories
     that actually contain audio, skips system folders, and merges (never
     overwrites) on a name clash.  Returns the number of folders moved."""
     system = {ARTISTS_DIRNAME, PLAYLISTS_DIRNAME, ".tgdownloader",
@@ -329,7 +329,7 @@ def is_url_complete(
     if not files:
         return True
 
-    # Playlists are stored flat under <home>/Playlists/<name>/ — verify there.
+    # Playlists are stored flat under <home>/Playlists/<name>/, verify there.
     if entry.get("is_playlist"):
         pl_dir = home / PLAYLISTS_DIRNAME / _sanitise_path(entry.get("playlist", ""))
         if not pl_dir.exists():
@@ -412,7 +412,7 @@ def get_home_music_folder(cfg: dict) -> Path:
 # The GUI launches us with stdout wired to a pipe; a person running the CLI has
 # a real terminal.  When piped we speak the JSON-lines protocol the GUI parses;
 # on a terminal we keep the old human-readable text.  isatty() is the reliable
-# signal here — it holds in both the dev backend (plain `TGDownloader.py`) and
+# signal here: it holds in both the dev backend (plain `TGDownloader.py`) and
 # the frozen backend (`--backend`), where an argv check would not.
 try:
     _PIPED = not sys.stdout.isatty()
@@ -604,8 +604,8 @@ def _check_cryptg() -> None:
 
 
 def _exists_in_tree(filename: str, root: Path) -> bool:
-    # glob.escape so a name with glob metacharacters — brackets are the common
-    # case ("Song [Remix].flac", "[Explicit]") — is matched literally. Without
+    # glob.escape so a name with glob metacharacters (brackets are the common
+    # case: "Song [Remix].flac", "[Explicit]") is matched literally. Without
     # it rglob reads "[Remix]" as a character class and never matches the real
     # file, which made is_url_complete re-download such albums every run.
     return any(True for _ in root.rglob(glob.escape(filename)))
@@ -634,7 +634,7 @@ def _fuzzy_match_dir(name: str, parent: Path,
     for d in parent.iterdir():
         if not d.is_dir() or d.name.startswith("."):
             continue
-        if d.name == san:                          # exact sanitised match — done
+        if d.name == san:                          # exact sanitised match, done
             return d
         score = max(
             _fuzzy_score(d.name, name),
@@ -646,7 +646,7 @@ def _fuzzy_match_dir(name: str, parent: Path,
 
 
 def _audio_hash(path: Path) -> str:
-    """MD5 of the raw file bytes — fast, catches byte-level duplicates."""
+    """MD5 of the raw file bytes: fast, catches byte-level duplicates."""
     h = hashlib.md5()
     with open(path, "rb") as fh:
         for chunk in iter(lambda: fh.read(65_536), b""):
@@ -679,7 +679,7 @@ def build_library_hash_index(home: Path) -> set[str]:
     total    = 0
     rehashed = 0
 
-    # Playlist folders hold COPIES of tracks — exclude them from the dedup index
+    # Playlist folders hold COPIES of tracks, exclude them from the dedup index
     # so a real album/artist download is never skipped just because one of its
     # tracks also lives in a playlist.
     playlists_root = (home / PLAYLISTS_DIRNAME).resolve()
@@ -704,10 +704,10 @@ def build_library_hash_index(home: Path) -> set[str]:
         if (cached
                 and cached.get("mtime") == mtime
                 and cached.get("size")  == size):
-            h = cached["hash"]          # cache hit — no disk read needed
+            h = cached["hash"]          # cache hit, no disk read needed
         else:
             try:
-                h = _audio_hash(p)      # cache miss — read and hash the file
+                h = _audio_hash(p)      # cache miss, read and hash the file
                 rehashed += 1
             except OSError:
                 continue
@@ -774,15 +774,15 @@ def check_pre_download(entry: "URLEntry", home: Path) -> None:
     """Log warnings about potential duplicates *before* downloading.
 
     Two checks are performed:
-    1. Fuzzy artist folder match — warns when an existing folder is very
+    1. Fuzzy artist folder match: warns when an existing folder is very
        similar to the requested artist name (e.g. "AC_DC" vs "AC DC").
-    2. Fuzzy album folder match — if the matched artist folder already
+    2. Fuzzy album folder match: if the matched artist folder already
        contains an album whose name closely resembles the URL's Deezer
        album title (extracted from the URL path, best-effort).
     """
     artist_dir = _fuzzy_match_dir(entry.artist, artists_root(home))
     if artist_dir is None:
-        return                                     # no match — nothing to warn about
+        return                                     # no match, nothing to warn about
 
     san = _sanitise_path(entry.artist)
     if artist_dir.name != san:
@@ -823,7 +823,7 @@ def _get_album(path: Path) -> str:
 
 
 def _get_artist(path: Path) -> str:
-    """Best-effort artist tag (albumartist preferred), else '' — used when
+    """Best-effort artist tag (albumartist preferred), else '', used when
     importing an external folder so files route to the right artist folder."""
     try:
         audio = MutagenFile(path, easy=True)
@@ -1129,7 +1129,7 @@ def sort_into_playlist(source: Path, playlist_dir: Path,
     supplied, files are arranged to match it and their track-number tag is set
     accordingly; otherwise they fall back to alphabetical order.  A zero-padded
     index prefix keeps a stable order and prevents same-title collisions.  No
-    global hash dedup is applied — a playlist may legitimately contain tracks
+    global hash dedup is applied: a playlist may legitimately contain tracks
     that also live under an artist folder.  Returns (dupes, [final_filenames])."""
     _log(f"\n{'─'*50}")
     _log(f"  ADDING TO PLAYLIST: {playlist_dir.name}")
@@ -1208,7 +1208,7 @@ def _needs_conversion(path: Path, target_quality: str) -> bool:
     if target_quality == "FLAC":
         return ext != ".flac"
     else:
-        # MP3 320 or MP3 128 — any non-mp3 needs conversion;
+        # MP3 320 or MP3 128: any non-mp3 needs conversion;
         # mp3 files are passed through without re-encoding to avoid quality loss.
         return ext != ".mp3"
 
@@ -1241,7 +1241,7 @@ def _ffmpeg_convert(src: Path, target_quality: str) -> "Path | None":
         _log(f"  WARN  Unknown target quality '{target_quality}' — skipping conversion")
         return None
 
-    # src and dst are the same path (e.g. mp3→mp3 same suffix) — skip
+    # src and dst are the same path (e.g. mp3→mp3 same suffix), skip
     if dst.resolve() == src.resolve():
         return src
 
@@ -1334,7 +1334,7 @@ def convert_directory_quality(directory: Path, target_quality: str) -> tuple[int
 def _resolve_bot_profiles(cfg: dict) -> "list[str]":
     """Ordered bot usernames to try: the primary `bot_username` first, then any
     `bot_failover` backups (list, or comma / newline-separated string). Purely
-    additive — with no backups configured this is just `[bot_username]`, so
+    additive: with no backups configured this is just `[bot_username]`, so
     existing single-bot setups are unchanged."""
     primary = str(cfg.get("bot_username") or "").strip()
     raw = cfg.get("bot_failover") or cfg.get("bot_usernames")   # accept either key
@@ -1378,7 +1378,7 @@ async def _ensure_bot_initialized(client, cfg: dict, bot_username: "str | None" 
     _legacy_ok   = (BOT_USERNAME == str(cfg.get("bot_username") or "").strip()
                     and _BOT_INIT_FLAG.exists())
     if _init_flag.exists() or _legacy_ok:
-        # Already initialised on a previous launch — nothing to do.
+        # Already initialised on a previous launch, nothing to do.
         _log(f"  ✓ Telegram bot ready to use ({BOT_USERNAME})")
         return
 
@@ -1412,14 +1412,14 @@ async def _ensure_bot_initialized(client, cfg: dict, bot_username: "str | None" 
                 break
 
         if join_url is None:
-            # Bot didn't present a join gate — already a member or gate absent
+            # Bot didn't present a join gate, already a member or gate absent
             _log("  No channel join required.")
         else:
             _log(f"  Bot requires channel membership → {join_url}")
 
             # Distinguish private invite links (t.me/+HASH  or  t.me/joinchat/HASH)
             # from public channel usernames (t.me/username).
-            # Private links must use ImportChatInviteRequest(hash) — calling
+            # Private links must use ImportChatInviteRequest(hash); calling
             # get_entity() on the bare hash string raises "Cannot find any entity".
             _m_priv = re.search(
                 r"t\.me/(?:joinchat/|\+)([^/?#]+)", join_url, re.IGNORECASE
@@ -1449,7 +1449,7 @@ async def _ensure_bot_initialized(client, cfg: dict, bot_username: "str | None" 
                 except Exception as join_exc:
                     err_str = str(join_exc).lower()
                     if "already" in err_str or "participant" in err_str:
-                        # Already a member — still need to find the entity to mute
+                        # Already a member, still need to find the entity to mute
                         _log("  Already a member of the channel — re-fetching entity …")
                         try:
                             # CheckChatInvite returns info about the invite without joining
@@ -1488,7 +1488,7 @@ async def _ensure_bot_initialized(client, cfg: dict, bot_username: "str | None" 
                     await client(UpdateNotifySettingsRequest(
                         peer=InputNotifyPeer(peer),
                         settings=InputPeerNotifySettings(
-                            mute_until=2_147_483_647,   # INT32_MAX — permanent
+                            mute_until=2_147_483_647,   # INT32_MAX, permanent
                             silent=True,
                         ),
                     ))
@@ -1503,7 +1503,7 @@ async def _ensure_bot_initialized(client, cfg: dict, bot_username: "str | None" 
 
     except Exception as exc:
         _log(f"  WARNING: First-time setup encountered an error: {exc}")
-        # Non-fatal — write the flag anyway so we don't retry every launch
+        # Non-fatal, write the flag anyway so we don't retry every launch
 
     try:
         _init_flag.touch()
@@ -1524,7 +1524,7 @@ async def _ensure_bot_initialized(client, cfg: dict, bot_username: "str | None" 
 # ── Bandwidth cap ─────────────────────────────────────────────────────────────
 # A global token bucket shared across the parallel download threads (each runs
 # its own event loop, so the guard is a plain threading.Lock, not asyncio). A
-# rate of 0 disables it — the common case — so there's zero overhead when off.
+# rate of 0 disables it (the common case), so there's zero overhead when off.
 class _BandwidthLimiter:
     def __init__(self, rate_bps: float):
         self.rate       = float(rate_bps or 0)
@@ -1588,7 +1588,7 @@ async def download_all_async(
     # iter_download loop fires its GetFile request in the same event-loop
     # tick.  The server replies in a batch; every coroutine wakes, writes,
     # and fires the next request together.  This produces perfect lock-step
-    # synchronisation — the sawtooth seen on the NIC — regardless of how
+    # synchronisation (the sawtooth seen on the NIC) regardless of how
     # clients were started.
     #
     # Giving each file its own OS thread AND its own asyncio event loop
@@ -1600,14 +1600,14 @@ async def download_all_async(
     # The 200 ms stagger on connect() spaces the ImportAuthorization
     # handshakes on non-home DCs so Telegram does not reject them.
     # ──────────────────────────────────────────────────────────────────────
-    _AUTH_STAGGER_S  = 4.0   # seconds between successive connect() calls — wider gap prevents DC auth floods
+    _AUTH_STAGGER_S  = 4.0   # seconds between successive connect() calls; wider gap prevents DC auth floods
     _MAX_AUTH_TRIES  = 8     # retries on auth failure
     _AUTH_RETRY_WAIT = 8.0   # seconds to wait between auth retries
     _MAX_FLOOD_WAIT  = 300   # honour flood waits up to 5 min; skip file only if longer than that
     session_string   = StringSession.save(client.session)
 
     def _emit_progress_ts() -> None:
-        """Thread-safe progress — print() holds the GIL per call."""
+        """Thread-safe progress: print() holds the GIL per call."""
         if _PIPED:
             _emit({"type": "progress",
                    **_progress_snapshot(start_time, total, done_counter[0])})
@@ -1759,7 +1759,7 @@ async def collect_files(
     pending_events: list  = []
     # De-dupe by message id: on_new AND on_edit both feed this queue, so a bot
     # that edits a file message (e.g. tweaks a caption) would otherwise re-add
-    # the same document — downloaded and counted twice.
+    # the same document, downloaded and counted twice.
     seen_ids: set = set()
     # last_file_time tracks when the last *audio document* arrived, not when
     # any message arrived.  Initialised to 0 so we never start the idle clock
@@ -1824,7 +1824,7 @@ async def collect_files(
             break
 
         # ── Idle timeout: only start counting once the first file arrived ──
-        # If last_file_time is still 0 no file has come yet — don't time out.
+        # If last_file_time is still 0 no file has come yet, don't time out.
         if last_file_time > 0:
             idle = time.monotonic() - last_file_time
             if idle >= IDLE_TIMEOUT:
@@ -1976,7 +1976,7 @@ async def process_url(
         for i, btn in enumerate(all_buttons, 1):
             _log(f"    {i}. {btn.text}")
         if not sys.stdin.isatty():
-            # GUI mode: stdin is an exhausted pipe — prompting would raise
+            # GUI mode: stdin is an exhausted pipe, prompting would raise
             # EOFError and surface as a confusing crash. Skip with a clear log.
             _log("  Cannot prompt for a button in GUI mode — skipping this URL.")
             await cleanup()
@@ -2232,7 +2232,7 @@ async def main() -> None:
         url_tmp = _DATA_DIR / "tg_tmp_downloads" / f"url_{i}"
         url_tmp.mkdir(parents=True, exist_ok=True)
 
-        # Try each bot profile in turn — fail over to the next when one errors
+        # Try each bot profile in turn, fail over to the next when one errors
         # or returns nothing. With a single profile this runs exactly once, so
         # existing single-bot setups behave identically.
         _profiles = _resolve_bot_profiles(cfg)

@@ -2,13 +2,13 @@
 """Minimal, dependency-free Discord Rich Presence client.
 
 Speaks Discord's local IPC protocol directly over the desktop client's named
-pipe (Windows, via `_winapi`) or Unix domain socket (macOS/Linux) — no
+pipe (Windows, via `_winapi`) or Unix domain socket (macOS/Linux). No
 `pypresence`, no external packages, matching the app's stdlib-first style.
 
 Everything here is best-effort: if Discord isn't running, the client id is
 missing/invalid, or the pipe hiccups, calls quietly no-op and never raise into
 the caller. Presence is opt-in (`discord_rich_presence` in the config) and needs
-a Discord *application* client id (`discord_client_id`) — create one for free at
+a Discord *application* client id (`discord_client_id`); create one for free at
 https://discord.com/developers/applications (any name), copy its Application ID.
 """
 from __future__ import annotations
@@ -104,7 +104,7 @@ class DiscordPresence:
 
     def connect(self, client_id: str) -> bool:
         """Open the pipe and complete the handshake. Returns True only on a
-        READY reply. Safe to call repeatedly — it reconnects cleanly."""
+        READY reply. Safe to call repeatedly, it reconnects cleanly."""
         with self._lock:
             self._close_locked()
             self.client_id = str(client_id or "").strip()
@@ -125,8 +125,8 @@ class DiscordPresence:
                         logger.info("Discord Rich Presence connected via %s (user %s)",
                                     path, user.get("username", "?"))
                         return True
-                    # Reached Discord but it declined (e.g. bad client id) — the
-                    # protocol works; surface why and stop probing.
+                    # Reached Discord but it declined (e.g. bad client id); the
+                    # protocol works, surface why and stop probing.
                     logger.warning("Discord declined presence handshake: %s",
                                    resp.get("message") or resp or f"op {op}")
                     self._close_locked()

@@ -110,7 +110,7 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # Things we definitely don't need — trim bundle size
+        # Things we definitely don't need, trims bundle size
         'matplotlib',
         'numpy',
         'scipy',
@@ -153,7 +153,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # App icon — multi-resolution .ico (16→256) built from static/icon-512.png.
+    # App icon: multi-resolution .ico (16→256) built from static/icon-512.png.
     # Regenerate with scripts/make_icon.py if the brand PNG changes.
     icon=str(HERE / 'icon.ico'),
 )

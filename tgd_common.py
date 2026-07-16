@@ -27,14 +27,14 @@ credentials, ffmpeg detection, and the app version.
 
 Secrets & the OS keyring
 ------------------------
-By default all settings — including api_hash and the various service tokens —
+By default all settings (including api_hash and the various service tokens)
 live in plaintext in tg_audio_config.json.  Setting ``"use_keyring": true`` in
 the config (and ``pip install keyring``) moves every key listed in
 :data:`SECRET_KEYS` into the operating-system keyring on the next save; the
 JSON file then only holds empty placeholders.  The overlay is transparent:
 ``load_config()`` returns the merged view either way, so callers never care
 where a secret physically lives.  If keyring is enabled but the package is
-missing, secrets stay in the JSON file and a warning is logged — nothing is
+missing, secrets stay in the JSON file and a warning is logged. Nothing is
 ever lost.
 
 The same flag also moves the Telegram *session* off disk: with keyring on, the
@@ -52,7 +52,7 @@ import shutil
 import sys
 from pathlib import Path
 
-__version__ = "1.18.1"   # single source — bump this when you cut a new release
+__version__ = "1.18.1"   # single source, bump this when you cut a new release
 
 logger = logging.getLogger("tgd_common")
 
@@ -95,7 +95,7 @@ DEFAULT_CONFIG: dict = {
     # Analyze + tag loudness (REPLAYGAIN_TRACK_GAIN) on every new download.
     # Off by default: adds one ffmpeg decode pass per file.
     "replaygain_on_download":  False,
-    # AcoustID fingerprinting — optional; needs Chromaprint's fpcalc
+    # AcoustID fingerprinting, optional; needs Chromaprint's fpcalc
     # binary on PATH and a free API key from https://acoustid.org/.
     "acoustid_api_key":        "",
     # ── Scrobbling (opt-in; off unless a token/key is provided) ──
@@ -114,7 +114,7 @@ DEFAULT_CONFIG: dict = {
     "post_download_command":   "",
     # ── File / folder naming (applies to NEW downloads only) ──
     # file_naming_template renames tracks on sort from their tags.  Empty (the
-    # default) keeps the original filename — i.e. unchanged behaviour.  Fields:
+    # default) keeps the original filename, i.e. unchanged behaviour.  Fields:
     # {track} {track2} {disc} {disc2} {title} {artist} {albumartist} {album} {year}.
     "file_naming_template":    "",
     # multidisc_mode: how albums that span more than one disc are laid out.
@@ -262,7 +262,7 @@ def require_api_credentials() -> "tuple[int, str]":
 
 # ── Telegram session storage (opt-in OS keyring) ──────────────────────────────
 # By default the Telethon auth key lives in a plaintext SQLite session file
-# (`tg_audio_session.session`) beside the app — a full-account credential sitting
+# (`tg_audio_session.session`) beside the app, a full-account credential sitting
 # on disk in the clear. With use_keyring on, the session is kept as a Telethon
 # StringSession in the OS keyring instead and the plaintext file is removed.
 # Everything degrades safely: an empty keyring falls back to the file, and if
@@ -369,7 +369,7 @@ def migrate_session_to_keyring() -> bool:
         _warn_keyring_missing()
         return False
     if load_session_string():
-        remove_session_file()          # already in keyring — file is redundant
+        remove_session_file()          # already in keyring, file is redundant
         return False
     s = read_session_file_string()
     if not s:

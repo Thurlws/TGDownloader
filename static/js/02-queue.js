@@ -409,9 +409,9 @@ function closeKebabMenu() {
 //                            of below the anchor element (used for right-click
 //                            context menus so the menu appears at the pointer).
 // Item shapes:
-//   { label, icon, action, danger }                  — normal item
-//   { divider: true }                                — separator
-//   { label, icon, submenu: [...] | () => [...] }    — drills into a submenu
+//   { label, icon, action, danger }                  : normal item
+//   { divider: true }                                : separator
+//   { label, icon, submenu: [...] | () => [...] }    : drills into a submenu
 function openKebabMenu(anchorEl, items, opts) {
   closeKebabMenu();
   const dd = _getKebabDropdown();
@@ -466,7 +466,7 @@ function openKebabMenu(anchorEl, items, opts) {
     });
   }
 
-  // Position the dropdown — at a cursor point, else below the anchor element.
+  // Position the dropdown: at a cursor point, else below the anchor element.
   // kebab-dropdown is position:absolute inside the CSS-scaled #app, so convert
   // viewport coords to #app-local unscaled coords (divide offsets by scale).
   function _reposition() {
@@ -575,7 +575,7 @@ async function addEntry() {
     albumTitle = data.title        || null;
     coverUrl   = data.cover_medium || data.cover_small || null;
     nbTracks   = data.nb_tracks    || null;
-    // Spotify links are downloaded by the bot directly — keep the Spotify URL.
+    // Spotify links are downloaded by the bot directly, keep the Spotify URL.
     if (data.source === 'spotify') { source = 'spotify'; if (data.link) dlUrl = data.link; }
     // Playlists go into <home>/Playlists/<name>/ instead of being split into
     // per-album folders under an artist.
@@ -660,7 +660,7 @@ async function addBulkEntries() {
         albumTitle = data.title        || null;
         coverUrl   = data.cover_medium || data.cover_small || null;
         nbTracks   = data.nb_tracks    || null;
-        // Spotify links are downloaded by the bot directly — keep the Spotify URL.
+        // Spotify links are downloaded by the bot directly, keep the Spotify URL.
         if (data.source === 'spotify') { source = 'spotify'; if (data.link) dlUrl = data.link; }
         const _kind = data.kind || data.spotify_kind || '';
         if (_kind === 'playlist' || /\/playlist\//.test(dlUrl)) {
@@ -668,7 +668,7 @@ async function addBulkEntries() {
           playlistName = data.title || playlistName || '';
         }
       } else if ((spotifyMatch || dzOtherMatch) && data && data.error) {
-        return null;  // unresolvable link — skip
+        return null;  // unresolvable link, skip
       }
     } catch (_) {}
     if (isPlaylist && !playlistName) {
@@ -1056,7 +1056,7 @@ async function _fetchLibStats(force = false) {
     }
   } catch (_) {}
   try {
-    // Cheap (local JSONL aggregation) — refresh alongside the library stats.
+    // Cheap (local JSONL aggregation), refresh alongside the library stats.
     const ps = await (await fetch('/play-stats')).json();
     if (ps && !ps.error) { _playStatsCache = ps; renderStats(); }
   } catch (_) {}
@@ -1213,7 +1213,7 @@ function renderStats() {
     return;
   }
 
-  // ── Listening card (local play history — see /play-stats) ────────────────
+  // ── Listening card (local play history, see /play-stats) ────────────────
   let listenCard = '';
   const ps = _playStatsCache;
   if (ps && ps.total > 0) {
@@ -1436,7 +1436,7 @@ function makeGrowthChart(growth) {
   const plotH = H - padT - padB;
   const max = Math.max(...vals), min = 0;          // anchor to 0 so growth reads honestly
   const span = Math.max(max - min, 1);
-  const VBW = 1000;               // viewBox width — stretched to fill the plot area
+  const VBW = 1000;               // viewBox width, stretched to fill the plot area
   const xAt = i => (vals.length === 1 ? 0 : (i / (vals.length - 1)) * VBW);
   const yAt = v => padT + plotH - ((v - min) / span) * plotH;
   const baseY = padT + plotH;
@@ -1468,7 +1468,7 @@ function makeGrowthChart(growth) {
     return `<div style="position:absolute;bottom:5px;${pos};font-size:9px;color:var(--fg3);white-space:nowrap">${escHtml(_fmtMonthLabel(growth[i].month))}</div>`;
   }).join('');
 
-  // Endpoint dot (HTML) at the last point — right edge of the plot area.
+  // Endpoint dot (HTML) at the last point: right edge of the plot area.
   const lastY = yAt(vals[vals.length - 1]);
   const dot = `<div style="position:absolute;right:${axisR - 3}px;top:${(lastY - 3).toFixed(1)}px;width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--bg3)"></div>`;
 
@@ -1809,7 +1809,7 @@ async function doSearch(fromExplicit) {
     if (!data.data || !data.data.length) { results.innerHTML = '<div class="search-status">No results found.</div>'; return; }
 
     // Spotify search fell back to Deezer (these results add Deezer links). Tell
-    // the user rather than silently swapping providers — and if it's just that
+    // the user rather than silently swapping providers, and if it's just that
     // the API keys aren't set up yet, point them to Settings.
     if (provider === 'spotify' && data.fellback_to_deezer) {
       _toast(data.spotify_unconfigured

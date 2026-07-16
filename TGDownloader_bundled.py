@@ -19,7 +19,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 """
-TGDownloader — Bundled Entry Point  (Option 3 + 4)
+TGDownloader: Bundled Entry Point  (Option 3 + 4)
 ====================================================
 This is the PyInstaller entry point AND the development entry point.
 
@@ -105,7 +105,7 @@ class _LogWriter:
 
 if "--backend" in sys.argv:
     # Spawned by ProcessManager.start().
-    # stdout IS the pipe back to the parent — must not be redirected because
+    # stdout IS the pipe back to the parent, so it must not be redirected:
     # it carries the ##RESULT## / ##PROG## structured lines the GUI reads.
     _setup_logging(to_console=False)
     _blog = logging.getLogger("backend")
@@ -135,7 +135,7 @@ if "--backend" in sys.argv:
 _setup_logging(to_console=not getattr(sys, "frozen", False))
 
 if getattr(sys, "frozen", False):
-    # No console window — redirect stray prints so nothing is silently lost.
+    # No console window, so redirect stray prints instead of losing them silently.
     _alog = logging.getLogger("app")
     sys.stdout = _LogWriter(_alog, logging.INFO)   # type: ignore[assignment]
     sys.stderr = _LogWriter(_alog, logging.ERROR)  # type: ignore[assignment]
