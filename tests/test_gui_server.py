@@ -38,7 +38,7 @@ def test_range_end_clamped_to_file_size():
 
 
 def test_range_suffix():
-    # bytes=-500 means "the last 500 bytes" — the old parser served byte 0+.
+    # bytes=-500 means "the last 500 bytes" (the old parser served byte 0+).
     assert gui._parse_range_header("bytes=-30", 100) == (70, 99)
 
 

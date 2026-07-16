@@ -5,10 +5,10 @@
 //  synced-lyrics .lrc export.
 //
 //  Integration contract with 05-player.js (all called via window.* guards):
-//    _fxTick(cur, dur)            — every timeupdate of the active element
-//    _fxOnTrackChange(t, alb, ph) — end of _mpPlayTrack
-//    _fxFinishXfade()             — from the 'ended' handler; true = consumed
-//    _mpCancelXfade()             — manual track change / sleep stop
+//    _fxTick(cur, dur)            : every timeupdate of the active element
+//    _fxOnTrackChange(t, alb, ph) : end of _mpPlayTrack
+//    _fxFinishXfade()             : from the 'ended' handler; true = consumed
+//    _mpCancelXfade()             : manual track change / sleep stop
 // ═══════════════════════════════════════
 
 // ── Settings ─────────────────────────────────────────────────────────────────
@@ -30,7 +30,7 @@ function _fxSave() { try { localStorage.setItem('tgdl_fx', JSON.stringify(_fxS))
 // ── WebAudio graph (lazy; playback is untouched if creation fails) ───────────
 const _fxMainEl = document.getElementById('mini-audio');
 let _fxCtx = null, _fxBands = null, _fxRgGain = null, _fxAnalyser = null;
-let _fxDead = false;                       // graph creation failed — never retry
+let _fxDead = false;                       // graph creation failed, never retry
 const _fxRouted = new WeakSet();
 
 function _fxRoute(el) {
@@ -176,7 +176,7 @@ function _fxResumeTick(cur, dur) {
   if (cur > 60 && cur < dur - 90) {
     _fxResume[key] = Math.floor(cur);
   } else if (cur >= dur - 90) {
-    delete _fxResume[key];          // effectively finished — start fresh next time
+    delete _fxResume[key];          // effectively finished, start fresh next time
   }
   try { localStorage.setItem('tgdl_resume', JSON.stringify(_fxResume)); } catch (_) {}
 }

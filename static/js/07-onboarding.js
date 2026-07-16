@@ -2,7 +2,7 @@
 //  ONBOARDING TOUR
 //  A first-run guided spotlight over the core workflow. Self-contained and
 //  loaded last, so it may safely reference anything from earlier modules and
-//  nothing references it (no load-order landmines — see the v1.9.1 fix).
+//  nothing references it (no load-order landmines, see the v1.9.1 fix).
 // ═══════════════════════════════════════
 (function () {
   const SEEN_KEY = 'tgd_onboarded';
@@ -111,7 +111,7 @@
     document.getElementById('tour-next').textContent = idx >= steps.length - 1 ? 'Done' : 'Next';
     // Ensure the target is scrolled into view (Library tab etc. are always visible,
     // but be safe) then position. Call position() directly rather than via
-    // requestAnimationFrame — rAF is paused in background/hidden tabs, which
+    // requestAnimationFrame: rAF is paused in background/hidden tabs, which
     // would leave the spotlight stuck at 0×0. A short timeout re-settles after
     // any scroll/reflow and fires even when the tab is not foregrounded.
     const target = document.querySelector(step.sel);
@@ -121,7 +121,7 @@
   }
 
   function start() {
-    // Idempotent: if a tour is already open, don't restart it — this prevents
+    // Idempotent: if a tour is already open, don't restart it. This prevents
     // the first-run auto-start (fired on a timer) from resetting a tour the
     // user has already begun, and guards against double resize listeners.
     if (document.getElementById('tour-overlay')) return;

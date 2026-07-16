@@ -3,7 +3,7 @@ name: Release
 # Cutting a release is: bump __version__ in tgd_common.py, commit, then
 #   git tag v1.3.0 && git push --tags
 # This builds the Windows bundle and attaches it to a GitHub release for
-# the same tag — which the in-app update checker already polls.
+# the same tag, which the in-app update checker already polls.
 
 on:
   push:

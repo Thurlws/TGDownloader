@@ -254,7 +254,7 @@ async function _npLoadArtist(name) {
   bioEl.textContent = ''; moreEl.style.display = 'none'; wikiEl.style.display = 'none';
 
   try {
-    // Deezer lookup — try the full credit first, then just the primary artist
+    // Deezer lookup: try the full credit first, then just the primary artist
     // (so multi-artist tags like "Kanye West, Lupe Fiasco" don't return junk).
     const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const primary = _primaryArtist(clean);
@@ -457,7 +457,7 @@ function _mpPlayTrack(idx, alb, autoplay = true) {
   _mpIdx        = idx;
   _mpPlaying    = autoplay;
   _mpCurrentAlb = alb;   // lock the album for this playback session
-  _mpTriedTranscode = false;   // fresh track — allow one transcode retry if needed
+  _mpTriedTranscode = false;   // fresh track, allow one transcode retry if needed
   _mpPreloadedIdx = -1;        // re-evaluate which track to preload next
   _mpHighlightRow(idx);        // instant visual feedback (before async cover/now-playing work)
 
@@ -471,7 +471,7 @@ function _mpPlayTrack(idx, alb, autoplay = true) {
     : (track.preview_url || '');
   if (window._mpXfadeAdopt && window._mpXfadeAdopt.idx === idx) {
     // Crossfade hand-off: the incoming element is already playing this track
-    // at full volume — make it the active element instead of restarting.
+    // at full volume, make it the active element instead of restarting.
     _mpAudio = window._mpXfadeAdopt.el;
     window._mpXfadeAdopt = null;
   } else {
@@ -490,7 +490,7 @@ function _mpPlayTrack(idx, alb, autoplay = true) {
 
   document.getElementById('mini-player').classList.remove('hidden');
 
-  // Cover — per-file embedded art (playlists carry a collage folder cover)
+  // Cover: per-file embedded art (playlists carry a collage folder cover)
   const coverSrc = _trackCoverSrc(track, alb);
   const coverImg = document.getElementById('mp-cover-img');
   const coverPh  = document.getElementById('mp-cover-ph');
@@ -602,7 +602,7 @@ function _sendScrobble(kind) {
   }).catch(() => {});
 }
 
-// Local listening history — recorded server-side regardless of whether a
+// Local listening history: recorded server-side regardless of whether a
 // scrobbling service is configured. Powers the Listening card in Stats.
 function _sendPlayEvent(meta) {
   fetch('/play-event', {
@@ -612,7 +612,7 @@ function _sendPlayEvent(meta) {
   }).catch(() => {});
 }
 
-// Discord Rich Presence — the server pushes the current track to the local
+// Discord Rich Presence: the server pushes the current track to the local
 // Discord client (opt-in; no-ops server-side when the feature is off). op is
 // 'resume' | 'pause' | 'stop'; play/resume carry the track meta + position.
 function _sendPresence(op) {
@@ -742,7 +742,7 @@ function _mpFmtTime(s) {
 }
 
 // Paint the scrubber (fill + current/total labels) from explicit values.
-// Used by timeupdate, by loadedmetadata, and — crucially — by restore: the
+// Used by timeupdate, by loadedmetadata, and, crucially, by restore: the
 // audio element is preload="none", so on startup there is no live media
 // position or duration yet, and we must render the persisted ones ourselves.
 function _mpRenderProgress(cur, dur) {
@@ -756,7 +756,7 @@ function _mpRenderProgress(cur, dur) {
   if (totEl && dur > 0) totEl.textContent = _mpFmtTime(dur);
 }
 
-// Audio event listeners — named handlers bound to BOTH pooled audio elements
+// Audio event listeners: named handlers bound to BOTH pooled audio elements
 // (main + crossfade partner). Each ignores events from the inactive element.
 function _mpOnTimeupdate(e) {
   if (e.target !== _mpAudio) return;
@@ -832,7 +832,7 @@ window.addEventListener('beforeunload', () => _mpSaveState());
 function _mpOnPlaying(e) {
   if (e.target !== _mpAudio) return;
   _mpErrorStreak = 0;
-  // A transcoded local file is full quality — drop the "converting/preview" note.
+  // A transcoded local file is full quality, drop the "converting/preview" note.
   const src = _mpAudio.currentSrc || _mpAudio.src || '';
   if (src.indexOf('/audio-stream') !== -1) {
     const note = document.getElementById('mp-preview-note');
@@ -861,14 +861,14 @@ function _mpSkipAfterError(track, reason) {
 }
 
 // The current source failed. Figure out WHY (missing file vs. the browser not
-// being able to decode it — e.g. 24-bit/hi-res FLAC) and recover accordingly:
+// being able to decode it, e.g. 24-bit/hi-res FLAC) and recover accordingly:
 // transcode the file server-side, fall back to the preview, or skip.
 function _mpOnError(e) {
   if (e.target !== _mpAudio) return;
   if (!_mpQueue.length || _mpIdx < 0) return;
   const track = _mpQueue[_mpIdx];
   if (!track) return;
-  // A restored / paused session only preloads its source — the user hasn't
+  // A restored / paused session only preloads its source, the user hasn't
   // pressed play yet. Don't cascade through the whole queue throwing errors
   // (that's the "File not found" toast storm on launch). Wait for an explicit
   // play; the error will re-fire then, with recovery handled normally.
@@ -892,7 +892,7 @@ function _mpOnError(e) {
     return;
   }
 
-  // A local file failed — probe whether it's served at all.
+  // A local file failed, probe whether it's served at all.
   if (src.indexOf('/audio-file') !== -1) {
     if (_mpTriedTranscode) { _mpSkipAfterError(track); return; }
     _mpTriedTranscode = true;
@@ -935,7 +935,7 @@ function _mpOnEnded(e) {
     _mpStop();
     return;
   }
-  // A crossfade is mid-flight: the incoming element takes over seamlessly.
+  // A crossfade is mid-flight: the incoming element takes over, no gap.
   if (window._fxFinishXfade && _fxFinishXfade()) return;
   // Repeat one: replay the same track
   if (_mpRepeat === 'one' && _mpIdx >= 0) {
@@ -947,7 +947,7 @@ function _mpOnEnded(e) {
     _mpPlayTrack(next, _mpCurrentAlb);
     return;
   }
-  // Queue ended — optionally continue with a related-artist radio (once).
+  // Queue ended, optionally continue with a related-artist radio (once).
   if (_mpAutoplayRadio && !_mpCurrentAlb?.is_radio) {
     _mpStartRadio().then(ok => { if (!ok) { _mpUpdatePlayBtn(); _mpHighlightRow(-1); } });
     return;
@@ -1042,7 +1042,7 @@ document.getElementById('mp-play-btn')?.addEventListener('click', () => {
   }
   // A restored session preloads its source but never loaded it; if the element
   // has no usable source or already errored (e.g. the file moved, or preload=none
-  // means nothing was fetched yet), (re)load the current track fresh — that runs
+  // means nothing was fetched yet), (re)load the current track fresh: that runs
   // the full recovery path (transcode / single skip). Otherwise just resume.
   if (_mpIdx >= 0 && _mpQueue[_mpIdx] && (!_mpAudio.src || _mpAudio.error || _mpAudio.readyState === 0)) {
     _mpPlayTrack(_mpIdx, _mpCurrentAlb, true);
@@ -1153,7 +1153,7 @@ function _openCurrentAlbum() {
     if (grp) Promise.resolve(_selectLibArtist(grp, true)).then(() => _openLibAlbum(alb));
     else _openLibAlbum(alb);
   } else {
-    _openCurrentArtist();   // radio/preview — fall back to the artist
+    _openCurrentArtist();   // radio/preview, fall back to the artist
   }
 }
 document.getElementById('mp-artist-name')?.addEventListener('click', _openCurrentArtist);
@@ -1179,7 +1179,7 @@ document.getElementById('np-queue-clear')?.addEventListener('click', () => {
   }
 });
 
-// Suppress the native browser context menu app-wide — the app uses its own
+// Suppress the native browser context menu app-wide: the app uses its own
 // right-click menus. Text fields keep it so copy/paste still works there.
 document.addEventListener('contextmenu', (ev) => {
   if (ev.target.closest('input, textarea, [contenteditable="true"]')) return;
@@ -1303,7 +1303,7 @@ document.getElementById('btn-pause').addEventListener('click', () => {
   });
 })();
 
-// Keyboard hint click handler — now opens keybinds panel
+// Keyboard hint click handler: now opens keybinds panel
 document.getElementById('kbd-hint')?.addEventListener('click', toggleKeybindsPanel);
 
 // ═══════════════════════════════════════

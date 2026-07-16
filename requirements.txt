@@ -3,7 +3,7 @@ mutagen>=1.46.0
 cryptg>=0.4.0
 send2trash>=1.8.0
 
-# NOTE: ffmpeg is a system dependency, NOT a pip package — install it from
+# NOTE: ffmpeg is a system dependency, NOT a pip package. Install it from
 # https://ffmpeg.org/download.html and make sure it is on your PATH.
 # (The "ffmpeg" package on PyPI is an unrelated, abandoned stub.)
 

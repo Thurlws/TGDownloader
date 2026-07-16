@@ -9,9 +9,9 @@ A personal music library manager with a Telegram client, automatic album sorting
 
 ---
 
-> **⚠️ Legal notice** — TGDownloader is a **Telegram client and local music library manager**. It hosts, distributes, and links to **no content whatsoever** and includes no bot or content source; it only talks to Telegram bots **you** configure yourself. It is intended solely for managing audio you are legally entitled to possess, and you are solely responsible for using it lawfully. The authors do not endorse or facilitate copyright infringement in any form.
+> **⚠️ Legal notice**: TGDownloader is a **Telegram client and local music library manager**. It hosts, distributes, and links to **no content whatsoever** and includes no bot or content source; it only talks to Telegram bots **you** configure yourself. It is intended solely for managing audio you are legally entitled to possess, and you are solely responsible for using it lawfully. The authors do not endorse or facilitate copyright infringement in any form.
 >
-> **Read the full [DISCLAIMER.md](DISCLAIMER.md)** — it forms part of the terms under which this software is provided.
+> **Read the full [DISCLAIMER.md](DISCLAIMER.md)**: it forms part of the terms under which this software is provided.
 
 ---
 
@@ -25,35 +25,35 @@ The interface is a local web app that opens in your browser (or a Chromium app w
 
 ## Features
 
-- **Queue manager** — paste URLs, drag to reorder, bulk import, save/load named sessions
-- **Deezer search** — browse album metadata and art directly from inside the app (`Ctrl+K`)
-- **Automatic sorting** — reads audio tags with Mutagen and sorts into `Artist/Album/` folders; fuzzy-matches existing folders to handle naming variants
-- **Duplicate detection** — filename check + MD5 hash index so renamed duplicates are caught too
-- **Library browser** — visual discography view with album art, tracks what you have vs what's missing
-- **Mini audio player** — preview local files and Deezer 30s previews directly in the app
-- **Download history** — searchable, filterable, with favorites, review-later tags, and notes
-- **Live progress** — real-time speed graph, ETA, per-file progress bar
-- **Telegram auth** — full in-browser login flow including 2FA, no terminal prompts ever
-- **Audio quality selector** — configure the bot's quality setting without leaving the app
-- **Single-instance** — launching a second instance just focuses the existing browser window
-- **OS media integration** — hardware media keys and the Windows media overlay control playback (with album art)
-- **Sleep timer** — 15/30/60 minutes or stop after the current track
-- **Listening stats** — local play history with top artists/tracks (independent of scrobbling)
-- **Equalizer & visualizer** — 10-band EQ with presets, plus a spectrum visualizer (WebAudio)
-- **Crossfade** — smooth 1–12 s blend between tracks, configurable in the audio panel
-- **ReplayGain** — loudness analysis tags your library (Maintenance tab or automatically on download) and the player levels volume between albums
-- **Waveform seekbar** — click-to-seek waveform in the Now Playing panel
-- **Karaoke mode & .lrc export** — fullscreen synced lyrics; save them as sidecar files
-- **Resume long tracks** — DJ mixes and audiobooks (>20 min) reopen where you left off
-- **Safe deletes** — removed files, albums and artists go to the recycle bin, not oblivion
-- **Backup & restore** — export app state as a zip and restore it from the Maintenance tab
-- **Cover art repair** — one click fetches missing album covers from Deezer
-- **Tag cleanup** — normalises `feat.` formatting, canonicalises genres, fills albumartist (preview before applying)
-- **Album completeness** — flags albums missing tracks versus the Deezer tracklist
-- **Decode-test scan** — ffmpeg-verifies every file to catch truly corrupt downloads
-- **Smart de-duplication** — ranks copies by format/bitrate and keeps the best
-- **Folder import** — pull audio from any folder into your library through the same sort/dedupe pipeline
-- **AcoustID identification** *(optional)* — fingerprints untagged files to recover artist/title
+- **Queue manager**: paste URLs, drag to reorder, bulk import, save/load named sessions
+- **Deezer search**: browse album metadata and art directly from inside the app (`Ctrl+K`)
+- **Automatic sorting**: reads audio tags with Mutagen and sorts into `Artist/Album/` folders; fuzzy-matches existing folders to handle naming variants
+- **Duplicate detection**: filename check + MD5 hash index so renamed duplicates are caught too
+- **Library browser**: visual discography view with album art, tracks what you have vs what's missing
+- **Mini audio player**: preview local files and Deezer 30s previews directly in the app
+- **Download history**: searchable, filterable, with favorites, review-later tags, and notes
+- **Live progress**: real-time speed graph, ETA, per-file progress bar
+- **Telegram auth**: full in-browser login flow including 2FA, no terminal prompts ever
+- **Audio quality selector**: configure the bot's quality setting without leaving the app
+- **Single-instance**: launching a second instance just focuses the existing browser window
+- **OS media integration**: hardware media keys and the Windows media overlay control playback (with album art)
+- **Sleep timer**: 15/30/60 minutes or stop after the current track
+- **Listening stats**: local play history with top artists/tracks (independent of scrobbling)
+- **Equalizer & visualizer**: 10-band EQ with presets, plus a spectrum visualizer (WebAudio)
+- **Crossfade**: smooth 1–12 s blend between tracks, configurable in the audio panel
+- **ReplayGain**: loudness analysis tags your library (Maintenance tab or automatically on download) and the player levels volume between albums
+- **Waveform seekbar**: click-to-seek waveform in the Now Playing panel
+- **Karaoke mode & .lrc export**: fullscreen synced lyrics; save them as sidecar files
+- **Resume long tracks**: DJ mixes and audiobooks (>20 min) reopen where you left off
+- **Safe deletes**: removed files, albums and artists go to the recycle bin, not oblivion
+- **Backup & restore**: export app state as a zip and restore it from the Maintenance tab
+- **Cover art repair**: one click fetches missing album covers from Deezer
+- **Tag cleanup**: normalises `feat.` formatting, canonicalises genres, fills albumartist (preview before applying)
+- **Album completeness**: flags albums missing tracks versus the Deezer tracklist
+- **Decode-test scan**: ffmpeg-verifies every file to catch truly corrupt downloads
+- **Smart de-duplication**: ranks copies by format/bitrate and keeps the best
+- **Folder import**: pull audio from any folder into your library through the same sort/dedupe pipeline
+- **AcoustID identification** *(optional)*: fingerprints untagged files to recover artist/title
 
 ---
 
@@ -69,7 +69,7 @@ cd tgdownloader
 pip install -r requirements.txt
 ```
 
-ffmpeg is a **system dependency, not a pip package** — install it from [ffmpeg.org](https://ffmpeg.org/download.html) and make sure the `ffmpeg` binary is on your PATH. (Do not `pip install ffmpeg`; the PyPI package of that name is an unrelated stub.)
+ffmpeg is a **system dependency, not a pip package**. Install it from [ffmpeg.org](https://ffmpeg.org/download.html) and make sure the `ffmpeg` binary is on your PATH. (Do not `pip install ffmpeg`; the PyPI package of that name is an unrelated stub.)
 
 **2. Get Telegram API credentials**
 
@@ -85,8 +85,8 @@ cp tg_audio_config_example.json tg_audio_config.json
 
 Edit `tg_audio_config.json` and set at minimum:
 - `api_id` and `api_hash` from step 2
-- `bot_username` — the `@username` of the Telegram bot you use to receive audio files
-- `home_music_folder` — the full path to your music library
+- `bot_username`: the `@username` of the Telegram bot you use to receive audio files
+- `home_music_folder`: the full path to your music library
 
 **4. Launch**
 
@@ -94,7 +94,7 @@ Edit `tg_audio_config.json` and set at minimum:
 python TGDownloader_bundled.py
 ```
 
-This starts the local web server and opens the GUI in your browser. There is no separate GUI process — the browser interface is served directly by the Python script.
+This starts the local web server and opens the GUI in your browser. There is no separate GUI process; the browser interface is served directly by the Python script.
 
 **5. Connect Telegram**
 
@@ -109,7 +109,7 @@ Click the **TG** button in the top-right corner and log in with your phone numbe
 
 ### Run as an executable (Windows)
 
-Pre-built releases are published on the [Releases](../../releases) page. Extract and run `TGDownloader.exe` — no Python required.
+Pre-built releases are published on the [Releases](../../releases) page. Extract and run `TGDownloader.exe`, no Python required.
 
 To build it yourself, `TGDownloader.spec` is included in the repository root:
 
@@ -129,10 +129,10 @@ Output lands in `dist/TGDownloader/`.
 | Python 3.11+ | 3.12/3.13 recommended |
 | [telethon](https://github.com/LonamiWebs/Telethon) | Telegram client |
 | [mutagen](https://mutagen.readthedocs.io/) | Audio tag reading |
-| [cryptg](https://github.com/cher-nov/cryptg) | Optional but strongly recommended — without it downloads are ~50x slower and may crash on Python 3.14 |
+| [cryptg](https://github.com/cher-nov/cryptg) | Optional but strongly recommended: without it downloads are ~50x slower and may crash on Python 3.14 |
 | [ffmpeg](https://ffmpeg.org/download.html) | Required for audio quality conversion (FLAC ↔ MP3). Must be on your system PATH. |
 | A Telegram account | Free |
-| Telegram API credentials | Free — [my.telegram.org](https://my.telegram.org) |
+| Telegram API credentials | Free, from [my.telegram.org](https://my.telegram.org) |
 
 ---
 
@@ -146,7 +146,7 @@ tgd_common.py                  ← shared helpers: config, credentials, version,
 gui.html                       ← the entire frontend (single file)
 setup_wizard.html              ← first-run credential setup wizard
 TGDownloader.spec              ← PyInstaller build spec
-tg_audio_config_example.json  ← config template — copy to tg_audio_config.json to get started
+tg_audio_config_example.json  ← config template, copy to tg_audio_config.json to get started
 tests/                         ← pytest suite (run: pytest)
 .github/workflows/ci.yml       ← CI: ruff + pytest on every push/PR
 
@@ -184,7 +184,7 @@ All settings are accessible via **Settings** in the app. The config file is `tg_
 }
 ```
 
-`target_quality` accepts `"FLAC"`, `"MP3 320"`, or `"MP3 128"`. Files are converted locally by ffmpeg after each download — whatever format your bot sends gets normalised to your chosen target.
+`target_quality` accepts `"FLAC"`, `"MP3 320"`, or `"MP3 128"`. Files are converted locally by ffmpeg after each download, whatever format your bot sends gets normalised to your chosen target.
 
 ### Storing secrets in the OS keyring (optional)
 
@@ -196,7 +196,7 @@ pip install keyring
 
 then set `"use_keyring": true` in `tg_audio_config.json` (or via Settings). On the next save, secrets are written to the keyring and blanked in the JSON file; the app reads them back transparently. Notes:
 
-- If you enable it but `keyring` isn't installed, secrets simply stay in the JSON file and a warning is logged — nothing is lost.
+- If you enable it but `keyring` isn't installed, secrets simply stay in the JSON file and a warning is logged, nothing is lost.
 - The pre-built .exe does not bundle `keyring`; this feature is for running from source (or rebuild the exe with `keyring` installed).
 - To go back, set `"use_keyring": false` and re-enter your secrets in Settings.
 
@@ -222,9 +222,9 @@ then set `"use_keyring": true` in `tg_audio_config.json` (or via Settings). On t
 
 ## Privacy & security
 
-- Your API credentials and Telegram session are stored **only on your machine** (optionally in the OS keyring — see Configuration)
+- Your API credentials and Telegram session are stored **only on your machine** (optionally in the OS keyring, see Configuration)
 - Nothing is sent to any server other than Telegram's own infrastructure and the Deezer public API (for album art / metadata)
-- The local web server binds to `127.0.0.1` only — it is not accessible from other machines on your network
+- The local web server binds to `127.0.0.1` only; it is not accessible from other machines on your network
 - Requests with a non-local `Host` or foreign `Origin` header are rejected (403), so web pages you visit cannot drive the API via CSRF, cross-origin WebSockets, or DNS rebinding
 
 ---

@@ -1,4 +1,4 @@
-"""Tests for tgd_common — config round-trip, credentials, version."""
+"""Tests for tgd_common: config round-trip, credentials, version."""
 
 import json
 import re

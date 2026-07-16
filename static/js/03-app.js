@@ -35,7 +35,7 @@ function applyScale(v) {
   const n   = Math.min(2.0, Math.max(0.6, parseFloat(v) || 1.0));
   const app = document.getElementById('app');
   // CSS zoom, not transform: scale(). transform scales the rasterised layer, so
-  // text and inputs blur at non-integer scales — most visibly inside the
+  // text and inputs blur at non-integer scales, most visibly inside the
   // settings modal. zoom re-lays-out and re-rasterises at the target scale, so
   // everything stays crisp. (#app is width/height:100% so it fills the window
   // at any zoom.) Clear the old transform hacks in case of an in-place upgrade.
@@ -60,7 +60,7 @@ function applyScale(v) {
 })();
 
 // Stop the Edge/Chrome autofill + "save password" dropdown from popping up over
-// our config/search fields — none of them are credentials the browser should
+// our config/search fields, none of them are credentials the browser should
 // offer to fill or save. Blanket autocomplete="off" on every field that hasn't
 // explicitly opted in (covers the settings modal and every other input).
 function _suppressAutofill(root = document) {
@@ -185,7 +185,7 @@ function saveSettings() {
   showWelcomeOnStart = document.getElementById('cfg-show-welcome').checked;
   localStorage.setItem('tgd_show_welcome', showWelcomeOnStart ? 'true' : 'false');
 
-  // Scrobbling (kept as raw strings — never numeric-coerced like CFG_FIELDS)
+  // Scrobbling (kept as raw strings, never numeric-coerced like CFG_FIELDS)
   patch.scrobble_enabled   = document.getElementById('cfg-scrobble-enabled').checked;
   patch.scrobble_service   = document.getElementById('cfg-scrobble-service').value;
   patch.listenbrainz_token = document.getElementById('cfg-listenbrainz-token').value.trim();
@@ -197,24 +197,24 @@ function saveSettings() {
   patch.spotify_client_id     = document.getElementById('cfg-spotify-id').value.trim();
   patch.spotify_client_secret = document.getElementById('cfg-spotify-secret').value.trim();
 
-  // Post-download hook — always sent (raw string) so clearing the field
+  // Post-download hook: always sent (raw string) so clearing the field
   // actually disables the hook.
   const postCmdEl = document.getElementById('cfg-post-cmd');
   if (postCmdEl) patch.post_download_command = postCmdEl.value.trim();
 
-  // Auto-refresh library watcher — always sent so toggling off is honoured; the
+  // Auto-refresh library watcher: always sent so toggling off is honoured; the
   // server (re)starts or stops the watcher thread when this key is present.
   const watchLibEl = document.getElementById('cfg-watch-library');
   if (watchLibEl) patch.watch_library = watchLibEl.checked;
 
-  // Discord Rich Presence — always sent so toggling off / clearing the id
+  // Discord Rich Presence: always sent so toggling off / clearing the id
   // applies immediately (the server connects or disconnects on these keys).
   const discordRpEl = document.getElementById('cfg-discord-rp');
   if (discordRpEl) patch.discord_rich_presence = discordRpEl.checked;
   const discordIdEl = document.getElementById('cfg-discord-client-id');
   if (discordIdEl) patch.discord_client_id = discordIdEl.value.trim();
 
-  // Download pipeline — always sent so clearing them takes effect.
+  // Download pipeline: always sent so clearing them takes effect.
   const botFailoverEl = document.getElementById('cfg-bot-failover');
   if (botFailoverEl) patch.bot_failover = botFailoverEl.value.trim();
   const bwCapEl = document.getElementById('cfg-bandwidth');
@@ -223,7 +223,7 @@ function saveSettings() {
     patch.bandwidth_limit_kbps = (isNaN(bw) || bw < 0) ? 0 : bw;
   }
 
-  // File naming template + multi-disc mode — always sent so clearing
+  // File naming template + multi-disc mode: always sent so clearing
   // the template (back to original filenames) takes effect.
   const fileTplEl = document.getElementById('cfg-file-template');
   if (fileTplEl) patch.file_naming_template = fileTplEl.value.trim();
@@ -284,7 +284,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Space bar — play/pause mini player (works everywhere except when typing)
+  // Space bar: play/pause mini player (works everywhere except when typing)
   if (e.key === ' ' && !inInput) {
     const player = document.getElementById('mini-player');
     if (player && !player.classList.contains('hidden')) {
@@ -649,7 +649,7 @@ document.getElementById('btn-browse').addEventListener('click', async () => {
         body: JSON.stringify({ home_music_folder: data.path }) });
     }
   } catch (_) {
-    // Server unreachable — fall back to text prompt
+    // Server unreachable, fall back to text prompt
     const chosen = prompt('Paste the full path to your home music folder:', current);
     if (chosen !== null && chosen.trim()) {
       document.getElementById('home-input').value = chosen.trim();
@@ -725,7 +725,7 @@ document.getElementById('btn-about-check-update')?.addEventListener('click', () 
 document.getElementById('btn-about-download')?.addEventListener('click', _downloadUpdate);
 document.getElementById('btn-about-install')?.addEventListener('click', _installUpdate);
 // Lazy arrows, not bare identifiers: these three live in 04-library.js, which
-// loads AFTER this file — a direct reference here is evaluated at load time,
+// loads AFTER this file, so a direct reference here is evaluated at load time,
 // throws ReferenceError, and silently kills every listener wired below
 // (including tab switching). Regression shipped in the v1.4.0 split.
 document.getElementById('btn-run-health')?.addEventListener('click', () => runDiagnostics());
@@ -807,7 +807,7 @@ document.getElementById('btn-loudness')?.addEventListener('click', async () => {
   }
   btn.disabled = false;
 });
-// Tempo Analysis — Deezer BPM lookup feeding smart-playlist tempo rules
+// Tempo Analysis: Deezer BPM lookup feeding smart-playlist tempo rules
 document.getElementById('btn-bpm-scan')?.addEventListener('click', async () => {
   const out = document.getElementById('bpm-scan-results');
   const btn = document.getElementById('btn-bpm-scan');
@@ -1257,7 +1257,7 @@ function showWelcome() {
   const log = document.getElementById('log');
   log.innerHTML = '';
 
-  // Title box — uses CSS vars so it matches whatever theme
+  // Title box: uses CSS vars so it matches whatever theme
   const box = document.createElement('div');
   box.style.cssText = `
     margin: 12px 0 16px 0;
@@ -1290,7 +1290,7 @@ function showWelcome() {
     { text: '\n' },
   ];
 
-  // All colors come from CSS variables — no hardcoded hex
+  // All colors come from CSS variables, no hardcoded hex
   const colorMap = {
     'welcome-ready': 'var(--accent)',
     'welcome-head':  'var(--fg)',

@@ -2,7 +2,7 @@
 """Regenerate the Windows app icon (icon.ico) from static/icon-512.png.
 
 TGDownloader ships without Pillow (it's excluded from the PyInstaller bundle to
-keep it slim), so this uses ffmpeg — already a hard dependency for audio work —
+keep it slim), so this uses ffmpeg (already a hard dependency for audio work)
 to produce cleanly Lanczos-downscaled PNGs at each standard icon size, then packs
 them into one PNG-compressed .ico with a pure-Python struct writer.
 

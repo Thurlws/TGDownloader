@@ -1,6 +1,6 @@
 """Tests for the self-update apply helpers.
 
-Covers the pure/testable pieces — staging a release zip (with zip-slip and
+Covers the pure/testable pieces: staging a release zip (with zip-slip and
 shape guards), the download validator, the swap-script generation, and the
 frozen-only gate. The actual file swap + relaunch runs only in a packaged
 Windows build and is not exercised here.

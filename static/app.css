@@ -22,7 +22,7 @@
     --r:         3px;
   }
 
-  /* Light theme — overrides the dark palette when html.theme-light is set */
+  /* Light theme: overrides the dark palette when html.theme-light is set */
   html.theme-light {
     --bg:        #f5f5f4;
     --bg2:       #ececea;
@@ -60,11 +60,11 @@
     grid-template-columns: 300px 1fr 0;
     grid-template-rows: 38px 1fr;
     /* 100%/100% (not 100vw/100vh) so the app still fills the window when the
-       UI-scale `zoom` is applied — zoomed viewport units would overflow. */
+       UI-scale `zoom` is applied; zoomed viewport units would overflow. */
     height: 100%; width: 100%; position: relative;
     transition: grid-template-columns 0.2s ease;
   }
-  /* Queue panel only shows in the Log tab — collapse it elsewhere */
+  /* Queue panel only shows in the Log tab, collapse it elsewhere */
   #app.queue-hidden            { grid-template-columns: 0 1fr 0; }
   #app.queue-hidden #left      { display: none; }
   /* Now-Playing panel (right) opens to a fixed width */
@@ -477,7 +477,7 @@
   #np-about-wiki:hover { color: var(--accent); }
   #mp-np-toggle.active { color: var(--accent); }
   #np-lyrics-toggle.active { color: var(--accent); }
-  /* Lyrics view — replaces cover/queue/about while active */
+  /* Lyrics view: replaces cover/queue/about while active */
   #np-lyrics { display: none; padding-top: 14px; }
   #np-content.np-lyrics-mode #np-cover-wrap,
   #np-content.np-lyrics-mode #np-queue,
@@ -871,7 +871,7 @@
   /* ── Settings: tabbed / sidebar categories ───────────────────────── */
   #modal.settings-modal {
     width: 680px; max-width: 94vw;
-    height: min(560px, 86vh);   /* constant size — panels scroll internally */
+    height: min(560px, 86vh);   /* constant size, panels scroll internally */
     padding: 0; display: flex; flex-direction: column; overflow: hidden;
   }
   .settings-head {
@@ -917,7 +917,7 @@
     padding: 13px 20px; border-top: 1px solid var(--border); flex-shrink: 0;
   }
   .settings-about-row { font-size: 12px; color: var(--fg2); font-family: var(--sans); margin-bottom: 8px; }
-  /* Version string stays mono — it reads as data, not chrome. */
+  /* Version string stays mono: it reads as data, not chrome. */
   .settings-about-row strong { font-family: var(--mono); font-weight: 600; }
   .settings-about-row a { color: var(--accent); text-decoration: none; }
   .settings-about-row a:hover { text-decoration: underline; }
@@ -1207,7 +1207,7 @@
   #genre-pl-status.success { color: var(--accent); }
   #genre-pl-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
-  /* Smart playlist modal — reuses the genre-pl look */
+  /* Smart playlist modal: reuses the genre-pl look */
   #smart-pl-overlay {
     display: none; position: absolute; inset: 0;
     background: rgba(0,0,0,0.78); z-index: 550;
@@ -1246,7 +1246,7 @@
   #smart-pl-status.success { color: var(--accent); }
   .genre-pl-actions-x { display: flex; gap: 8px; justify-content: flex-end; }
 
-  /* ── Wrapped (year in review) modal — v1.7.0 ─────────────── */
+  /* ── Wrapped (year in review) modal: v1.7.0 ─────────────── */
   #wrapped-overlay {
     display: none; position: absolute; inset: 0;
     background: rgba(0,0,0,0.78); z-index: 550;
@@ -1295,7 +1295,7 @@
   .wrapped-months-lbls { display: flex; gap: 3px; margin-top: 3px; }
   .wrapped-months-lbls span { flex: 1; text-align: center; font-family: var(--mono); font-size: 8.5px; color: var(--fg3); }
 
-  /* ── Play history browser modal — v1.7.0 ─────────────────── */
+  /* ── Play history browser modal: v1.7.0 ─────────────────── */
   #phistory-overlay {
     display: none; position: absolute; inset: 0;
     background: rgba(0,0,0,0.78); z-index: 550;
@@ -1804,7 +1804,7 @@
     display: none;
   }
 
-  /* Album toolbar — now hosts the "In Your Library" header line (left) on the
+  /* Album toolbar: now hosts the "In Your Library" header line (left) on the
      same row as the A–Z / search controls (right). 14px sides match the album
      grid's edges in #lib-content below. */
   #lib-album-toolbar {
@@ -1873,7 +1873,7 @@
     letter-spacing: 0.04em;
   }
 
-  /* Suppress old grid styles — artist card system replaced */
+  /* Suppress old grid styles, artist card system replaced */
   #lib-artist-grid-wrap, #lib-artist-grid, #lib-toolbar { display: none !important; }
   .lib-artist-card { display: none !important; }
   .lib-artist-card {
@@ -1978,7 +1978,7 @@
     letter-spacing: -0.01em; line-height: 1.1;
   }
 
-  /* Playlists collection hero — distinct from an artist page */
+  /* Playlists collection hero: distinct from an artist page */
   #lib-artist-hero.is-playlists {
     background: linear-gradient(120deg, rgba(196,250,85,0.10), transparent 60%), var(--bg2);
   }
@@ -2038,7 +2038,7 @@
   .lib-discog-section[data-type="missing"] .lib-discog-section-label { color: var(--fg3); }
   .lib-discog-section[data-type="missing"] .lib-discog-count { color: var(--fg3); }
 
-  /* Album card — owned vs not owned */
+  /* Album card: owned vs not owned */
   .lib-album-card.not-owned .lib-cover-wrap {
     filter: brightness(0.35) saturate(0.3);
   }
@@ -2074,7 +2074,7 @@
     box-shadow: 0 3px 14px rgba(224,85,85,0.6);
   }
   /* Right after a click the cursor is still on the button, so :hover is already
-     active — keep the settled green "queued" look instead of flashing the red
+     active, keep the settled green "queued" look instead of flashing the red
      "remove" state until the pointer actually leaves and comes back. */
   .lib-add-btn.queued.just-added:hover {
     transform: scale(1.12); background: rgba(184,245,66,0.22); color: var(--accent);
@@ -2223,7 +2223,7 @@
   }
   #lib-content::-webkit-scrollbar { display: none; }  /* Chrome/Safari/Edge */
 
-  /* Track list — CSS grid so columns line up under the header.
+  /* Track list: CSS grid so columns line up under the header.
      Default (albums / liked): index | thumb | title | like | duration */
   .lib-track-list-wrap { display: flex; flex-direction: column; }
   /* Proportional (fr) columns so every row lines up under the header.
@@ -2248,11 +2248,11 @@
     cursor: default; border-radius: 4px;
     user-select: none;
   }
-  .lib-track-row:hover { background: var(--bg3); }   /* highlight only — no indent */
+  .lib-track-row:hover { background: var(--bg3); }   /* highlight only, no indent */
   .lib-track-row.playing { background: rgba(196,250,85,0.08); }
   .lib-track-row.selected { background: rgba(196,250,85,0.14); }
   .lib-track-row.selected:hover { background: rgba(196,250,85,0.18); }
-  /* Drag-to-reorder (playlists) — normal cursor; only dim while dragging */
+  /* Drag-to-reorder (playlists): normal cursor; only dim while dragging */
   .lib-track-row.dragging-track { opacity: 0.4; }
   .lib-track-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
   .lib-track-row.drop-after  { box-shadow: inset 0 -2px 0 var(--accent); }
@@ -2321,7 +2321,7 @@
   .lib-track-dur {
     text-align: right; font-family: var(--mono); font-size: 10px; color: var(--fg3);
   }
-  /* per-row like (heart) button — far-right column, shows on hover / when liked */
+  /* per-row like (heart) button: far-right column, shows on hover / when liked */
   .lib-track-like {
     background: none; border: none; color: var(--fg3); justify-self: center;
     padding: 2px; cursor: pointer;
@@ -2684,7 +2684,7 @@
   .lib-album-card:hover .kebab-btn { opacity: 1; pointer-events: auto; }
   .kebab-btn:hover { background: var(--bg4); color: var(--fg); }
 
-  /* Artist card kebab — positioned absolute */
+  /* Artist card kebab: positioned absolute */
   .lib-artist-card .kebab-btn {
     position: absolute; top: 4px; right: 4px;
     width: 18px; height: 18px; padding: 0;
@@ -2825,12 +2825,12 @@
   #btn-sessions-close:hover { background: var(--border2); }
 
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-     ANIMATIONS  — injected patch
+     ANIMATIONS: injected patch
      All durations use a single multiplier var so they can
      be scaled globally without touching each rule.
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-  /* ── Startup: app fades in — no transform, avoids conflict with applyScale ── */
+  /* ── Startup: app fades in, no transform, avoids conflict with applyScale ── */
   @keyframes appEnter {
     from { opacity: 0; }
     to   { opacity: 1; }
@@ -2866,7 +2866,7 @@
     animation: rightFade 0.38s cubic-bezier(0.22, 1, 0.36, 1) 0.12s both;
   }
 
-  /* ── Tab switching: simple opacity fade — no translate avoids compound flash with async content ── */
+  /* ── Tab switching: simple opacity fade, no translate avoids compound flash with async content ── */
   @keyframes paneIn {
     from { opacity: 0; }
     to   { opacity: 1; }
@@ -3028,13 +3028,13 @@
     to   { opacity: 1; }
   }
   .lib-album-card {
-    animation: none;  /* no CSS auto-animation — JS adds .anim-in after insert */
+    animation: none;  /* no CSS auto-animation, JS adds .anim-in after insert */
   }
   .lib-album-card.anim-in {
     animation: cardIn 0.15s ease both;
   }
 
-  /* ── Artist cards in library: no per-card animation — grid reloads on every artist click ── */
+  /* ── Artist cards in library: no per-card animation, grid reloads on every artist click ── */
   .lib-artist-card {
     animation: none;
   }

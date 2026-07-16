@@ -1,6 +1,6 @@
 """Guards for the v1.10.0 PWA assets: the manifest, service worker and icons
 must exist and be well-formed, and the server's static route must be willing to
-serve their MIME types. These are the files that make the app installable — if
+serve their MIME types. These are the files that make the app installable; if
 one goes missing the install silently breaks, so pin them down."""
 
 import json

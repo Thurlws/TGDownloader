@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: MIT
 """SQLite-backed store for TGDownloader's non-regenerable user data.
 
-Consolidates the small JSON state files that hold data you can't just rebuild —
-star ratings, liked songs, the artist watchlist — plus the play-history log, into
+Consolidates the small JSON state files that hold data you can't just rebuild
+(star ratings, liked songs, the artist watchlist) plus the play-history log, into
 one SQLite database (`tgd_state.db`). Writes are transactional (no more half-
 written JSON on a crash) and the play history becomes a real table you can query
 instead of a growing .jsonl you have to scan line by line.
 
 Scope on purpose: the *regenerable* caches (album-id, BPM, library-stats, the
-backend's audio-hash cache) stay as plain JSON — losing one just means a re-scan,
+backend's audio-hash cache) stay as plain JSON: losing one just means a re-scan,
 so they don't need the ceremony.
 
 Migration is one-time and non-destructive: the legacy files are imported and then
@@ -148,7 +148,7 @@ def play_event_count() -> int:
 
 def migrate(data_dir: "Path | None" = None) -> bool:
     """Import the legacy JSON/JSONL user-data files into the DB once, renaming
-    each original to `<name>.pre-sqlite.bak`. Safe to call every startup — it
+    each original to `<name>.pre-sqlite.bak`. Safe to call every startup, it
     no-ops after the first run. Returns True if it migrated anything."""
     data_dir = data_dir or tgd_common.DATA_DIR
     did = False

@@ -195,14 +195,14 @@ function connectWS() {
       document.getElementById('progress-bar-wrap').classList.remove('visible');
       _prog.raw = null; _prog.smoothSpeed = 0; _prog.displayPct = 0;
       loadManifestUrls();
-      // A finished session changes what's on disk — drop cached library stats
+      // A finished session changes what's on disk, so drop cached library stats
       // and refresh whichever data tab is open so downloads show up immediately.
       _libStatsCache = null;
       if (activeTab === 'history') loadHistory();
       if (activeTab === 'stats')   { _fetchLibStats(); renderStats(); }
       if (activeTab === 'library') loadLibrary({ keepView: true });
     } else if (msg.type === 'library-changed') {
-      // Files changed on disk (filesystem watcher) — mirror the post-download
+      // Files changed on disk (filesystem watcher), mirror the post-download
       // refresh so whichever data tab is open updates without a manual Refresh.
       _libStatsCache = null;
       if (activeTab === 'history') loadHistory();
@@ -257,7 +257,7 @@ function setStatus(s) {
 let _logStickyBottom = true;  // true = always scroll to bottom unless user scrolled up
 
 function appendLog(text, forceClass) {
-  // ##PROG## lines are now handled entirely by the sticky progress bar — skip them in the log
+  // ##PROG## lines are now handled entirely by the sticky progress bar, skip them in the log
   if (text.startsWith('##PROG##')) return;
 
   const log = document.getElementById('log');
@@ -283,7 +283,7 @@ function clearLog() {
   _logStickyBottom = true;
 }
 
-// Wire up scroll-listener after DOM is ready — user scrolling up disables auto-scroll;
+// Wire up scroll-listener after DOM is ready: user scrolling up disables auto-scroll,
 // scrolling back to bottom re-enables it.
 document.addEventListener('DOMContentLoaded', () => {
   const log = document.getElementById('log');
@@ -298,7 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
 //  TAB SWITCHING
 // ═══════════════════════════════════════
 function switchTab(tab) {
-  if (tab === activeTab) return;   // already on this tab — don't reload/refresh it
+  if (tab === activeTab) return;   // already on this tab, don't reload/refresh it
   activeTab = tab;
   document.querySelectorAll('.tab').forEach(b =>
     b.classList.toggle('active', b.dataset.tab === tab));
@@ -408,7 +408,7 @@ async function loadDebugLog() {
 
 // ── Auto-update check (notify-only) ─────────────────────────────────────────
 // Polls the backend, which queries GitHub Releases. We never download or
-// replace files — just surface a badge linking to the release page.
+// replace files, just surface a badge linking to the release page.
 let _updateInfo = null;
 
 async function _loadAppVersion() {
@@ -509,7 +509,7 @@ function _openReleasePage() {
 })();
 
 // PWA: register the (network-only) service worker so the app is installable /
-// can be added to a phone home screen. Self-contained — references nothing from
+// can be added to a phone home screen. Self-contained: references nothing from
 // later modules. Failure is non-fatal (e.g. insecure context on a LAN IP).
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -798,7 +798,7 @@ async function confirmQuit() {
   try {
     await fetch('/quit', { method: 'POST' });
   } catch (_) {}
-  // Server is shutting down — close the tab
+  // Server is shutting down, close the tab
   setTimeout(() => window.close(), 600);
 }
 

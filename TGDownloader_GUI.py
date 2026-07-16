@@ -22,13 +22,13 @@
 TGDownloader GUI Server  v6.1
 ------------------------------
 Changes in v6.1:
-  • Single-instance guard via LOCK_PORT (7843) — new instances open the
+  • Single-instance guard via LOCK_PORT (7843): new instances open the
     browser to the existing GUI instead of stacking processes.
   • Quit uses os._exit(0) to force-kill the process; no lingering threads
     or sockets that would block the next launch.
-  • /browse-folder POST endpoint — opens the native Windows folder picker
+  • /browse-folder POST endpoint: opens the native Windows folder picker
     via tkinter.filedialog.askdirectory in a worker thread.
-  • /telegram-auth POST + /telegram-status GET — step-by-step Telegram
+  • /telegram-auth POST + /telegram-status GET: step-by-step Telegram
     login flow driven from the browser so the first-launch EOFError is gone.
     Uses a dedicated asyncio event loop and asyncio.Future objects to pipe
     phone / code / password back into Telethon's client.start() callbacks.
@@ -150,7 +150,7 @@ def _open_app_window(url: str) -> bool:
             [exe, f"--app={url}",
              # A dedicated profile gives the app window its own taskbar identity
              # (so it shows OUR favicon, not the host browser's icon, and doesn't
-             # group under the user's Edge) and isolates its localStorage — the
+             # group under the user's Edge) and isolates its localStorage: the
              # onboarding tour, prefs etc. are per-install, not shared with the
              # user's normal browsing on 127.0.0.1.
              f"--user-data-dir={_APP_PROFILE_DIR}",
@@ -192,7 +192,7 @@ _LIB_STATS_CACHE_FILE = DATA_DIR / "library_stats_cache.json"  # persisted /libr
 
 # ── Auto-update (notify-only) ─────────────────────────────────────────────────
 # The GUI polls GitHub Releases for a newer tag and shows a banner. It never
-# downloads or replaces files — the user updates manually from the release page.
+# downloads or replaces files; the user updates manually from the release page.
 APP_VERSION  = tgd_common.__version__         # single-sourced in tgd_common.py
 GITHUB_REPO  = "Thurlws/TGDownloader"         # owner/repo the update check targets
 
@@ -204,7 +204,7 @@ else:
     _BACKEND_CMD = [sys.executable, "-u", str(_BACKEND_PY)]
 
 HTTP_PORT = int(os.environ.get("TGD_HTTP_PORT", "7842"))
-LOCK_PORT = HTTP_PORT + 1   # single-instance sentinel — we bind this; nobody else does
+LOCK_PORT = HTTP_PORT + 1   # single-instance sentinel: we bind this; nobody else does
 
 logger = logging.getLogger("gui_server")
 
@@ -229,7 +229,7 @@ _CSP = (
 # ── Request-origin guard ──────────────────────────────────────────────────────
 # The server only binds 127.0.0.1, but that alone does not stop the browser
 # from being used as a proxy: any web page can fire cross-origin requests at
-# http://127.0.0.1:7842 (CSRF — responses are unreadable, but state-changing
+# http://127.0.0.1:7842 (CSRF: responses are unreadable, but state-changing
 # endpoints like /delete-file still execute), WebSockets are exempt from the
 # same-origin policy entirely, and DNS rebinding defeats IP-based trust while
 # keeping the Host header attacker-controlled.  Rejecting foreign Host/Origin
@@ -259,7 +259,7 @@ def _is_local_request(host: "str | None", origin: "str | None") -> bool:
 
 # ── Update check ──────────────────────────────────────────────────────────────
 
-_UPDATE_CACHE: dict = {}            # {"ts": float, "data": dict} — short TTL cache
+_UPDATE_CACHE: dict = {}            # {"ts": float, "data": dict}, short TTL cache
 _UPDATE_TTL          = 1800         # seconds (30 min) between live GitHub queries
 
 
@@ -296,7 +296,7 @@ def _check_for_update(force: bool = False) -> dict:
         with urllib.request.urlopen(req, timeout=10) as resp:
             rel = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        # 404 = repo has no published releases yet — not an error worth alarming.
+        # 404 = repo has no published releases yet, not an error worth alarming.
         msg = "No releases published yet" if exc.code == 404 else f"GitHub HTTP {exc.code}"
         data = {"current": APP_VERSION, "update_available": False, "error": msg}
         _UPDATE_CACHE.update(ts=now, data=data)
@@ -344,7 +344,7 @@ def _check_for_update(force: bool = False) -> dict:
 # folder as the exe. Windows won't overwrite a running exe or its loaded DLLs,
 # so applying an update is: download the release zip, stage it, then hand off to
 # a small .bat that waits for us to exit, swaps _internal/ + the exe (keeping
-# .old backups for rollback), and relaunches. User data is never touched — it
+# .old backups for rollback), and relaunches. User data is never touched, it
 # sits beside the exe, not inside _internal/.
 
 _UPDATE_STAGING   = DATA_DIR / "_update"        # extracted new bundle lives here
@@ -356,7 +356,7 @@ def _update_supported() -> bool:
 
 
 def _app_dir() -> Path:
-    """Folder holding TGDownloader.exe (frozen) — same as DATA_DIR there."""
+    """Folder holding TGDownloader.exe (frozen), same as DATA_DIR there."""
     return Path(sys.executable).parent
 
 
@@ -595,7 +595,7 @@ def _read_session_string_from_file() -> "str | None":
 
 
 def _get_quality_session() -> "str | None":
-    """Cached StringSession — from the OS keyring when enabled, else the file."""
+    """Cached StringSession: from the OS keyring when enabled, else the file."""
     global _quality_session_string
     with _quality_session_lock:
         if not _quality_session_string:
@@ -642,7 +642,7 @@ async def _do_telegram_auth() -> None:
         return await pw_fut
 
     try:
-        # Lazy import — keep startup fast and avoid loading Telethon in GUI process
+        # Lazy import: keep startup fast and avoid loading Telethon in GUI process
         if str(BUNDLE_DIR) not in sys.path:
             sys.path.insert(0, str(BUNDLE_DIR))
         from telethon import TelegramClient as _TGClient  # type: ignore
@@ -703,7 +703,7 @@ def _wait_auth(target_steps: set[str], timeout: float = 30.0) -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  TELEGRAM QUALITY  (persistent client — fast get/set without reconnecting)
+#  TELEGRAM QUALITY  (persistent client, fast get/set without reconnecting)
 # ══════════════════════════════════════════════════════════════════════════════
 #
 #  Strategy: keep one long-lived TelegramClient (_q_client) open on _tg_loop.
@@ -712,7 +712,7 @@ def _wait_auth(target_steps: set[str], timeout: float = 30.0) -> str:
 #
 #  All access is from coroutines on _tg_loop so no extra locking is needed.
 
-# Quality state is now purely local — no bot comms needed.
+# Quality state is now purely local, no bot comms needed.
 
 
 def _has_quality_btns(msg) -> bool:
@@ -1150,7 +1150,7 @@ def _schedule_fire() -> None:
 
 
 def _schedule_set(at: float, entries: list, home: str = "") -> dict:
-    """Arm (or re-arm — one schedule at a time) a queue start at epoch *at*."""
+    """Arm (or re-arm, one schedule at a time) a queue start at epoch *at*."""
     global _scheduled, _schedule_timer
     if not entries or not isinstance(entries, list):
         return {"error": "Queue is empty"}
@@ -1176,7 +1176,7 @@ def _schedule_set(at: float, entries: list, home: str = "") -> dict:
 # A lightweight polling thread (no watchdog dependency, matching the app's
 # stdlib-first style) that fingerprints the album-folder layout and pushes a
 # "library-changed" event to connected clients when it shifts. Files added,
-# removed or moved by other tools — or dropped straight into the Music folder —
+# removed or moved by other tools, or dropped straight into the Music folder,
 # then appear without pressing Refresh.
 _watch_lock   = threading.Lock()
 _watch_thread: "threading.Thread | None" = None
@@ -1189,7 +1189,7 @@ def _lib_watch_signature(home_path: Path) -> str:
     """Cheap fingerprint that changes when tracks/albums are added, removed or
     moved. Reuses the /library-stats cache validator, so it reacts to exactly
     the changes the library view cares about with only per-directory stat()
-    calls — no file reads."""
+    calls, no file reads."""
     artists_root = home_path / ARTISTS_DIRNAME
     if not artists_root.is_dir():
         artists_root = home_path
@@ -1228,7 +1228,7 @@ def _lib_watch_status() -> dict:
 
 
 def _start_lib_watcher(home: str) -> dict:
-    """(Re)start the watcher on *home*. Idempotent — calling again restarts it
+    """(Re)start the watcher on *home*. Idempotent, calling again restarts it
     cleanly (used when the music folder changes or the flag is re-applied)."""
     global _watch_thread, _watch_stop, _watch_home
     if not home:
@@ -1426,7 +1426,7 @@ def _wikipedia_bio(name: str) -> dict:
             return False
         if any(g in desc for g in good):
             return True
-        # No description hint — accept unless the extract opens like a song/album
+        # No description hint, accept unless the extract opens like a song/album
         return not extract.startswith(('"', "the album", "is a song", "is a studio"))
 
     def _accept(md: dict) -> "dict | None":
@@ -1444,7 +1444,7 @@ def _wikipedia_bio(name: str) -> dict:
 
     result: dict = {"error": "no match"}
     try:
-        # 1) Try the page that exactly matches the artist name (most reliable —
+        # 1) Try the page that exactly matches the artist name (most reliable:
         #    "De La Soul", "Eazy-E", "Radiohead" all resolve straight to the act).
         got = _accept(_summary(name))
         if not got:
@@ -1663,7 +1663,7 @@ def _rebuild_path_hash_map() -> None:
 
     The map is normally filled lazily as a side effect of /library-albums, but
     playback can request a hash before the frontend has ever loaded the library
-    tab — most notably the persist-restore on startup, which sets up a paused
+    tab, most notably the persist-restore on startup, which sets up a paused
     player (and later /audio-file, /audio-stream, /track-cover) using hashes
     saved in a previous session. Without this, those requests 404 purely because
     the map is empty, even though the files exist on disk."""
@@ -1807,7 +1807,7 @@ def _fetch_lyrics(artist: str, title: str, album: str = "", duration: str = "") 
                 "title": d.get("trackName") or title, "artist": d.get("artistName") or artist}
 
     try:
-        # 1) Exact get (best — uses album + duration to disambiguate)
+        # 1) Exact get (best: uses album + duration to disambiguate)
         q = f"track_name={url_quote(title)}&artist_name={url_quote(artist)}"
         if album:
             q += f"&album_name={url_quote(album)}"
@@ -1974,7 +1974,7 @@ def _extract_cover_bytes(album_dir: Path) -> "tuple[bytes, str] | None":
     Returns (image_bytes, mime_type) or None if nothing found."""
     audio_exts = {".mp3", ".flac", ".m4a", ".ogg", ".opus", ".aac"}
 
-    # Prefer a sidecar cover image (cover.jpg / folder.png …) when present —
+    # Prefer a sidecar cover image (cover.jpg / folder.png …) when present:
     # this is how downloaded playlists keep their original Spotify/Deezer art.
     _img_mimes = {".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                   ".png": "image/png",  ".webp": "image/webp", ".gif": "image/gif"}
@@ -2079,7 +2079,7 @@ def _split_genres(raw_values: "list") -> "list[str]":
 def _library_stats_signature(home_path: Path, artists_root: Path) -> str:
     """A cheap fingerprint of the library's current state, used to validate the
     persisted /library-stats cache. Combines the manifest file's mtime+size with
-    every album directory's mtime — enough to catch downloads, additions and
+    every album directory's mtime, enough to catch downloads, additions and
     deletions without the expensive full-tree walk + per-file tag reads that the
     stats compute itself performs. Returns a short hex digest."""
     import hashlib as _hl
@@ -2293,7 +2293,7 @@ def _scan_all_tracks(home_path: Path) -> "list[dict]":
 def _last_played_map(events: "list[dict]") -> dict:
     """Most recent play time per track from the local listening history.
     Keys: ("artist_lower", "title_lower") plus a title-only fallback key
-    ("", "title_lower") — folder artist names can differ slightly from the
+    ("", "title_lower") since folder artist names can differ slightly from the
     tag artist recorded in the history, and for a "not played in N days"
     rule a false 'played recently' merely excludes a track (safe)."""
     out: dict = {}
@@ -2779,7 +2779,7 @@ def _watchlist_check() -> dict:
 
 
 # ══════════════════════════════════════════════
-#  SCROBBLING  (ListenBrainz / Last.fm — opt-in)
+#  SCROBBLING  (ListenBrainz / Last.fm, opt-in)
 # ══════════════════════════════════════════════
 
 def _scrobble_submit(cfg: dict, meta: dict, now_playing: bool) -> dict:
@@ -2882,7 +2882,7 @@ def handle_ws(conn, key: str):
                     continue
                 entries = data.get("entries", [])
                 # Persist playlist cover + original track order for the worker
-                # (best-effort — does network I/O, so guard it).
+                # (best-effort, does network I/O, so guard it).
                 if any(e.get("isPlaylist") for e in entries):
                     try:
                         _write_playlist_meta(data.get("home", ""), entries)
@@ -2930,7 +2930,7 @@ def _deezer_search(raw_query: str) -> dict:
 
 
 # Spotify access token via the official Client Credentials flow. Needs a free
-# Spotify Developer app — the user pastes its Client ID + Secret into Settings
+# Spotify Developer app; the user pastes its Client ID + Secret into Settings
 # (stored as spotify_client_id / spotify_client_secret in the main config).
 # Tokens last ~1h and are cached here. This replaced the keyless web-player
 # token, which Spotify locked behind a rotating TOTP signature in 2025.
@@ -2988,7 +2988,7 @@ def _spotify_access_token() -> str:
 def _spotify_search(raw_query: str) -> dict:
     """Album search via the official Spotify Web API, shaped like Deezer results
     so the UI renders identically. Each result carries its real Spotify album URL
-    in `link` — the download bot accepts Spotify links directly, so no Deezer
+    in `link`; the download bot accepts Spotify links directly, so no Deezer
     resolution is needed. Falls back to Deezer search if Spotify is unreachable
     or its API credentials aren't configured; the returned dict flags which case
     so the UI can prompt the user appropriately."""
@@ -3099,7 +3099,7 @@ def _spotify_resolve(share_url: str) -> dict:
     """Resolve a Spotify link's REAL display metadata (name + artist + cover).
 
     The download bot accepts Spotify links directly, so the returned `link` is
-    the ORIGINAL Spotify URL — we deliberately do NOT convert it to a Deezer
+    the ORIGINAL Spotify URL. We deliberately do NOT convert it to a Deezer
     album (the old behaviour, which produced wrong/irrelevant names & artists).
 
     Metadata is read without any API key from two public sources:
@@ -3157,7 +3157,7 @@ def _spotify_resolve(share_url: str) -> dict:
         except Exception as exc:
             logger.debug("Spotify embed parse failed for %s: %s", clean, exc)
 
-    # 2) oEmbed (very stable) — fills any missing name / thumbnail.
+    # 2) oEmbed (very stable), fills any missing name / thumbnail.
     if not title or not thumb:
         try:
             oe  = "https://open.spotify.com/oembed?url=" + url_quote(clean)
@@ -3169,7 +3169,7 @@ def _spotify_resolve(share_url: str) -> dict:
         except Exception as exc:
             logger.debug("Spotify oEmbed failed for %s: %s", clean, exc)
 
-    # 3) og:description heuristic — last-resort artist when embed gave none.
+    # 3) og:description heuristic, last-resort artist when embed gave none.
     if not artist:
         try:
             req = urllib.request.Request(clean, headers={"User-Agent": browser_ua})
@@ -3234,7 +3234,7 @@ def _deezer_resolve(share_url: str) -> dict:
         opener = urllib.request.build_opener(_NoRedirect)
         try:
             with opener.open(req, timeout=12) as resp:
-                # Landed on a 200 — use the final URL reported by urllib
+                # Landed on a 200, use the final URL reported by urllib
                 current_url = resp.geturl() or current_url
                 break
         except urllib.error.HTTPError as exc:
@@ -3280,7 +3280,7 @@ def _deezer_album(album_id: str) -> dict:
     Tries the direct public API endpoint first (works on most IPs); falls back
     to a text search to find the exact ID match as a last resort."""
 
-    # 1. Direct endpoint — fastest and most accurate
+    # 1. Direct endpoint, fastest and most accurate
     try:
         api_url = f"https://api.deezer.com/album/{album_id}"
         req = urllib.request.Request(api_url, headers={"User-Agent": "TGDownloader/6"})
@@ -3294,7 +3294,7 @@ def _deezer_album(album_id: str) -> dict:
     except Exception as exc:
         logger.debug("Direct album API error for id=%s: %s", album_id, exc)
 
-    # 2. Search fallback — scan up to 100 results for an exact ID match
+    # 2. Search fallback, scan up to 100 results for an exact ID match
     try:
         api_url = (
             "https://api.deezer.com/search/album"
@@ -3583,7 +3583,7 @@ def _load_play_events(path: "Path | None" = None) -> "list[dict]":
     if path is not None:
         return _read_play_events_file(path)
     events = tgd_store.read_play_events()
-    if not events:      # not migrated yet / empty DB — fall back to the legacy file
+    if not events:      # not migrated yet / empty DB, fall back to the legacy file
         events = _read_play_events_file(PLAY_HISTORY_FILE)
     return events
 
@@ -3816,15 +3816,15 @@ def _loudness_scan(limit: int = 25) -> dict:
             "failed": failed, "remaining": max(0, missing - analyzed)}
 
 
-# ── Tempo (BPM) analysis via Deezer — feeds smart-playlist tempo rules ─────────
+# ── Tempo (BPM) analysis via Deezer, feeds smart-playlist tempo rules ─────────
 BPM_CACHE_FILE = DATA_DIR / "bpm_cache.json"
 
 
 def _load_bpm_cache() -> dict:
     """{rating_key: {bpm: float|None, gain: float|None, ts: int}} keyed by the
     same path_hash + NUL + filename compound as ratings, so a scanned track's
-    tempo can be looked up directly in _create_smart_playlist. A stored key —
-    even with bpm=None — means 'already looked up', so re-runs skip it."""
+    tempo can be looked up directly in _create_smart_playlist. A stored key
+    (even with bpm=None) means 'already looked up', so re-runs skip it."""
     try:
         if BPM_CACHE_FILE.exists():
             data = json.loads(BPM_CACHE_FILE.read_text(encoding="utf-8"))
@@ -3929,7 +3929,7 @@ def _iter_library_audio(home_path: "Path"):
 
 
 def _quality_score(path: "Path") -> "tuple[int, int]":
-    """(format_rank, bitrate_or_size) — bigger is better, for keep-best."""
+    """(format_rank, bitrate_or_size): bigger is better, for keep-best."""
     rank = _FORMAT_RANK.get(path.suffix.lower(), 0)
     bitrate = 0
     try:
@@ -4303,7 +4303,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _reject_foreign(self) -> bool:
-        """CSRF / DNS-rebinding guard — see _is_local_request. True = rejected."""
+        """CSRF / DNS-rebinding guard, see _is_local_request. True = rejected."""
         if _is_local_request(self.headers.get("Host"), self.headers.get("Origin")):
             return False
         logger.warning(
@@ -4320,7 +4320,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlparse(self.path).path
 
-        # WebSocket upgrade (covered by the origin guard above — browsers
+        # WebSocket upgrade (covered by the origin guard above; browsers
         # always send Origin on WebSocket handshakes)
         if self.headers.get("Upgrade", "").lower() == "websocket":
             key = self.headers.get("Sec-WebSocket-Key", "")
@@ -4662,7 +4662,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/health":
             # Lightweight, read-only environment check for the diagnostics panel.
-            # Each item: {ok: bool, label, detail}. Never raises — every probe is
+            # Each item: {ok: bool, label, detail}. Never raises, every probe is
             # individually guarded so one failure can't blank the whole report.
             checks: list = []
 
@@ -4819,7 +4819,7 @@ class Handler(BaseHTTPRequestHandler):
             buf = io.BytesIO()
             # Still plain files on disk:
             state_files = ["tg_sessions.json", "album_id_cache.json"]
-            # Now in SQLite — emit them under their legacy filenames so the backup
+            # Now in SQLite, emit them under their legacy filenames so the backup
             # format (and older backups) stay compatible.
             store_files = {"liked_songs.json": "liked_songs",
                            "watchlist.json":   "watchlist",
@@ -4922,7 +4922,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": str(exc)})
             return
 
-        # Telegram session status — local check only, no network call
+        # Telegram session status: local check only, no network call
         if path == "/telegram-status":
             session_exists = tgd_common.has_session()
             with _auth_lock:
@@ -4934,7 +4934,7 @@ class Handler(BaseHTTPRequestHandler):
                 })
             return
 
-        # Telegram audio quality — GET fetches current setting from bot
+        # Telegram audio quality: GET fetches current setting from bot
         if path == "/telegram-quality":
             try:
                 result = asyncio.run_coroutine_threadsafe(
@@ -4969,7 +4969,7 @@ class Handler(BaseHTTPRequestHandler):
             import zipfile as _zf
             buf = _io.BytesIO()
             with _zf.ZipFile(buf, "w", _zf.ZIP_DEFLATED) as zf:
-                # Debug log — last 2 MB is plenty for a bug report
+                # Debug log: last 2 MB is plenty for a bug report
                 try:
                     if LOG_FILE.exists():
                         raw = LOG_FILE.read_bytes()
@@ -5105,7 +5105,7 @@ class Handler(BaseHTTPRequestHandler):
                 # Serve from the persisted cache when the library is unchanged.
                 # The signature only stats the manifest + album dirs (cheap),
                 # whereas a full recompute walks every file twice and reads tags
-                # from each (slow — this is what made the first load drag).
+                # from each (slow, this is what made the first load drag).
                 from urllib.parse import parse_qs as _parse_qs
                 _q = _parse_qs(urlparse(self.path).query)
                 force_refresh = _q.get("refresh", ["0"])[0] in ("1", "true", "yes")
@@ -5340,7 +5340,7 @@ class Handler(BaseHTTPRequestHandler):
                     if alb["_album_id"] and alb["_album_id"] not in _cover_cache
                 }
 
-                # Albums with no known ID — search Deezer by artist+album name
+                # Albums with no known ID, search Deezer by artist+album name
                 no_id_albums = [
                     alb for alb in albums_list
                     if not alb["_album_id"]
@@ -5550,7 +5550,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": "Invalid artist id"})
             return
 
-        # ── Artist biography (Wikipedia — Deezer provides none) ──────────
+        # ── Artist biography (Wikipedia, Deezer provides none) ──────────
         if path == "/artist-bio":
             qs = urlparse(self.path).query
             params = {}
@@ -5750,7 +5750,7 @@ class Handler(BaseHTTPRequestHandler):
             cfg.update(body)
             m.save_config(cfg)
             # Applying the library-watcher flag needs to (re)start/stop its thread,
-            # not just persist the value — do it whenever the flag is in the patch.
+            # not just persist the value, do it whenever the flag is in the patch.
             if "watch_library" in body:
                 _apply_lib_watcher(cfg)
             if "discord_rich_presence" in body or "discord_client_id" in body:
@@ -5967,7 +5967,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 album_dir = Path(album_dir_str)
                 # Security: must be strictly inside the home music folder. A
-                # parents check, not startswith — the latter let a sibling like
+                # parents check, not startswith: the latter let a sibling like
                 # "Music_backup" pass the guard when the library was "Music".
                 home_path = Path(home).resolve()
                 if home_path not in album_dir.resolve().parents:
@@ -6298,7 +6298,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             # Only ever open an existing directory inside the library. On Windows
             # `explorer <path>` shell-executes its argument, so an arbitrary path
-            # (e.g. a .exe) would be launched rather than shown — restrict it.
+            # (e.g. a .exe) would be launched rather than shown, restrict it.
             home = _tgd_import().load_config().get("home_music_folder") or ""
             if not home:
                 self._send_json(400, {"error": "No home music folder configured"})
@@ -6359,7 +6359,7 @@ class Handler(BaseHTTPRequestHandler):
                 for base, data_bytes in accepted.items():
                     if base == "tg_audio_config.json":
                         incoming = json.loads(data_bytes.decode("utf-8"))
-                        # Never let a backup overwrite live credentials —
+                        # Never let a backup overwrite live credentials,
                         # /backup strips them, but a hand-edited zip might not.
                         for k in (*tgd_common.SECRET_KEYS, "api_id", "spotify_client_id"):
                             incoming.pop(k, None)
@@ -6566,7 +6566,7 @@ async def _silent_auth_check() -> None:
 def main():
     global SERVER
 
-    # If we're here, a previous self-update (if any) succeeded — clear its
+    # If we're here, a previous self-update (if any) succeeded, clear its
     # rollback backups and staging folder.
     _cleanup_update_leftovers()
 
@@ -6586,13 +6586,13 @@ def main():
 
     # ── Single-instance guard ─────────────────────────────────────────────
     # We bind a private "lock" port.  If it's already taken, another instance
-    # is running — just focus its browser window and exit cleanly.
+    # is running, just focus its browser window and exit cleanly.
     import socket as _socket
     _lock_sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
     _lock_sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
     try:
         _lock_sock.bind(("127.0.0.1", LOCK_PORT))
-        # Success — we are the first/only instance.  Keep _lock_sock open so
+        # Success: we are the first/only instance.  Keep _lock_sock open so
         # the port stays bound for the lifetime of this process.
     except OSError:
         logger.info("Another instance already running — opening browser")
