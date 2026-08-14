@@ -208,6 +208,13 @@ LOCK_PORT = HTTP_PORT + 1   # single-instance sentinel: we bind this; nobody els
 
 logger = logging.getLogger("gui_server")
 
+# Config keys kept out of a backup archive and ignored when restoring one.
+# SECRET_KEYS plus the two identifiers that are not secrets but still have no
+# business travelling in an export. Defined once so adding a secret in
+# tgd_common covers both paths; it previously lived as a literal list in
+# /backup, which is how a newly added secret could ship into export archives.
+BACKUP_EXCLUDED_KEYS = (*tgd_common.SECRET_KEYS, "api_id", "spotify_client_id")
+
 # Content-Security-Policy for the served HTML. Defense-in-depth behind the
 # frontend's escHtml/textContent discipline. 'unsafe-inline' is required by the
 # app's inline styles + inline event handlers; module scripts load from /static.
@@ -4842,9 +4849,7 @@ class Handler(BaseHTTPRequestHandler):
                 # Drop credentials from the archived config copy
                 try:
                     cfg = json.loads((DATA_DIR / "tg_audio_config.json").read_text("utf-8"))
-                    for secret in ("api_id", "api_hash", "listenbrainz_token",
-                                   "lastfm_api_key", "lastfm_secret", "lastfm_session_key",
-                                   "spotify_client_id", "spotify_client_secret"):
+                    for secret in BACKUP_EXCLUDED_KEYS:
                         cfg.pop(secret, None)
                     zf.writestr("tg_audio_config.json", json.dumps(cfg, indent=2))
                 except Exception:
@@ -6382,7 +6387,7 @@ class Handler(BaseHTTPRequestHandler):
                         incoming = json.loads(data_bytes.decode("utf-8"))
                         # Never let a backup overwrite live credentials,
                         # /backup strips them, but a hand-edited zip might not.
-                        for k in (*tgd_common.SECRET_KEYS, "api_id", "spotify_client_id"):
+                        for k in BACKUP_EXCLUDED_KEYS:
                             incoming.pop(k, None)
                         cfg = tgd_common.load_config()
                         cfg.update(incoming)
