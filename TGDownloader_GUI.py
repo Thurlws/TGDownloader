@@ -6024,6 +6024,27 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": str(exc)})
             return
 
+        # ── Describe a smart playlist in words, get rules back ────────────
+        # Fills the modal's fields; it never creates anything, so a wrong
+        # reading costs the user one glance rather than a bad playlist.
+        if path == "/parse-playlist-rules":
+            try:
+                import tgd_nlrules
+                query = (body.get("query") or "").strip()
+                if not query:
+                    self._send_json(400, {"error": "Nothing to interpret"})
+                    return
+                if len(query) > 500:
+                    query = query[:500]
+                m      = _tgd_import()
+                result = tgd_nlrules.translate(query, m.load_config())
+                result["ok"] = True
+                self._send_json(200, result)
+            except Exception as exc:
+                logger.exception("Error in /parse-playlist-rules")
+                self._send_json(500, {"error": str(exc)})
+            return
+
         # ── Add selected tracks to a playlist (new or existing) ───────────
         if path == "/playlist-add-tracks":
             name   = (body.get("name") or "").strip()

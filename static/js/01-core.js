@@ -701,6 +701,22 @@ document.getElementById('genre-pl-overlay')?.addEventListener('click', (e) => {
 });
 
 // ── Smart playlist builder ──────────────────────────────────────────────────
+// Rule field -> input id. Also drives the "Describe it" fill, so the two stay
+// in step: adding a rule here wires it into both paths at once.
+const SMART_PL_FIELDS = {
+  name:            'smart-pl-name',
+  format:          'smart-pl-format',
+  genre:           'smart-pl-genre',
+  artist:          'smart-pl-artist',
+  added_days:      'smart-pl-days',
+  limit:           'smart-pl-limit',
+  min_rating:      'smart-pl-rating',
+  not_played_days: 'smart-pl-notplayed',
+  bpm_min:         'smart-pl-bpm-min',
+  bpm_max:         'smart-pl-bpm-max',
+  sort:            'smart-pl-sort',
+};
+
 function openSmartPlaylistModal() {
   const st = document.getElementById('smart-pl-status');
   if (st) { st.textContent = ''; st.className = ''; }
@@ -708,8 +724,87 @@ function openSmartPlaylistModal() {
    'smart-pl-rating','smart-pl-notplayed','smart-pl-bpm-min','smart-pl-bpm-max'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
+  const fmt = document.getElementById('smart-pl-format'); if (fmt) fmt.value = '';
+  const srt = document.getElementById('smart-pl-sort');   if (srt) srt.value = 'az';
+  const nl  = document.getElementById('smart-pl-nl-input');
+  if (nl) nl.value = '';
+  const nlSt = document.getElementById('smart-pl-nl-status');
+  if (nlSt) { nlSt.textContent = ''; nlSt.className = ''; }
+  _clearNlHighlights();
   document.getElementById('smart-pl-overlay')?.classList.add('open');
-  setTimeout(() => document.getElementById('smart-pl-name')?.focus(), 20);
+  setTimeout(() => document.getElementById('smart-pl-nl-input')?.focus(), 20);
+}
+
+function _clearNlHighlights() {
+  Object.values(SMART_PL_FIELDS).forEach(id => {
+    document.getElementById(id)?.classList.remove('nl-filled');
+  });
+}
+
+// Writes a parsed rule set into the form. Nothing is created here: the user
+// still reviews the fields and presses Create, so a bad reading is visible
+// before it costs anything.
+function _applySmartPlaylistRules(rules, filled) {
+  _clearNlHighlights();
+  Object.entries(SMART_PL_FIELDS).forEach(([field, id]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const val = rules[field];
+    if (field === 'sort') {
+      el.value = val === 'recent' ? 'recent' : 'az';
+    } else if (typeof val === 'number') {
+      el.value = val > 0 ? String(val) : '';
+    } else {
+      el.value = val || '';
+    }
+  });
+  (filled || []).forEach(field => {
+    document.getElementById(SMART_PL_FIELDS[field])?.classList.add('nl-filled');
+  });
+}
+
+async function _fillSmartPlaylistFromText() {
+  const input  = document.getElementById('smart-pl-nl-input');
+  const status = document.getElementById('smart-pl-nl-status');
+  const btn    = document.getElementById('btn-smart-pl-nl');
+  const query  = (input?.value || '').trim();
+  if (!query) {
+    status.textContent = 'Describe the playlist you want first.';
+    status.className = 'error';
+    return;
+  }
+  btn.disabled = true;
+  status.textContent = 'Reading…';
+  status.className = '';
+  try {
+    const resp = await fetch('/parse-playlist-rules', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+    const data = await resp.json();
+    if (!data.ok) {
+      status.textContent = data.error || 'Could not read that.';
+      status.className = 'error';
+      return;
+    }
+    _applySmartPlaylistRules(data.rules, data.filled);
+    const lines = [];
+    if (!data.filled.length) {
+      lines.push('No rules matched. Fill the fields in by hand, or rephrase.');
+    } else {
+      const via = data.source === 'claude' ? ' via Claude' : '';
+      lines.push(`Set ${data.filled.length} rule${data.filled.length !== 1 ? 's' : ''}${via}. Check them, then Create.`);
+    }
+    if (data.unparsed?.length) lines.push(`Ignored: ${data.unparsed.join(', ')}.`);
+    (data.notes || []).forEach(n => lines.push(n));
+    status.textContent = lines.join(' ');
+    status.className = data.filled.length ? 'success' : 'error';
+  } catch (e) {
+    status.textContent = `Error: ${e}`;
+    status.className = 'error';
+  } finally {
+    btn.disabled = false;
+  }
 }
 function closeSmartPlaylistModal() {
   document.getElementById('smart-pl-overlay')?.classList.remove('open');
@@ -757,6 +852,10 @@ async function _createSmartPlaylist() {
 document.getElementById('lib-add-smart-row')?.addEventListener('click', openSmartPlaylistModal);
 document.getElementById('btn-smart-pl-cancel')?.addEventListener('click', closeSmartPlaylistModal);
 document.getElementById('btn-smart-pl-create')?.addEventListener('click', _createSmartPlaylist);
+document.getElementById('btn-smart-pl-nl')?.addEventListener('click', _fillSmartPlaylistFromText);
+document.getElementById('smart-pl-nl-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); _fillSmartPlaylistFromText(); }
+});
 document.getElementById('smart-pl-overlay')?.addEventListener('click', (e) => {
   if (e.target === document.getElementById('smart-pl-overlay')) closeSmartPlaylistModal();
 });
