@@ -535,6 +535,14 @@
               <label>Discord Application ID <span style="color:var(--fg3);font-weight:400">— create a free app at discord.com/developers → New Application, paste its Application ID</span></label>
               <input type="text" id="cfg-discord-client-id" placeholder="e.g. 1234567890123456789" autocomplete="off" spellcheck="false">
             </div>
+            <label class="modal-toggle" style="margin-top:10px">
+              <input type="checkbox" id="cfg-nl-playlist-llm">
+              <span>Use Claude for smart-playlist descriptions it can't read locally</span>
+            </label>
+            <div class="modal-field" id="cfg-anthropic-key-wrap" style="margin-top:8px">
+              <label>Anthropic API key <span style="color:var(--fg3);font-weight:400">— optional. The "Describe it" box always works without one; this only covers phrasings the built-in parser misses. Needs <span style="font-family:var(--mono)">pip install anthropic</span>. Key from console.anthropic.com</span></label>
+              <input type="password" id="cfg-anthropic-key" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+            </div>
           </div>
 
           <!-- Scrobbling -->
@@ -821,6 +829,15 @@
       </div>
       <div id="smart-pl-bodywrap">
         <div class="genre-pl-msg-x">Build a playlist from rules. Leave a field blank to ignore it.</div>
+        <div id="smart-pl-nl">
+          <label class="genre-pl-label">Describe it</label>
+          <div id="smart-pl-nl-row">
+            <input type="text" id="smart-pl-nl-input" autocomplete="off" spellcheck="false"
+                   placeholder="e.g. 5 star hip hop I haven't played in 6 months, 30 tracks">
+            <button class="btn-secondary" id="btn-smart-pl-nl">Fill rules</button>
+          </div>
+          <div id="smart-pl-nl-status"></div>
+        </div>
         <label class="genre-pl-label">Playlist name</label>
         <input type="text" id="smart-pl-name" placeholder="My smart playlist" autocomplete="off" spellcheck="false">
         <label class="genre-pl-label">Format</label>
