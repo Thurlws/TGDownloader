@@ -11,6 +11,11 @@ send2trash>=1.8.0
 # plaintext config file (enable with "use_keyring": true in the config).
 # keyring>=24.0
 
+# Optional: let Claude read smart-playlist descriptions the built-in parser
+# can't map. The "Describe it" box works without this; enable with
+# "nl_playlist_llm": true plus an anthropic_api_key in the config.
+# anthropic>=0.40.0
+
 # Optional: AcoustID fingerprinting to identify untagged files needs the
 # Chromaprint "fpcalc" binary (a system install, not a pip package) plus a
 # free API key from https://acoustid.org/ set as acoustid_api_key in config.

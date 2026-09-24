@@ -208,6 +208,13 @@ LOCK_PORT = HTTP_PORT + 1   # single-instance sentinel: we bind this; nobody els
 
 logger = logging.getLogger("gui_server")
 
+# Config keys kept out of a backup archive or debug bundle and ignored when
+# restoring one: SECRET_KEYS plus the two identifiers that are not secrets but
+# still have no business travelling in an export. Defined once, in tgd_common,
+# so adding a secret there covers every path; it previously lived as a literal
+# list in /backup, which is how a newly added secret could ship into exports.
+BACKUP_EXCLUDED_KEYS = tgd_common.REDACTED_KEYS
+
 # Content-Security-Policy for the served HTML. Defense-in-depth behind the
 # frontend's escHtml/textContent discipline. 'unsafe-inline' is required by the
 # app's inline styles + inline event handlers; module scripts load from /static.
@@ -3839,13 +3846,13 @@ _RESTORABLE_STATE_FILES = {"liked_songs.json", "watchlist.json",
 
 def _redacted_config_json() -> "str | None":
     """The saved config as JSON with every secret and account id removed
-    (tgd_common.REDACTED_KEYS), for backups and debug bundles. None when there
-    is no readable config."""
+    (BACKUP_EXCLUDED_KEYS), for backups and debug bundles. None when there is
+    no readable config."""
     try:
         cfg = json.loads(tgd_common.CONFIG_FILE.read_text("utf-8"))
     except Exception:
         return None
-    for key in tgd_common.REDACTED_KEYS:
+    for key in BACKUP_EXCLUDED_KEYS:
         cfg.pop(key, None)
     return json.dumps(cfg, indent=2)
 
@@ -6224,6 +6231,27 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": str(exc)})
             return
 
+        # ── Describe a smart playlist in words, get rules back ────────────
+        # Fills the modal's fields; it never creates anything, so a wrong
+        # reading costs the user one glance rather than a bad playlist.
+        if path == "/parse-playlist-rules":
+            try:
+                import tgd_nlrules
+                query = (body.get("query") or "").strip()
+                if not query:
+                    self._send_json(400, {"error": "Nothing to interpret"})
+                    return
+                if len(query) > 500:
+                    query = query[:500]
+                m      = _tgd_import()
+                result = tgd_nlrules.translate(query, m.load_config())
+                result["ok"] = True
+                self._send_json(200, result)
+            except Exception as exc:
+                logger.exception("Error in /parse-playlist-rules")
+                self._send_json(500, {"error": str(exc)})
+            return
+
         # ── Add selected tracks to a playlist (new or existing) ───────────
         if path == "/playlist-add-tracks":
             name   = (body.get("name") or "").strip()
@@ -6535,7 +6563,7 @@ class Handler(BaseHTTPRequestHandler):
                         incoming = json.loads(data_bytes.decode("utf-8"))
                         # Never let a backup overwrite live credentials,
                         # /backup strips them, but a hand-edited zip might not.
-                        for k in tgd_common.REDACTED_KEYS:
+                        for k in BACKUP_EXCLUDED_KEYS:
                             incoming.pop(k, None)
                         tgd_common.update_config(incoming)
                     elif base in _restore_store_keys:

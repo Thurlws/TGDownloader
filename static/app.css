@@ -1216,7 +1216,13 @@
   #smart-pl-overlay.open { display: flex; }
   #smart-pl-box {
     background: var(--bg2); border: 1px solid var(--border2);
-    border-radius: 6px; width: 360px; max-height: 86vh; display: flex; flex-direction: column;
+    /* 86% of the overlay, not 86vh: viewport units inside the zoomed #app
+       subtree resolve against the unzoomed viewport and are then scaled up, so
+       at scale 1.3 an 86vh box renders 805px tall in a 720px window and pushes
+       its own buttons off screen. The overlay is inset:0 inside #app, so a
+       percentage tracks the real window height. Same reasoning as #app's
+       100%/100% at the top of this file. */
+    border-radius: 6px; width: 360px; max-height: 86%; display: flex; flex-direction: column;
     box-shadow: 0 20px 60px rgba(0,0,0,0.8); overflow: hidden;
   }
   #smart-pl-header {
@@ -1245,6 +1251,29 @@
   #smart-pl-status.error { color: var(--red); }
   #smart-pl-status.success { color: var(--accent); }
   .genre-pl-actions-x { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* "Describe it": plain-language box that fills the rule fields below it */
+  #smart-pl-nl {
+    padding: 10px 10px 4px; margin-bottom: 14px;
+    background: var(--bg3); border: 1px solid var(--border2); border-radius: var(--r);
+  }
+  #smart-pl-nl-row { display: flex; gap: 6px; align-items: flex-start; }
+  /* Beat the #smart-pl-bodywrap input rule, which forces width:100% + margin */
+  #smart-pl-bodywrap #smart-pl-nl-input { flex: 1; width: auto; margin-bottom: 0; }
+  #btn-smart-pl-nl {
+    width: auto; flex: none; padding: 6px 12px; white-space: nowrap;
+  }
+  #smart-pl-nl-status {
+    font-size: 10px; font-family: var(--mono); color: var(--fg3);
+    line-height: 1.5; min-height: 13px; margin: 6px 0 4px;
+  }
+  #smart-pl-nl-status.error { color: var(--red); }
+  #smart-pl-nl-status.success { color: var(--accent); }
+  /* Fields the parse just wrote, so the change is visible without a diff */
+  #smart-pl-bodywrap .nl-filled {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px rgba(184,245,66,0.25);
+  }
 
   /* ── Wrapped (year in review) modal: v1.7.0 ─────────────── */
   #wrapped-overlay {
