@@ -971,6 +971,8 @@ async function _toggleWatch(artist) {
       else          { _watchedIds.add(aid);    _watchedNames.add(lname); }
       if (!watching) appendLog(`Watching ${artist.name} for new releases.\n`, 'log-ok');
       _refreshWatchStars();
+    } else {
+      _toast(d.error, 'error');
     }
   } catch (_) {}
   if (btn) btn.disabled = false;
@@ -1184,14 +1186,16 @@ function renderDupes(d) {
         <div style="font-size:10px;color:var(--fg3);margin-bottom:4px">${g.files.length} copies · ${_fmtBytes(g.size)} each</div>
         ${g.files.map((f, fi) => `
           <div style="display:flex;align-items:center;gap:8px;padding:2px 0">
-            ${f.best ? '<span title="Best quality — kept" style="flex-shrink:0;color:var(--accent);font-size:9px;font-weight:600">KEEP</span>' : '<span style="flex-shrink:0;width:30px"></span>'}
+            ${f.best ? '<span title="Best quality — kept" style="flex-shrink:0;width:44px;color:var(--accent);font-size:9px;font-weight:600">KEEP</span>'
+              : f.playlist ? '<span title="Playlist copy — never trashed automatically" style="flex-shrink:0;width:44px;color:var(--fg3);font-size:9px;font-weight:600">PLAYLIST</span>'
+              : '<span style="flex-shrink:0;width:44px"></span>'}
             <span style="flex:1;min-width:0;font-family:var(--mono);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(f.rel)}">${escHtml(f.rel)}</span>
             <span style="flex-shrink:0;font-size:9px;color:var(--fg3);text-transform:uppercase">${escHtml(f.ext || '')}</span>
             <button class="btn-icon" style="flex-shrink:0" title="Delete this copy" onclick="_deleteDupe(${gi},${fi})">✕</button>
           </div>`).join('')}
       </div>`).join('');
   document.getElementById('btn-dedupe-auto')?.addEventListener('click', async () => {
-    const ok = await _confirm('Trash every duplicate except the best-quality copy in each group?', { title: 'Auto de-duplicate', confirmLabel: 'Keep best', danger: true });
+    const ok = await _confirm('Trash every duplicate except the best-quality copy in each group? Copies inside playlists are kept.', { title: 'Auto de-duplicate', confirmLabel: 'Keep best', danger: true });
     if (!ok) return;
     try {
       const r = await (await fetch('/dedupe-auto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json();
@@ -1200,6 +1204,18 @@ function renderDupes(d) {
       findDuplicates();
     } catch (e) { _toast(String(e), 'error'); }
   });
+}
+
+// Same rule as the server's _dupe_keep_plan, re-applied after a manual delete:
+// files arrive best-first, playlist copies are always kept, and the first
+// other copy is the one "Keep best" keeps.
+function _replanDupeGroup(g) {
+  let kept = false;
+  for (const f of g.files) {
+    if (f.playlist) { f.keep = true; f.best = false; continue; }
+    f.keep = f.best = !kept;
+    kept = true;
+  }
 }
 
 async function _deleteDupe(gi, fi) {
@@ -1216,7 +1232,8 @@ async function _deleteDupe(gi, fi) {
     if (d.error) { appendLog(`Delete failed: ${d.error}\n`, 'log-error'); return; }
     grp.files.splice(fi, 1);
     if (grp.files.length < 2) _dupeData.groups.splice(gi, 1);
-    _dupeData.wasted_bytes = _dupeData.groups.reduce((s, g) => s + g.size * (g.files.length - 1), 0);
+    else _replanDupeGroup(grp);
+    _dupeData.wasted_bytes = _dupeData.groups.reduce((s, g) => s + g.size * g.files.filter(x => !x.keep).length, 0);
     renderDupes(_dupeData);
     appendLog(`Deleted duplicate: ${file.rel}\n`, 'log-ok');
   } catch (e) {

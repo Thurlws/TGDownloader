@@ -50,6 +50,9 @@ import logging
 import os
 import shutil
 import sys
+import tempfile
+import threading
+import time
 from pathlib import Path
 
 __version__ = "1.19.0"   # single source, bump this when you cut a new release
@@ -109,8 +112,12 @@ DEFAULT_CONFIG: dict = {
     "watchlist_autocheck":     True,
     # ── Post-download user hook ──
     # Command run after each finished queue entry.  "{folder}" / "{artist}" /
-    # "{status}" / "{url}" placeholders are substituted; with no placeholder
-    # the destination folder is appended as a quoted argument.  Empty = off.
+    # "{status}" / "{url}" placeholders expand to quoted values, passed via the
+    # TGD_FOLDER / TGD_ARTIST / TGD_STATUS / TGD_URL environment variables so
+    # metadata is never parsed as shell syntax (on Windows the command runs
+    # under cmd /v:on, where "!" marks a variable, so avoid a literal "!").  With no
+    # placeholder the destination folder is appended as a quoted argument.
+    # Empty = off.
     "post_download_command":   "",
     # ── File / folder naming (applies to NEW downloads only) ──
     # file_naming_template renames tracks on sort from their tags.  Empty (the
@@ -148,8 +155,14 @@ SECRET_KEYS = (
     "lastfm_secret",
     "lastfm_session_key",
     "spotify_client_secret",
+    "acoustid_api_key",
     "anthropic_api_key",
 )
+
+# Config keys never written into a backup or debug bundle, and never taken
+# from a restored backup: every secret plus the account identifiers.
+REDACTED_KEYS = (*SECRET_KEYS, "api_id", "spotify_client_id")
+
 _KEYRING_SERVICE = "TGDownloader"
 _keyring_warned = False
 
@@ -173,13 +186,74 @@ def _warn_keyring_missing() -> None:
         )
 
 
+# ── Safe file writes ──────────────────────────────────────────────────────────
+
+def atomic_write_text(path: "Path | str", text: str, encoding: str = "utf-8") -> None:
+    """Write `text` to `path` so a reader only ever sees the old or the new
+    content, never a half-written file: write a temp file in the same folder,
+    flush it to disk, then os.replace() it over the target.
+
+    Several threads (the GUI server) and two processes (GUI + backend) read
+    and write the same JSON state files; with a plain write_text a reader
+    could catch the file truncated mid-write, treat it as corrupt, and save
+    defaults or an empty dict over the real data."""
+    path = Path(path)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.",
+                               suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding=encoding) as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        try:
+            shutil.copymode(path, tmp)      # keep the file's existing permissions
+        except OSError:
+            pass                            # new file: mkstemp's owner-only mode
+        for attempt in range(10):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                # Windows refuses the replace while another process has the
+                # target open (a reader mid-read, an antivirus scan); retry.
+                if attempt == 9:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def preserve_unreadable(path: "Path | str") -> None:
+    """Keep a copy of a state file that failed to parse, as <name>.corrupt,
+    before the caller falls back to an empty/default value that its next save
+    would write over it. Only the first bad copy is kept. Best-effort."""
+    path = Path(path)
+    backup = path.with_name(path.name + ".corrupt")
+    try:
+        if path.exists() and not backup.exists():
+            shutil.copy2(path, backup)
+            logger.warning("Kept a copy of the unreadable %s as %s", path.name, backup.name)
+    except Exception as exc:
+        logger.debug("Could not back up unreadable %s: %s", path, exc)
+
+
 # ── Config load / save ────────────────────────────────────────────────────────
+
+# Serialises load-modify-save cycles on the config (see update_config).
+_config_lock = threading.RLock()
+
 
 def load_config(path: "Path | None" = None) -> dict:
     """Defaults merged with the saved config, plus the keyring secret overlay.
 
     A corrupt config file is not silently discarded any more: a warning is
-    logged so the user can tell why their settings reverted to defaults.
+    logged so the user can tell why their settings reverted to defaults, and
+    the file is copied to tg_audio_config.json.corrupt before a later save
+    can overwrite it.
     """
     cfg_path = path or CONFIG_FILE
     cfg = dict(DEFAULT_CONFIG)
@@ -193,6 +267,7 @@ def load_config(path: "Path | None" = None) -> dict:
                 "Fix or delete the file to silence this warning.",
                 cfg_path.name, exc,
             )
+            preserve_unreadable(cfg_path)
 
     if cfg.get("use_keyring"):
         kr = _keyring()
@@ -234,12 +309,20 @@ def save_config(cfg: dict, path: "Path | None" = None) -> None:
                     logger.warning("Keyring write failed for %s: %s", key, exc)
 
     try:
-        cfg_path.write_text(
-            json.dumps(disk_cfg, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        atomic_write_text(cfg_path, json.dumps(disk_cfg, indent=2, ensure_ascii=False))
     except Exception as exc:
         logger.warning("Could not save config to %s: %s", cfg_path, exc)
+
+
+def update_config(patch: dict, path: "Path | None" = None) -> dict:
+    """Load the config, merge `patch` into it and save it as one step under a
+    lock, so two concurrent updates (the GUI server is threaded) cannot drop
+    each other's changes. Returns the merged config."""
+    with _config_lock:
+        cfg = load_config(path)
+        cfg.update(patch)
+        save_config(cfg, path)
+        return cfg
 
 
 # ── Telegram API credentials ──────────────────────────────────────────────────

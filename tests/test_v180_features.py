@@ -1,6 +1,7 @@
 """Tests for v1.8.0 pipeline & polish helpers: the post-download hook command
 formatter and the Telegram flood-wait health summary."""
 
+import sys
 import time
 
 import TGDownloader as dl
@@ -9,29 +10,70 @@ import TGDownloader_GUI as gui
 
 # ── Post-download hook command formatting ────────────────────────────────────
 
-def test_hook_command_placeholders():
-    out = dl._format_hook_command(
-        'notify "{artist}" {status} {folder}',
-        dest=r"C:\Music\Artists\A\Album", artist="A", status="ok", url="http://x")
-    assert out == 'notify "A" ok C:\\Music\\Artists\\A\\Album'
+# Placeholders become quoted references to the TGD_* environment variables, so
+# third-party metadata (artist names, playlist titles, URLs) is never parsed
+# as shell syntax.
+
+def test_hook_command_placeholders_posix():
+    out = dl._format_hook_command('notify "{artist}" {status} {folder}', windows=False)
+    assert out == 'notify "${TGD_ARTIST}" "${TGD_STATUS}" "${TGD_FOLDER}"'
+
+
+def test_hook_command_placeholders_windows():
+    out = dl._format_hook_command('notify "{artist}" {status} {folder}', windows=True)
+    assert out == 'notify "!TGD_ARTIST!" "!TGD_STATUS!" "!TGD_FOLDER!"'
 
 
 def test_hook_command_appends_folder_when_no_placeholder():
-    out = dl._format_hook_command(
-        "beet import", dest="/music/a", artist="A", status="ok", url="u")
-    assert out == 'beet import "/music/a"'
+    assert dl._format_hook_command("beet import", windows=False) == 'beet import "${TGD_FOLDER}"'
+    assert dl._format_hook_command("beet import", windows=True) == 'beet import "!TGD_FOLDER!"'
 
 
 def test_hook_command_url_placeholder():
-    out = dl._format_hook_command(
-        "log {url}", dest="/d", artist="", status="partial", url="https://z/1")
-    assert out == "log https://z/1"
+    assert dl._format_hook_command("log {url}", windows=False) == 'log "${TGD_URL}"'
+
+
+def test_hook_command_single_quoted_placeholder_posix():
+    out = dl._format_hook_command("notify-send 'Got {artist}!'", windows=False)
+    assert out == "notify-send 'Got '\"${TGD_ARTIST}\"'!'"
+
+
+def test_hook_command_escaped_quotes_keep_context():
+    # sh: \" inside "..." does not close it.  cmd: ^" outside quotes does not open one.
+    assert (dl._format_hook_command(r'echo "a \" b {url}"', windows=False)
+            == r'echo "a \" b ${TGD_URL}"')
+    assert (dl._format_hook_command('echo ^"x {url}', windows=True)
+            == 'echo ^"x "!TGD_URL!"')
 
 
 def test_hook_noop_when_unconfigured(tmp_path):
     # Must not raise and must not spawn anything with an empty command.
-    dl._run_post_download_hook({}, tmp_path, "u", "a", "ok")
-    dl._run_post_download_hook({"post_download_command": "  "}, tmp_path, "u", "a", "ok")
+    assert dl._run_post_download_hook({}, tmp_path, "u", "a", "ok") is None
+    assert dl._run_post_download_hook(
+        {"post_download_command": "  "}, tmp_path, "u", "a", "ok") is None
+
+
+def test_hook_passes_hostile_values_as_data(tmp_path):
+    # Runs the real shell (sh, or cmd on Windows). The artist value carries
+    # shell syntax that used to execute when substituted into the command.
+    canary = tmp_path / "pwned"
+    artist = (f"AC&DC | 100% (live) ^ !x! & echo x > {canary} & "
+              f"$(echo x > {canary}) `echo x > {canary}`; x' y")
+    if sys.platform != "win32":
+        artist += ' "q"'      # cmd has no way to pass a literal quote safely
+    out_file = tmp_path / "args.txt"
+    script = tmp_path / "write_args.py"
+    script.write_text("import pathlib, sys\n"
+                      "pathlib.Path(sys.argv[1]).write_text("
+                      "'\\n'.join(sys.argv[2:]), encoding='utf-8')\n")
+    cmd = f'"{sys.executable}" "{script}" "{out_file}" {{artist}} "{{status}}" {{url}}'
+    url = "https://example.com/album/1?a=1&b=2"
+    proc = dl._run_post_download_hook({"post_download_command": cmd},
+                                      tmp_path, url, artist, "ok")
+    assert proc is not None
+    assert proc.wait(timeout=60) == 0
+    assert out_file.read_text(encoding="utf-8").split("\n") == [artist, "ok", url]
+    assert not canary.exists()
 
 
 # ── Flood-wait health summary ────────────────────────────────────────────────

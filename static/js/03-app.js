@@ -921,7 +921,7 @@ async function _runImport(path) {
     })).json();
     if (d.cancelled) { out.innerHTML = ''; return; }
     if (d.error) { out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(d.error)}</div>`; return; }
-    out.innerHTML = `<div style="font-size:11px;color:var(--accent)">Imported ${d.imported} file(s)${d.dupes ? ` · ${d.dupes} duplicate(s) skipped` : ''}.</div>`;
+    out.innerHTML = `<div style="font-size:11px;color:var(--accent)">Imported ${d.imported} file(s)${d.dupes ? ` · ${d.dupes} duplicate(s) skipped` : ''}${d.failed ? ` · <span style="color:var(--red)">${d.failed} failed (see the debug log)</span>` : ''}.</div>`;
   } catch (err) {
     out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(String(err))}</div>`;
   }

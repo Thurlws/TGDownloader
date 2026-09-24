@@ -208,12 +208,12 @@ LOCK_PORT = HTTP_PORT + 1   # single-instance sentinel: we bind this; nobody els
 
 logger = logging.getLogger("gui_server")
 
-# Config keys kept out of a backup archive and ignored when restoring one.
-# SECRET_KEYS plus the two identifiers that are not secrets but still have no
-# business travelling in an export. Defined once so adding a secret in
-# tgd_common covers both paths; it previously lived as a literal list in
-# /backup, which is how a newly added secret could ship into export archives.
-BACKUP_EXCLUDED_KEYS = (*tgd_common.SECRET_KEYS, "api_id", "spotify_client_id")
+# Config keys kept out of a backup archive or debug bundle and ignored when
+# restoring one: SECRET_KEYS plus the two identifiers that are not secrets but
+# still have no business travelling in an export. Defined once, in tgd_common,
+# so adding a secret there covers every path; it previously lived as a literal
+# list in /backup, which is how a newly added secret could ship into exports.
+BACKUP_EXCLUDED_KEYS = tgd_common.REDACTED_KEYS
 
 # Content-Security-Policy for the served HTML. Defense-in-depth behind the
 # frontend's escHtml/textContent discipline. 'unsafe-inline' is required by the
@@ -426,7 +426,12 @@ def _verify_update_checksum(zip_path: Path, sha256_url: str) -> None:
 
     Defensive by design: no URL (older releases ship none) → skip, so updates
     never break. Present but unfetchable/malformed/mismatched → raise, so a
-    corrupted or tampered download is rejected before the swap."""
+    corrupted or truncated download is rejected before the swap.
+
+    This is an integrity check, not an authenticity check: the checksum comes
+    from the same GitHub release as the zip, so anyone able to replace the zip
+    there can replace the checksum too. Only a signature made with a key kept
+    outside the release could catch that."""
     if not sha256_url:
         return
     try:
@@ -464,15 +469,24 @@ def _stage_update(zip_path: Path, staging: Path) -> Path:
     return exe.parent
 
 
-def _build_update_script(pid: int, app_dir: Path, new_root: Path) -> str:
+def _build_update_script(pid: int, app_dir: Path, new_root: Path,
+                         relaunch: bool = True) -> str:
     """Windows .bat: wait for our PID to exit, back up + swap _internal/ and the
     exe from new_root into app_dir, relaunch, then delete staging and itself.
-    On any move failure it rolls the .old backups back and relaunches."""
+
+    Every rename is checked, and MOVED_INT records whether the new _internal/
+    is already in place. On any failure the rollback moves a swapped-in
+    _internal/ back to staging before restoring the .old backups, so the old
+    version always runs as a whole: it used to keep the new _internal/ next to
+    the old exe when the exe swap failed. relaunch=False (tests only) skips
+    starting the app."""
+    start = 'start "" "%APP%\\TGDownloader.exe"' if relaunch else "rem relaunch skipped"
     return f"""@echo off
 setlocal
 set "PID={pid}"
 set "APP={app_dir}"
 set "NEW={new_root}"
+set "MOVED_INT="
 
 rem 1. Wait (up to ~60s) for TGDownloader to exit so its files unlock.
 set /a n=0
@@ -486,25 +500,33 @@ if not errorlevel 1 (
 )
 ping -n 3 127.0.0.1 >nul
 
-rem 2. Swap _internal/ (keep the old copy as a rollback backup).
+rem 2. Swap _internal/ (keep the old copy as a rollback backup). A rename that
+rem    fails (locked file) must stop here: moving onto an existing folder would
+rem    nest the new _internal/ inside the old one.
 if exist "%APP%\\_internal.old" rmdir /S /Q "%APP%\\_internal.old"
+if exist "%APP%\\_internal.old" goto rollback
 if exist "%APP%\\_internal" ren "%APP%\\_internal" "_internal.old"
+if exist "%APP%\\_internal" goto rollback
 move "%NEW%\\_internal" "%APP%\\_internal" >nul || goto rollback
+set "MOVED_INT=1"
 
 rem 3. Swap the exe (keep the old one too).
 if exist "%APP%\\TGDownloader.old.exe" del /Q "%APP%\\TGDownloader.old.exe"
 if exist "%APP%\\TGDownloader.exe" ren "%APP%\\TGDownloader.exe" "TGDownloader.old.exe"
+if exist "%APP%\\TGDownloader.exe" goto rollback
 move "%NEW%\\TGDownloader.exe" "%APP%\\TGDownloader.exe" >nul || goto rollback
 
 rem 4. Relaunch and clean up staging.
-start "" "%APP%\\TGDownloader.exe"
+{start}
 rmdir /S /Q "%NEW%" 2>nul
 goto done
 
 :rollback
-if exist "%APP%\\_internal.old" if not exist "%APP%\\_internal" ren "%APP%\\_internal.old" "_internal"
-if exist "%APP%\\TGDownloader.old.exe" if not exist "%APP%\\TGDownloader.exe" ren "%APP%\\TGDownloader.old.exe" "TGDownloader.exe"
-start "" "%APP%\\TGDownloader.exe"
+rem Undo only what was swapped, so the old version runs as a whole.
+if defined MOVED_INT move "%APP%\\_internal" "%NEW%\\_internal" >nul
+if not exist "%APP%\\_internal" if exist "%APP%\\_internal.old" ren "%APP%\\_internal.old" "_internal"
+if not exist "%APP%\\TGDownloader.exe" if exist "%APP%\\TGDownloader.old.exe" ren "%APP%\\TGDownloader.old.exe" "TGDownloader.exe"
+{start}
 
 :done
 :giveup
@@ -529,7 +551,8 @@ def _apply_update() -> dict:
         zip_path = _UPDATE_STAGING.parent / "_update.zip"
         _download_zip(info["download_url"], zip_path, info.get("download_size", 0))
         # Integrity check against the published .sha256 when the release ships one
-        # (no-op for older releases that don't). Rejects a corrupted/tampered zip.
+        # (no-op for older releases that don't). Rejects a corrupted or truncated
+        # zip; it does not prove who published it (see _verify_update_checksum).
         _verify_update_checksum(zip_path, info.get("sha256_url", ""))
         new_root = _stage_update(zip_path, _UPDATE_STAGING)
         zip_path.unlink(missing_ok=True)
@@ -741,9 +764,7 @@ async def _tg_get_quality() -> dict:
 async def _tg_set_quality(target: str) -> dict:
     """Write quality setting to local config (no bot comms)."""
     try:
-        cfg = tgd_common.load_config()
-        cfg["target_quality"] = target
-        tgd_common.save_config(cfg)
+        tgd_common.update_config({"target_quality": target})
         return {"ok": True, "quality": target}
     except Exception as exc:
         return {"error": str(exc)}
@@ -856,20 +877,22 @@ def _ws_send(conn, text: str) -> bool:
 #  SESSIONS HELPERS
 # ══════════════════════════════════════════════
 
+# Serialises load-modify-save cycles on the saved queue sessions.
+_sessions_lock = threading.Lock()
+
+
 def _load_sessions() -> dict:
     if SESSIONS_FILE.exists():
         try:
             return json.loads(SESSIONS_FILE.read_text(encoding="utf-8"))
         except Exception:
-            pass
+            tgd_common.preserve_unreadable(SESSIONS_FILE)
     return {}
 
 
 def _save_sessions(data: dict) -> None:
-    SESSIONS_FILE.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    tgd_common.atomic_write_text(SESSIONS_FILE,
+                                 json.dumps(data, indent=2, ensure_ascii=False))
 
 
 # ══════════════════════════════════════════════
@@ -988,6 +1011,13 @@ class ProcessManager:
         for c in dead:
             self.remove_client(c)
 
+    def send(self, conn, msg: dict) -> bool:
+        """Send to one client. Takes the same lock as broadcast(): two threads
+        writing frames to one socket at once can interleave their bytes,
+        which corrupts the stream and makes the browser drop the socket."""
+        with self._cl_lock:
+            return _ws_send(conn, json.dumps(msg))
+
     def is_running(self) -> bool:
         with self._lock:
             return self._proc is not None and self._proc.poll() is None
@@ -1013,7 +1043,7 @@ class ProcessManager:
             env["TGD_BUNDLE_DIR"] = str(BUNDLE_DIR)
             env["TGD_LOG_FILE"]   = str(LOG_FILE)
 
-            self._proc = subprocess.Popen(
+            proc = subprocess.Popen(
                 _BACKEND_CMD,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -1025,13 +1055,17 @@ class ProcessManager:
                 env=env,
                 cwd=str(DATA_DIR),
             )
-            self._proc.stdin.write(stdin_data)
-            self._proc.stdin.close()
-            logger.info("Backend subprocess started (pid=%s)", self._proc.pid)
+            self._proc = proc
+            proc.stdin.write(stdin_data)
+            proc.stdin.close()
+            logger.info("Backend subprocess started (pid=%s)", proc.pid)
 
+        # The stream thread works on its own `proc`, never self._proc, which
+        # a later start() may already have replaced.
         def _stream():
+            rc = -1
             try:
-                for line in iter(self._proc.stdout.readline, ""):
+                for line in iter(proc.stdout.readline, ""):
                     msg = _parse_backend_line(line)
                     if msg is None:
                         # Not JSON: a legacy marker or stray stdout/stderr.
@@ -1054,16 +1088,26 @@ class ProcessManager:
                                         **{k: v for k, v in msg.items() if k != "type"}})
                     else:  # progress / paused / resumed pass straight through
                         self.broadcast(msg)
-                self._proc.wait()
-                rc = self._proc.returncode
+                proc.wait()
+                rc = proc.returncode
             except Exception as ex:
                 rc = -1
                 self.broadcast({"type": "log", "text": f"\nServer error: {ex}\n"})
             finally:
                 logger.info("Backend subprocess exited (rc=%s)", rc)
-                self.broadcast({"type": "done", "code": rc})
+                # Forget the process before announcing "done": the UI can
+                # answer "done" with a new start at once (Retry failed), and
+                # clearing self._proc after that orphaned the new backend, so
+                # Stop could no longer reach it.
                 with self._lock:
-                    self._proc = None
+                    current = self._proc is proc
+                    if current:
+                        self._proc = None
+                # If a newer run already started in the moment since this one
+                # exited, it has announced itself; a "done" now would show it
+                # as idle. Its own "done" follows when it finishes.
+                if current:
+                    self.broadcast({"type": "done", "code": rc})
 
         threading.Thread(target=_stream, daemon=True).start()
 
@@ -1543,6 +1587,11 @@ def _ffmpeg_exe() -> "str | None":
     return tgd_common.ffmpeg_exe()
 
 
+# One lock per cache key, so a track is only ever transcoded once at a time.
+_transcode_locks: "dict[str, threading.Lock]" = {}
+_transcode_locks_guard = threading.Lock()
+
+
 def _transcode_to_mp3(src: "Path") -> "Path | None":
     """Transcode an audio file to a browser-playable MP3 (cached on disk).
     Used as a fallback when the browser's <audio> can't decode the original
@@ -1557,6 +1606,24 @@ def _transcode_to_mp3(src: "Path") -> "Path | None":
         key = hashlib.sha1(f"{src.resolve()}|{st.st_mtime_ns}|{st.st_size}".encode("utf-8")).hexdigest()
         _TRANSCODE_DIR.mkdir(parents=True, exist_ok=True)
         out = _TRANSCODE_DIR / (key + ".mp3")
+        if out.exists() and out.stat().st_size > 0:
+            return out
+        # The browser can ask for the same track twice before the first
+        # transcode finishes (a retry, a seek). Two ffmpeg runs used to write
+        # the same ".part.mp3" together and could cache a corrupt MP3 for good;
+        # now the second request waits and reuses the first one's result.
+        with _transcode_locks_guard:
+            lock = _transcode_locks.setdefault(key, threading.Lock())
+        with lock:
+            return _transcode_locked(ff, src, out)
+    except Exception as exc:
+        logger.debug("Transcode failed for %s: %s", src, exc)
+    return None
+
+
+def _transcode_locked(ff: str, src: "Path", out: "Path") -> "Path | None":
+    """The ffmpeg run behind _transcode_to_mp3; caller holds out's lock."""
+    try:
         if out.exists() and out.stat().st_size > 0:
             return out
         tmp = out.with_name(out.stem + ".part.mp3")
@@ -2610,6 +2677,13 @@ def _save_liked(items: "list[dict]") -> None:
     tgd_store.set_json("liked_songs", items)
 
 
+# Held across each load-modify-save of liked songs / ratings: the server is
+# threaded, and two quick clicks could otherwise each save a copy missing the
+# other's change.
+_liked_lock   = threading.Lock()
+_ratings_lock = threading.Lock()
+
+
 def _toggle_liked(entry: dict) -> dict:
     """Add the song if absent, remove it if present (keyed by path_hash + name).
     Returns {liked: bool, count: int}."""
@@ -2618,29 +2692,30 @@ def _toggle_liked(entry: dict) -> dict:
     if not ph or not name:
         return {"error": "Missing path_hash or name"}
 
-    items = _load_liked()
-    key   = _liked_key(ph, name)
-    kept  = [it for it in items if _liked_key(it.get("path_hash", ""),
-                                              it.get("name", "")) != key]
+    with _liked_lock:
+        items = _load_liked()
+        key   = _liked_key(ph, name)
+        kept  = [it for it in items if _liked_key(it.get("path_hash", ""),
+                                                  it.get("name", "")) != key]
 
-    if len(kept) != len(items):
-        # Was present → unlike
+        if len(kept) != len(items):
+            # Was present → unlike
+            _save_liked(kept)
+            return {"liked": False, "count": len(kept)}
+
+        # Was absent → like (prepend so newest shows first)
+        new_item = {
+            "path_hash": ph,
+            "name":      name,
+            "title":     entry.get("title") or name,
+            "artist":    entry.get("artist") or "",
+            "album":     entry.get("album") or "",
+            "cover_url": entry.get("cover_url") or "",
+            "added":     int(time.time()),
+        }
+        kept.insert(0, new_item)
         _save_liked(kept)
-        return {"liked": False, "count": len(kept)}
-
-    # Was absent → like (prepend so newest shows first)
-    new_item = {
-        "path_hash": ph,
-        "name":      name,
-        "title":     entry.get("title") or name,
-        "artist":    entry.get("artist") or "",
-        "album":     entry.get("album") or "",
-        "cover_url": entry.get("cover_url") or "",
-        "added":     int(time.time()),
-    }
-    kept.insert(0, new_item)
-    _save_liked(kept)
-    return {"liked": True, "count": len(kept)}
+        return {"liked": True, "count": len(kept)}
 
 
 # ══════════════════════════════════════════════
@@ -2691,20 +2766,21 @@ def _set_rating(entry: dict, path: "Path | None" = None) -> dict:
     if not 0 <= rating <= 5:
         return {"error": "rating must be 0–5"}
 
-    items = _load_ratings(path)
-    key   = _liked_key(ph, name)
-    if rating == 0:
-        items.pop(key, None)
-    else:
-        items[key] = {
-            "rating":  rating,
-            "title":   entry.get("title") or name,
-            "artist":  entry.get("artist") or "",
-            "album":   entry.get("album") or "",
-            "updated": int(time.time()),
-        }
-    _save_ratings(items, path)
-    return {"ok": True, "rating": rating, "count": len(items)}
+    with _ratings_lock:
+        items = _load_ratings(path)
+        key   = _liked_key(ph, name)
+        if rating == 0:
+            items.pop(key, None)
+        else:
+            items[key] = {
+                "rating":  rating,
+                "title":   entry.get("title") or name,
+                "artist":  entry.get("artist") or "",
+                "album":   entry.get("album") or "",
+                "updated": int(time.time()),
+            }
+        _save_ratings(items, path)
+        return {"ok": True, "rating": rating, "count": len(items)}
 
 
 # ══════════════════════════════════════════════
@@ -2724,9 +2800,18 @@ def _save_watchlist(data: dict) -> None:
     tgd_store.set_json("watchlist", data)
 
 
-def _fetch_artist_albums(artist_id: str) -> "list[dict]":
+# Held across every load-modify-save of the watchlist. Network lookups happen
+# outside it, so a slow Deezer call never blocks a click.
+_watchlist_lock = threading.Lock()
+
+
+def _fetch_artist_albums(artist_id: str) -> "list[dict] | None":
     """Fetch an artist's albums from Deezer as a normalised list:
-    [{album_id, title, cover, link, release_date, record_type}]."""
+    [{album_id, title, cover, link, release_date, record_type}].
+
+    Returns None when the lookup fails (network error, or an error payload
+    such as Deezer's quota limit), so callers can tell "no albums" apart
+    from "could not ask"."""
     out: list = []
     try:
         api_url = (f"https://api.deezer.com/artist/{artist_id}/albums"
@@ -2734,7 +2819,12 @@ def _fetch_artist_albums(artist_id: str) -> "list[dict]":
         req = urllib.request.Request(api_url, headers={"User-Agent": "TGDownloader/6"})
         with urllib.request.urlopen(req, timeout=12) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-        for a in data.get("data", []):
+        if not isinstance(data, dict) or "error" in data \
+                or not isinstance(data.get("data"), list):
+            err = data.get("error") if isinstance(data, dict) else data
+            logger.warning("Deezer artist albums lookup failed for %s: %s", artist_id, err)
+            return None
+        for a in data["data"]:
             out.append({
                 "album_id":    str(a.get("id", "")),
                 "title":       a.get("title", ""),
@@ -2745,44 +2835,90 @@ def _fetch_artist_albums(artist_id: str) -> "list[dict]":
             })
     except Exception as exc:
         logger.warning("Deezer artist albums fetch failed for %s: %s", artist_id, exc)
+        return None
     return out
 
 
 def _watchlist_add(artist_id: str, name: str, cover_url: str) -> dict:
     """Add an artist; seed known_album_ids with their current discography so
     only future releases surface as 'new'."""
-    artist_id = str(artist_id).strip()
-    if not artist_id:
-        return {"error": "Missing artist_id"}
-    wl = _load_watchlist()
+    artist_id = str(artist_id or "").strip()
+    if not artist_id.isdigit():
+        return {"error": "Missing or invalid artist_id"}
     albums = _fetch_artist_albums(artist_id)
-    wl[artist_id] = {
-        "name":            name or "",
-        "cover_url":       cover_url or "",
-        "added":           int(time.time()),
-        "last_checked":    int(time.time()),
-        "known_album_ids": [a["album_id"] for a in albums],
-    }
-    _save_watchlist(wl)
-    return {"ok": True, "watching": True, "count": len(wl)}
+    if albums is None:
+        # An empty baseline would flag the artist's whole back catalogue as
+        # "new releases" on the next check.
+        return {"error": "Could not load this artist's releases from Deezer. "
+                         "Try again in a moment."}
+    with _watchlist_lock:
+        wl = _load_watchlist()
+        wl[artist_id] = {
+            "name":            name or "",
+            "cover_url":       cover_url or "",
+            "added":           int(time.time()),
+            "last_checked":    int(time.time()),
+            "known_album_ids": [a["album_id"] for a in albums],
+        }
+        _save_watchlist(wl)
+        return {"ok": True, "watching": True, "count": len(wl)}
+
+
+def _watchlist_remove(artist_id: str) -> dict:
+    with _watchlist_lock:
+        wl = _load_watchlist()
+        wl.pop(str(artist_id or ""), None)
+        _save_watchlist(wl)
+        return {"ok": True, "watching": False, "count": len(wl)}
+
+
+def _watchlist_mark_seen(artist_id: str, album_ids: list) -> dict:
+    with _watchlist_lock:
+        wl = _load_watchlist()
+        info = wl.get(str(artist_id or ""))
+        if info is not None:
+            known = set(info.get("known_album_ids") or [])
+            known.update(str(x) for x in (album_ids or []))
+            info["known_album_ids"] = sorted(known)
+            _save_watchlist(wl)
+    return {"ok": True}
 
 
 def _watchlist_check() -> dict:
     """Diff each watched artist's current discography against the seeded
-    baseline; return albums released since they were added."""
-    wl = _load_watchlist()
+    baseline; return albums released since they were added.
+
+    The lookups run on a snapshot, outside the lock. The result is then
+    applied to the watchlist as it is now: saving the snapshot back used to
+    undo any add, remove or "mark seen" made while the check was running.
+    An artist whose lookup failed is skipped, not reported as checked."""
+    snapshot = list(_load_watchlist())
+    fetched: "dict[str, list]" = {}
+    for artist_id in snapshot:
+        albums = _fetch_artist_albums(artist_id)
+        if albums is not None:
+            fetched[artist_id] = albums
+    now = int(time.time())
+    with _watchlist_lock:
+        wl = _load_watchlist()
+        for artist_id in fetched:
+            if artist_id in wl:
+                wl[artist_id]["last_checked"] = now
+        _save_watchlist(wl)
     new_releases: list = []
-    for artist_id, info in wl.items():
+    for artist_id, albums in fetched.items():
+        info = wl.get(artist_id)
+        if info is None:                    # removed while we were checking
+            continue
         known = set(info.get("known_album_ids") or [])
-        for a in _fetch_artist_albums(artist_id):
+        for a in albums:
             if a["album_id"] and a["album_id"] not in known:
                 new_releases.append({"artist_id": artist_id,
                                      "artist": info.get("name", ""), **a})
-        info["last_checked"] = int(time.time())
-    _save_watchlist(wl)
     # Newest first by release date
     new_releases.sort(key=lambda x: x.get("release_date", ""), reverse=True)
-    return {"new_releases": new_releases, "checked": len(wl)}
+    return {"new_releases": new_releases, "checked": len(fetched),
+            "failed": len(snapshot) - len(fetched)}
 
 
 # ══════════════════════════════════════════════
@@ -2869,7 +3005,7 @@ def _scrobble_submit(cfg: dict, meta: dict, now_playing: bool) -> dict:
 def handle_ws(conn, key: str):
     _ws_handshake(conn, key)
     MANAGER.add_client(conn)
-    _ws_send(conn, json.dumps({"type": "status", "running": MANAGER.is_running()}))
+    MANAGER.send(conn, {"type": "status", "running": MANAGER.is_running()})
 
     try:
         while True:
@@ -2885,7 +3021,7 @@ def handle_ws(conn, key: str):
 
             if action == "start":
                 if MANAGER.is_running():
-                    _ws_send(conn, json.dumps({"type": "error", "text": "Already running"}))
+                    MANAGER.send(conn, {"type": "error", "text": "Already running"})
                     continue
                 entries = data.get("entries", [])
                 # Persist playlist cover + original track order for the worker
@@ -2912,7 +3048,7 @@ def handle_ws(conn, key: str):
                 MANAGER.broadcast({"type": "resumed"})
 
             elif action == "ping":
-                _ws_send(conn, json.dumps({"type": "pong"}))
+                MANAGER.send(conn, {"type": "pong"})
 
     finally:
         MANAGER.remove_client(conn)
@@ -3708,6 +3844,19 @@ _RESTORABLE_STATE_FILES = {"liked_songs.json", "watchlist.json",
                            "ratings.json"}
 
 
+def _redacted_config_json() -> "str | None":
+    """The saved config as JSON with every secret and account id removed
+    (BACKUP_EXCLUDED_KEYS), for backups and debug bundles. None when there is
+    no readable config."""
+    try:
+        cfg = json.loads(tgd_common.CONFIG_FILE.read_text("utf-8"))
+    except Exception:
+        return None
+    for key in BACKUP_EXCLUDED_KEYS:
+        cfg.pop(key, None)
+    return json.dumps(cfg, indent=2)
+
+
 def _validate_backup_zip(data: bytes) -> "tuple[dict[str, bytes], list[str]]":
     """({basename: raw_bytes}, skipped_names).  Only allowlisted basenames
     containing valid JSON are accepted, so a crafted zip can neither traverse
@@ -3952,6 +4101,41 @@ def _quality_score(path: "Path") -> "tuple[int, int]":
         except OSError:
             bitrate = 0
     return rank, bitrate
+
+
+def _dupe_keep_plan(home_path: "Path", paths: "list[str]") -> "list[dict]":
+    """One duplicate group ordered best copy first, each member marked with
+    what "Keep best, trash the rest" does to it: [{path, playlist, keep}].
+    /duplicates (the UI's KEEP label) and /dedupe-auto both use this, so the
+    label always names the file that is actually kept.
+
+    Copies inside the Playlists folder are never auto-trashed: a playlist
+    holds its own copies on purpose, and trashing one silently removed a
+    track from it. Among the other copies the best-quality one is kept.
+    Members of a group are byte-identical, so scores usually tie; ties go to
+    the shortest path ("Album/x.flac" over "Album (1)/x.flac"), then
+    alphabetical, so the choice no longer depends on disk scan order."""
+    pl_root = (home_path / PLAYLISTS_DIRNAME).resolve()
+    members = []
+    for p in sorted(paths, key=lambda s: (len(s), s)):
+        pp = Path(p)
+        try:
+            in_playlist = pl_root in pp.resolve().parents
+        except OSError:
+            in_playlist = False
+        members.append({"path": p, "playlist": in_playlist,
+                        "_score": _quality_score(pp)})
+    members.sort(key=lambda m: m["_score"], reverse=True)   # stable: ties keep path order
+    kept = False
+    for m in members:
+        del m["_score"]
+        if m["playlist"]:
+            m["keep"] = True
+        else:
+            m["keep"], kept = not kept, True
+    # The kept library copy first, the rest still in rank order.
+    members.sort(key=lambda m: not (m["keep"] and not m["playlist"]))
+    return members
 
 
 _YEAR_LOOKUP_CAP = 25    # Deezer year lookups per janitor run (keeps runs bounded)
@@ -4291,6 +4475,53 @@ def _art_repair(limit: int = 25) -> dict:
     attempted = min(len(targets), limit)
     return {"checked": checked, "missing": len(targets), "fixed": fixed,
             "failed": failed, "remaining": max(0, len(targets) - attempted)}
+
+
+def _import_folder(m, home_path: Path, src_path: Path) -> dict:
+    """Copy every audio file under `src_path` into the library through the
+    same pipeline as a download: grouped by artist tag, then sort_by_album
+    fuzzy-matches artist/album folders and skips hash duplicates, so a
+    re-import is harmless. The source folder is never modified.
+
+    Each source folder is staged in its own numbered subfolder. Flattening
+    everything into one staging folder let two albums' "01 - Intro.flac"
+    overwrite each other, and the lost copy was still counted as imported."""
+    hash_index = m.build_library_hash_index(home_path)
+    by_artist: "dict[str, list[Path]]" = {}
+    for f in src_path.rglob("*"):
+        if f.is_file() and f.suffix.lower() in _AUDIO_EXT:
+            art = m._get_artist(f) if hasattr(m, "_get_artist") else ""
+            by_artist.setdefault(art or "Imported", []).append(f)
+
+    staged = home_path / ".tgimport_tmp"
+    imported = dupes = failed = 0
+    for art, files in by_artist.items():
+        artist_dir = (m._fuzzy_match_dir(art, m.artists_root(home_path))
+                      or m.artists_root(home_path) / m._sanitise_path(art))
+        shutil.rmtree(staged, ignore_errors=True)
+        staged.mkdir(parents=True, exist_ok=True)
+        folder_ids: "dict[Path, int]" = {}
+        copied = 0
+        for f in files:
+            sub = staged / str(folder_ids.setdefault(f.parent, len(folder_ids)))
+            try:
+                sub.mkdir(exist_ok=True)
+                shutil.copy2(str(f), str(sub / f.name))
+                copied += 1
+            except Exception as exc:
+                logger.warning("Import: could not copy %s: %s", f, exc)
+                failed += 1
+        d, _albums = m.sort_by_album(staged, artist_dir, hash_index)
+        # sort_by_album moves what it files and deletes the duplicates it
+        # skips; anything still staged failed to move.
+        stuck = sum(1 for p in staged.rglob("*")
+                    if p.is_file() and p.suffix.lower() in _AUDIO_EXT)
+        dupes    += d
+        failed   += stuck
+        imported += copied - d - stuck
+    shutil.rmtree(staged, ignore_errors=True)
+    return {"ok": True, "imported": imported, "dupes": dupes, "failed": failed,
+            "source": str(src_path)}
 
 
 # ══════════════════════════════════════════════
@@ -4633,34 +4864,33 @@ class Handler(BaseHTTPRequestHandler):
                 if not home:
                     self._send_json(200, {"error": "No home music folder configured."})
                     return
-                from pathlib import Path as _P
-                home_path = _P(home)
+                home_path = Path(home)
                 groups_raw = m.build_duplicate_groups(home_path)
                 groups = []
                 for paths in groups_raw:
                     members = []
-                    for p in paths:
-                        pp = _P(p)
+                    # Best copy first; "best" marks the copy auto-dedupe keeps.
+                    for plan in _dupe_keep_plan(home_path, paths):
+                        pp = Path(plan["path"])
                         try:
                             sz = pp.stat().st_size
                         except OSError:
                             sz = 0
-                        rank, bitrate = _quality_score(pp)
                         members.append({
-                            "path":     p,
+                            "path":     plan["path"],
                             "rel":      str(pp.relative_to(home_path)) if str(pp).startswith(str(home_path)) else pp.name,
                             "name":     pp.name,
                             "size":     sz,
                             "ext":      pp.suffix.lower().lstrip("."),
-                            "quality":  rank * 10_000_000 + bitrate,
+                            "best":     plan["keep"] and not plan["playlist"],
+                            "keep":     plan["keep"],
+                            "playlist": plan["playlist"],
                         })
-                    # Best copy first so the UI can mark it "keep".
-                    members.sort(key=lambda x: x["quality"], reverse=True)
-                    if members:
-                        members[0]["best"] = True
-                    groups.append({"size": members[0]["size"], "files": members})
-                groups.sort(key=lambda g: g["size"] * (len(g["files"]) - 1), reverse=True)
-                wasted = sum(g["size"] * (len(g["files"]) - 1) for g in groups)
+                    trashable = sum(1 for f in members if not f["keep"])
+                    groups.append({"size": members[0]["size"], "files": members,
+                                   "reclaimable": members[0]["size"] * trashable})
+                groups.sort(key=lambda g: g["reclaimable"], reverse=True)
+                wasted = sum(g["reclaimable"] for g in groups)
                 self._send_json(200, {"groups": groups, "wasted_bytes": wasted})
             except Exception as exc:
                 logger.exception("Error in /duplicates")
@@ -4847,13 +5077,9 @@ class Handler(BaseHTTPRequestHandler):
                         except Exception:
                             pass
                 # Drop credentials from the archived config copy
-                try:
-                    cfg = json.loads((DATA_DIR / "tg_audio_config.json").read_text("utf-8"))
-                    for secret in BACKUP_EXCLUDED_KEYS:
-                        cfg.pop(secret, None)
-                    zf.writestr("tg_audio_config.json", json.dumps(cfg, indent=2))
-                except Exception:
-                    pass
+                red = _redacted_config_json()
+                if red is not None:
+                    zf.writestr("tg_audio_config.json", red)
             data = buf.getvalue()
             stamp = time.strftime("%Y%m%d-%H%M%S")
             self.send_response(200)
@@ -4981,16 +5207,10 @@ class Handler(BaseHTTPRequestHandler):
                         zf.writestr("tgdownloader_debug.log", raw[-2_000_000:])
                 except Exception:
                     pass
-                # Config with every secret stripped (same list as /backup)
-                try:
-                    cfg = json.loads((DATA_DIR / "tg_audio_config.json").read_text("utf-8"))
-                    for secret in ("api_id", "api_hash", "listenbrainz_token",
-                                   "lastfm_api_key", "lastfm_secret", "lastfm_session_key",
-                                   "spotify_client_id", "spotify_client_secret"):
-                        cfg.pop(secret, None)
-                    zf.writestr("tg_audio_config.json", json.dumps(cfg, indent=2))
-                except Exception:
-                    pass
+                # Config with every secret stripped (same as /backup)
+                red = _redacted_config_json()
+                if red is not None:
+                    zf.writestr("tg_audio_config.json", red)
                 # Environment snapshot
                 try:
                     info = [
@@ -5737,11 +5957,8 @@ class Handler(BaseHTTPRequestHandler):
             # Through tgd_common so the keyring overlay (use_keyring) applies
             # to api_hash the same way it does for every other secret.
             try:
-                cfg = tgd_common.load_config()
-                cfg["api_id"]       = int(api_id)
-                cfg["api_hash"]     = api_hash
-                cfg["bot_username"] = bot_username
-                tgd_common.save_config(cfg)
+                tgd_common.update_config({"api_id": int(api_id), "api_hash": api_hash,
+                                          "bot_username": bot_username})
                 logger.info("Setup wizard complete: credentials and bot saved")
                 self._send_json(200, {"ok": True})
             except Exception as exc:
@@ -5750,10 +5967,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/config":
-            m   = _tgd_import()
-            cfg = m.load_config()
-            cfg.update(body)
-            m.save_config(cfg)
+            cfg = tgd_common.update_config(body)
             # Applying the library-watcher flag needs to (re)start/stop its thread,
             # not just persist the value, do it whenever the flag is in the patch.
             if "watch_library" in body:
@@ -5795,20 +6009,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, _watchlist_add(
                     body.get("artist_id"), body.get("name"), body.get("cover_url")))
             elif action == "remove":
-                wl = _load_watchlist()
-                wl.pop(str(body.get("artist_id", "")), None)
-                _save_watchlist(wl)
-                self._send_json(200, {"ok": True, "watching": False, "count": len(wl)})
+                self._send_json(200, _watchlist_remove(body.get("artist_id")))
             elif action == "mark_seen":
-                wl  = _load_watchlist()
-                aid = str(body.get("artist_id", ""))
-                info = wl.get(aid)
-                if info is not None:
-                    known = set(info.get("known_album_ids") or [])
-                    known.update(str(x) for x in (body.get("album_ids") or []))
-                    info["known_album_ids"] = sorted(known)
-                    _save_watchlist(wl)
-                self._send_json(200, {"ok": True})
+                self._send_json(200, _watchlist_mark_seen(body.get("artist_id"),
+                                                          body.get("album_ids")))
             else:
                 self._send_json(400, {"error": f"unknown action: {action}"})
             return
@@ -5891,17 +6095,17 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/sessions":
-            sessions = _load_sessions()
-            if "delete" in body:
-                sessions.pop(body["delete"], None)
-                _save_sessions(sessions)
-                self._send_json(200, {"ok": True})
-            elif "name" in body and "entries" in body:
-                sessions[body["name"]] = body["entries"]
-                _save_sessions(sessions)
-                self._send_json(200, {"ok": True})
-            else:
+            if "delete" not in body and not ("name" in body and "entries" in body):
                 self._send_json(400, {"error": "Invalid body"})
+                return
+            with _sessions_lock:
+                sessions = _load_sessions()
+                if "delete" in body:
+                    sessions.pop(body["delete"], None)
+                else:
+                    sessions[body["name"]] = body["entries"]
+                _save_sessions(sessions)
+            self._send_json(200, {"ok": True})
             return
 
         if path == "/history-remove":
@@ -5912,10 +6116,8 @@ class Handler(BaseHTTPRequestHandler):
                     cfg  = m.load_config()
                     home = cfg.get("home_music_folder")
                     if home:
-                        from pathlib import Path as _P
-                        manifest = m.load_manifest(_P(home))
-                        manifest.pop(url_to_remove, None)
-                        m.save_manifest(_P(home), manifest)
+                        m.update_manifest(Path(home),
+                                          lambda mf: mf.pop(url_to_remove, None))
                 except Exception as exc:
                     logger.exception("Error in /history-remove")
                     self._send_json(500, {"error": str(exc)})
@@ -6172,36 +6374,10 @@ class Handler(BaseHTTPRequestHandler):
                    src_path.resolve() == home_path.resolve():
                     self._send_json(400, {"error": "Choose a folder outside your library to import from."})
                     return
-                # Group the imported files by their album tag, exactly like a
-                # download: sort_by_album fuzzy-matches artist/album folders and
-                # applies the hash dedupe index so re-imports are skipped.
-                hash_index = m.build_library_hash_index(home_path)
-                by_artist: "dict[str, list]" = {}
-                for f in src_path.rglob("*"):
-                    if f.is_file() and f.suffix.lower() in _AUDIO_EXT:
-                        art = m._get_artist(f) if hasattr(m, "_get_artist") else ""
-                        by_artist.setdefault(art or "Imported", []).append(f)
-                imported = dupes = 0
-                for art, files in by_artist.items():
-                    artist_dir = (m._fuzzy_match_dir(art, m.artists_root(home_path))
-                                  or m.artists_root(home_path) / m._sanitise_path(art))
-                    # Stage into a temp dir so sort_by_album can move them out.
-                    staged = home_path / ".tgimport_tmp"
-                    staged.mkdir(parents=True, exist_ok=True)
-                    for f in files:
-                        try:
-                            dest = staged / f.name
-                            import shutil as _sh
-                            _sh.copy2(str(f), str(dest))
-                        except Exception:
-                            pass
-                    d, _albums = m.sort_by_album(staged, artist_dir, hash_index)
-                    dupes    += d
-                    imported += sum(1 for _ in files) - d
-                    import shutil as _sh
-                    _sh.rmtree(staged, ignore_errors=True)
-                self._send_json(200, {"ok": True, "imported": imported, "dupes": dupes,
-                                      "source": str(src_path)})
+                if src_path.resolve() in home_path.resolve().parents:
+                    self._send_json(400, {"error": "Choose a folder that does not contain your library."})
+                    return
+                self._send_json(200, _import_folder(m, home_path, src_path))
             except Exception as exc:
                 logger.exception("import-folder failed")
                 self._send_json(500, {"error": str(exc)})
@@ -6389,9 +6565,7 @@ class Handler(BaseHTTPRequestHandler):
                         # /backup strips them, but a hand-edited zip might not.
                         for k in BACKUP_EXCLUDED_KEYS:
                             incoming.pop(k, None)
-                        cfg = tgd_common.load_config()
-                        cfg.update(incoming)
-                        tgd_common.save_config(cfg)
+                        tgd_common.update_config(incoming)
                     elif base in _restore_store_keys:
                         tgd_store.set_json(_restore_store_keys[base],
                                            json.loads(data_bytes.decode("utf-8")))
@@ -6466,7 +6640,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/dedupe-auto":
-            # Trash all but the best copy in every duplicate group.
+            # Trash every library copy except the best one in each duplicate
+            # group; playlist copies stay (see _dupe_keep_plan).
             try:
                 m    = _tgd_import()
                 cfg  = m.load_config()
@@ -6477,9 +6652,10 @@ class Handler(BaseHTTPRequestHandler):
                 home_path = Path(home).resolve()
                 trashed = 0
                 for paths in m.build_duplicate_groups(home_path):
-                    scored = sorted(paths, key=lambda p: _quality_score(Path(p)), reverse=True)
-                    for loser in scored[1:]:                 # keep scored[0]
-                        lp = Path(loser).resolve()
+                    for plan in _dupe_keep_plan(home_path, paths):
+                        if plan["keep"]:
+                            continue
+                        lp = Path(plan["path"]).resolve()
                         if home_path in lp.parents:
                             tgd_common.send_to_trash(lp)
                             trashed += 1
@@ -6589,8 +6765,44 @@ async def _silent_auth_check() -> None:
     except Exception as exc:
         logger.debug("Silent auth check failed: %s", exc)
 
+def _acquire_instance_lock(port: int = LOCK_PORT):
+    """Bind the private lock port that marks the running instance. Returns the
+    socket, which must stay open for the life of the process, or None when
+    another instance already holds the port.
+
+    No SO_REUSEADDR here: with it Linux lets a second socket bind the same
+    port as long as nobody listens on it, and Windows lets any socket that
+    asks for it share the port, so the lock never held. On Windows the port
+    is also claimed with SO_EXCLUSIVEADDRUSE so nothing else can share it."""
+    import socket as _socket
+    sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    if hasattr(_socket, "SO_EXCLUSIVEADDRUSE"):
+        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_EXCLUSIVEADDRUSE, 1)
+    try:
+        sock.bind(("127.0.0.1", port))
+    except OSError:
+        sock.close()
+        return None
+    return sock
+
+
+_INSTANCE_LOCK = None     # the lock socket, held open while we run
+
+
 def main():
-    global SERVER
+    global SERVER, _INSTANCE_LOCK
+
+    # ── Single-instance guard ─────────────────────────────────────────────
+    # Checked before anything else touches shared state (update leftovers,
+    # migrations). If another instance holds the lock port, just focus its
+    # browser window and exit cleanly.
+    _INSTANCE_LOCK = _acquire_instance_lock()
+    if _INSTANCE_LOCK is None:
+        logger.info("Another instance already running — opening browser")
+        if not os.environ.get("TGD_NO_BROWSER"):
+            if not _open_app_window(f"http://127.0.0.1:{HTTP_PORT}/"):
+                webbrowser.open(f"http://127.0.0.1:{HTTP_PORT}/")
+        sys.exit(0)
 
     # If we're here, a previous self-update (if any) succeeded, clear its
     # rollback backups and staging folder.
@@ -6609,23 +6821,6 @@ def main():
         tgd_store.migrate()
     except Exception as exc:
         logger.warning("State-store migration skipped: %s", exc)
-
-    # ── Single-instance guard ─────────────────────────────────────────────
-    # We bind a private "lock" port.  If it's already taken, another instance
-    # is running, just focus its browser window and exit cleanly.
-    import socket as _socket
-    _lock_sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-    _lock_sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-    try:
-        _lock_sock.bind(("127.0.0.1", LOCK_PORT))
-        # Success: we are the first/only instance.  Keep _lock_sock open so
-        # the port stays bound for the lifetime of this process.
-    except OSError:
-        logger.info("Another instance already running — opening browser")
-        if not os.environ.get("TGD_NO_BROWSER"):
-            if not _open_app_window(f"http://127.0.0.1:{HTTP_PORT}/"):
-                webbrowser.open(f"http://127.0.0.1:{HTTP_PORT}/")
-        sys.exit(0)
 
     if not GUI_HTML.exists():
         print(f"ERROR: gui.html not found at {GUI_HTML}", file=sys.stderr)

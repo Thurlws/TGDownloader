@@ -73,9 +73,11 @@ from telethon.tl.types import DocumentAttributeFilename  # type: ignore
 from tgd_common import (                            # noqa: E402
     DATA_DIR as _DATA_DIR,
     DEFAULT_CONFIG,
+    atomic_write_text,
     ffmpeg_available as _check_ffmpeg,
     load_config,
     load_session_string as _load_kr_session,
+    preserve_unreadable,
     require_api_credentials as _get_api_creds,
     save_config,
     save_session_string as _save_kr_session,
@@ -254,6 +256,11 @@ def _manifest_path(home: Path) -> Path:
     return d / "manifest.json"
 
 
+# Serialises manifest load-modify-save cycles within a process (see
+# update_manifest). The GUI server's threads share it via this module.
+_manifest_lock = threading.Lock()
+
+
 def load_manifest(home: Path) -> dict:
     mp = _manifest_path(home)
     if mp.exists():
@@ -262,6 +269,7 @@ def load_manifest(home: Path) -> dict:
         except Exception as exc:
             _log(f"  WARNING: Could not parse manifest {mp} ({exc}) — "
                  "starting with an empty manifest; completed URLs may re-download.")
+            preserve_unreadable(mp)
 
     old = home / "tg_download_manifest.json"
     if old.exists():
@@ -279,12 +287,22 @@ def load_manifest(home: Path) -> dict:
 
 def save_manifest(home: Path, manifest: dict) -> None:
     try:
-        _manifest_path(home).write_text(
-            json.dumps(manifest, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        atomic_write_text(_manifest_path(home),
+                          json.dumps(manifest, indent=2, ensure_ascii=False))
     except Exception as e:
         _log(f"WARNING: Could not save manifest: {e}")
+
+
+def update_manifest(home: Path, change) -> dict:
+    """Apply `change(manifest)` to the manifest as it is on disk now and save
+    it, under a lock. Re-reading first means a writer never puts back a stale
+    copy over changes another thread or process made in the meantime (the
+    GUI's history removal while the backend is mid-run). Returns the result."""
+    with _manifest_lock:
+        manifest = load_manifest(home)
+        change(manifest)
+        save_manifest(home, manifest)
+        return manifest
 
 
 def mark_url_complete(
@@ -308,7 +326,9 @@ def mark_url_complete(
         if cover:
             entry["cover"] = cover     # remote Spotify/Deezer cover URL
     manifest[url] = entry
-    save_manifest(home, manifest)
+    # Merge into the file rather than saving our in-memory copy, which was
+    # loaded when the run started and would undo edits made since then.
+    update_manifest(home, lambda current: current.__setitem__(url, entry))
 
 
 def is_url_complete(
@@ -478,44 +498,102 @@ def _emit_result(
 #  POST-DOWNLOAD USER HOOK
 # ═════════════════════════════════════════════
 
-def _format_hook_command(cmd: str, dest: "Path | str", artist: str,
-                         status: str, url: str) -> str:
-    """Pure: substitute {folder}/{artist}/{status}/{url} placeholders, or
-    append the destination folder as a quoted argument when none is used."""
-    if any(tok in cmd for tok in ("{folder}", "{artist}", "{status}", "{url}")):
-        return (cmd.replace("{folder}", str(dest))
-                   .replace("{artist}", artist)
-                   .replace("{status}", status)
-                   .replace("{url}", url))
-    return f'{cmd} "{dest}"'
+_HOOK_VARS     = {"folder": "TGD_FOLDER", "artist": "TGD_ARTIST",
+                  "status": "TGD_STATUS", "url": "TGD_URL"}
+_HOOK_TOKEN_RE = re.compile(r"\{(folder|artist|status|url)\}")
+
+
+def _format_hook_command(cmd: str, windows: "bool | None" = None) -> str:
+    """Pure: turn the user's hook template into the shell command to run.
+
+    Each {folder}/{artist}/{status}/{url} placeholder becomes a reference to
+    the matching TGD_* environment variable, never the raw value. Artist
+    names, playlist titles and URLs come from third-party metadata, and
+    pasting them into the command text let "&", "$(...)" and backticks run as
+    shell syntax. An expanded variable is only ever data to the shell.
+
+    The reference is quoted to suit where the placeholder sits: bare, inside
+    "...", or (POSIX) inside '...'. With no placeholder the folder is appended
+    as one quoted argument. POSIX sh gets "${TGD_FOLDER}"; Windows cmd gets
+    "!TGD_FOLDER!", which the hook's cmd /v:on expands only after the line has
+    been parsed, so "&", "|" or "%" in a value stay literal."""
+    if windows is None:
+        windows = sys.platform == "win32"
+    if not _HOOK_TOKEN_RE.search(cmd):
+        cmd += " {folder}"
+    out: list[str] = []
+    quote = ""                  # the quote char we are currently inside, if any
+    i = 0
+    while i < len(cmd):
+        m = _HOOK_TOKEN_RE.match(cmd, i)
+        if m:
+            var = _HOOK_VARS[m.group(1)]
+            ref = f"!{var}!" if windows else f"${{{var}}}"
+            if quote == '"':
+                out.append(ref)
+            elif quote == "'":
+                out.append(f"'\"{ref}\"'")      # close '...', expand, reopen
+            else:
+                out.append(f'"{ref}"')
+            i = m.end()
+            continue
+        c = cmd[i]
+        # An escaped char never opens or closes a quote: backslash in sh
+        # (outside '...'), caret in cmd (outside "...").
+        if ((not windows and c == "\\" and quote != "'")
+                or (windows and c == "^" and not quote)):
+            out.append(cmd[i:i + 2])
+            i += 2
+            continue
+        if c == '"' and quote != "'":
+            quote = "" if quote else '"'
+        elif c == "'" and not windows and quote != '"':
+            quote = "" if quote else "'"
+        out.append(c)
+        i += 1
+    return "".join(out)
 
 
 def _run_post_download_hook(cfg: dict, dest: Path, url: str,
-                            artist: str, status: str) -> None:
+                            artist: str, status: str):
     """Fire-and-forget user command after a queue entry finishes.
 
-    Configured via "post_download_command" in the config.  "{folder}",
-    "{artist}", "{status}" and "{url}" placeholders are substituted; when no
-    placeholder is present the destination folder is appended as a quoted
-    argument.  The command also receives TGD_FOLDER / TGD_ARTIST / TGD_STATUS
-    / TGD_URL in its environment.  Runs detached through the shell (it is the
-    user's own machine and their own configured command); failures to launch
-    are logged, the download result is never affected."""
+    Configured via "post_download_command" in the config.  The command gets
+    TGD_FOLDER / TGD_ARTIST / TGD_STATUS / TGD_URL in its environment, and the
+    "{folder}", "{artist}", "{status}" and "{url}" placeholders expand to those
+    values (see _format_hook_command); when no placeholder is present the
+    destination folder is appended as a quoted argument.  Runs detached through
+    the shell (it is the user's own machine and their own configured command);
+    failures to launch are logged, the download result is never affected.
+    Returns the started process, or None."""
     import os
     import subprocess
     cmd = str(cfg.get("post_download_command") or "").strip()
     if not cmd:
-        return
+        return None
     try:
-        final = _format_hook_command(cmd, dest, artist, status, url)
+        final = _format_hook_command(cmd)
         env = os.environ.copy()
         env.update({"TGD_FOLDER": str(dest), "TGD_ARTIST": artist,
                     "TGD_STATUS": status, "TGD_URL": url})
-        subprocess.Popen(final, shell=True, env=env,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        _log(f"  Post-download hook started: {final}")
+        if sys.platform == "win32":
+            # What shell=True does, plus /v:on so the !TGD_*! references
+            # expand; /s makes cmd run the text inside the outer quotes as is.
+            comspec = os.environ.get("ComSpec") or "cmd.exe"
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            si.wShowWindow = subprocess.SW_HIDE
+            proc = subprocess.Popen(f'"{comspec}" /v:on /s /c "{final}"', env=env,
+                                    startupinfo=si, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL)
+        else:
+            proc = subprocess.Popen(final, shell=True, env=env,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _log(f"  Post-download hook started for {dest}: {cmd}")
+        return proc
     except Exception as exc:
         _log(f"  ⚠ Post-download hook failed to start: {exc}")
+        return None
 
 
 # ═════════════════════════════════════════════
@@ -576,6 +654,16 @@ def _sanitise_filename(name: str) -> str:
     cleaned = "".join(c if c not in r'\/:*?"<>|' else "_" for c in name)
     cleaned = re.sub(r"[ _]{2,}", " ", cleaned)
     return cleaned.strip(". ") or "audio"
+
+
+def _free_name(directory: Path, name: str) -> Path:
+    """`directory / name`, or "stem (1).ext", "stem (2).ext"… when taken."""
+    target  = directory / name
+    counter = 1
+    while target.exists():
+        target = directory / f"{Path(name).stem} ({counter}){Path(name).suffix}"
+        counter += 1
+    return target
 
 
 def _parse_total_tracks(text: str) -> int | None:
@@ -718,10 +806,9 @@ def build_library_hash_index(home: Path) -> set[str]:
 
     # Persist refreshed cache for next run
     try:
-        _HASH_CACHE_FILE.write_text(
-            json.dumps(new_cache, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        # Atomic: the GUI and the backend both rebuild this cache, and a torn
+        # file forces a full re-hash of the library.
+        atomic_write_text(_HASH_CACHE_FILE, json.dumps(new_cache, ensure_ascii=False))
     except Exception as e:
         _log(f"  WARNING: Could not save hash cache: {e}")
 
@@ -1549,6 +1636,33 @@ class _BandwidthLimiter:
 _bw_limiter: "_BandwidthLimiter | None" = None
 
 
+# Minimum gap between successive per-file connect() calls, across all download
+# threads. Telegram rate-limits the ImportAuthorization handshake on non-home
+# DCs, so connects are spaced out; a wider gap prevents DC auth floods.
+_CONNECT_GAP_S = 4.0
+
+
+class _ConnectGate:
+    """Hands out connect slots at least `gap` seconds apart, shared by every
+    download thread. Only the connects are spaced: a worker whose turn comes
+    late (because the files before it took a while) waits for the next free
+    slot, not for a delay that grows with its position in the album."""
+
+    def __init__(self, gap: float, clock=time.monotonic):
+        self.gap    = float(gap)
+        self._clock = clock
+        self._lock  = threading.Lock()
+        self._next  = None          # clock time of the next free slot
+
+    def reserve(self) -> float:
+        """Claim the next slot; return the seconds to wait before using it."""
+        with self._lock:
+            now  = self._clock()
+            slot = now if self._next is None else max(now, self._next)
+            self._next = slot + self.gap
+            return slot - now
+
+
 async def download_all_async(
     client,
     pending_events: list,
@@ -1597,10 +1711,10 @@ async def download_all_async(
     # Responses arrive at different times, writes are staggered, next
     # requests are staggered → smooth, fully-overlapping throughput.
     #
-    # The 200 ms stagger on connect() spaces the ImportAuthorization
-    # handshakes on non-home DCs so Telegram does not reject them.
+    # The connect gate spaces the ImportAuthorization handshakes on non-home
+    # DCs so Telegram does not reject them.
     # ──────────────────────────────────────────────────────────────────────
-    _AUTH_STAGGER_S  = 4.0   # seconds between successive connect() calls; wider gap prevents DC auth floods
+    connect_gate     = _ConnectGate(_CONNECT_GAP_S)
     _MAX_AUTH_TRIES  = 8     # retries on auth failure
     _AUTH_RETRY_WAIT = 8.0   # seconds to wait between auth retries
     _MAX_FLOOD_WAIT  = 300   # honour flood waits up to 5 min; skip file only if longer than that
@@ -1615,30 +1729,34 @@ async def download_all_async(
             line = _render_progress(start_time, total, done_counter[0]).strip()
             print(f"##PROG##  {line}", flush=True)
 
-    def _dl_one_threaded(ev, stagger_idx: int):
+    def _dl_one_threaded(ev):
         """
         Blocking entry point run inside a ThreadPoolExecutor worker.
         Each call owns a private asyncio event loop so its TCP connection
         is completely independent of every other download thread.
         """
-        async def _inner() -> Path:
-            if stagger_idx > 0:
-                await asyncio.sleep(stagger_idx * _AUTH_STAGGER_S)
+        # Bytes go to a per-message ".part" file that only gets its real name
+        # once complete. The sort step files every audio file it finds in
+        # tmp_dir, so a partial download must never carry an audio extension.
+        part_path = tmp_dir / f".dl-{ev.message.id}.part"
 
+        async def _inner() -> Path:
             filename   = _sanitise_filename(_get_filename(ev.message))
-            save_path  = tmp_dir / filename
             total_size = ev.message.document.size
             pkey       = ev.message.id          # progress key (matches the seed loop)
 
             for attempt in range(1, _MAX_AUTH_TRIES + 1):
                 received = 0
                 _progress[pkey] = (0, total_size)
+                _gate_wait = connect_gate.reserve()
+                if _gate_wait > 0:
+                    await asyncio.sleep(_gate_wait)
                 _api_id, _api_hash = _get_api_creds()
                 dl_client = TelegramClient(StringSession(session_string), _api_id, _api_hash)
                 try:
                     await dl_client.connect()
 
-                    with open(save_path, "wb") as fh:
+                    with open(part_path, "wb") as fh:
                         async for chunk in dl_client.iter_download(
                             ev.message,
                             request_size=_CHUNK_SIZE,
@@ -1686,6 +1804,11 @@ async def download_all_async(
                     await dl_client.disconnect()
 
             with _done_lock:
+                # Two messages can carry the same filename (e.g. two "Intro"
+                # tracks in one playlist); give the later one a free name
+                # instead of overwriting the first.
+                save_path = _free_name(tmp_dir, filename)
+                part_path.replace(save_path)
                 done_counter[0] += 1
             _emit_progress_ts()
             return save_path
@@ -1694,6 +1817,9 @@ async def download_all_async(
         asyncio.set_event_loop(loop)
         try:
             return loop.run_until_complete(_inner())
+        except BaseException:
+            part_path.unlink(missing_ok=True)   # drop the partial file
+            raise
         finally:
             # Cancel every lingering Telethon background task before closing
             # the loop.  Without this step, MTProtoSender._send_loop/_recv_loop
@@ -1721,8 +1847,8 @@ async def download_all_async(
     main_loop = asyncio.get_running_loop()
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(total, _max_parallel)) as executor:
         futures = [
-            main_loop.run_in_executor(executor, _dl_one_threaded, ev, i)
-            for i, ev in enumerate(pending_events)
+            main_loop.run_in_executor(executor, _dl_one_threaded, ev)
+            for ev in pending_events
         ]
         results = await asyncio.gather(*futures, return_exceptions=True)
 
@@ -2121,6 +2247,20 @@ def show_summary(results: list[URLResult]) -> None:
 #  MAIN
 # ═════════════════════════════════════════════
 
+def _fresh_url_tmp(index: int) -> Path:
+    """The empty per-entry download folder for queue entry `index`.
+
+    Anchored to _DATA_DIR, not the CWD: launched via a shortcut or at startup,
+    the frozen exe's working directory can be anywhere. Emptied first because a
+    run stopped mid-download (Stop terminates this process) never reaches the
+    cleanup after sorting, and its leftovers would otherwise be sorted into
+    whichever entry reuses this index next time."""
+    url_tmp = _DATA_DIR / "tg_tmp_downloads" / f"url_{index}"
+    shutil.rmtree(url_tmp, ignore_errors=True)
+    url_tmp.mkdir(parents=True, exist_ok=True)
+    return url_tmp
+
+
 async def main() -> None:
     # Clean up any leftover pause flag from crashed previous runs
     try:
@@ -2227,10 +2367,7 @@ async def main() -> None:
         # ── Pre-download duplicate warning ─────────────────────────────────
         check_pre_download(entry, home)
 
-        # Anchored to _DATA_DIR, not the CWD: launched via a shortcut or at
-        # startup, the frozen exe's working directory can be anywhere.
-        url_tmp = _DATA_DIR / "tg_tmp_downloads" / f"url_{i}"
-        url_tmp.mkdir(parents=True, exist_ok=True)
+        url_tmp = _fresh_url_tmp(i)
 
         # Try each bot profile in turn, fail over to the next when one errors
         # or returns nothing. With a single profile this runs exactly once, so
