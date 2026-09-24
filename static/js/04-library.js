@@ -971,6 +971,8 @@ async function _toggleWatch(artist) {
       else          { _watchedIds.add(aid);    _watchedNames.add(lname); }
       if (!watching) appendLog(`Watching ${artist.name} for new releases.\n`, 'log-ok');
       _refreshWatchStars();
+    } else {
+      _toast(d.error, 'error');
     }
   } catch (_) {}
   if (btn) btn.disabled = false;

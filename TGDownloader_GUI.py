@@ -2717,9 +2717,18 @@ def _save_watchlist(data: dict) -> None:
     tgd_store.set_json("watchlist", data)
 
 
-def _fetch_artist_albums(artist_id: str) -> "list[dict]":
+# Held across every load-modify-save of the watchlist. Network lookups happen
+# outside it, so a slow Deezer call never blocks a click.
+_watchlist_lock = threading.Lock()
+
+
+def _fetch_artist_albums(artist_id: str) -> "list[dict] | None":
     """Fetch an artist's albums from Deezer as a normalised list:
-    [{album_id, title, cover, link, release_date, record_type}]."""
+    [{album_id, title, cover, link, release_date, record_type}].
+
+    Returns None when the lookup fails (network error, or an error payload
+    such as Deezer's quota limit), so callers can tell "no albums" apart
+    from "could not ask"."""
     out: list = []
     try:
         api_url = (f"https://api.deezer.com/artist/{artist_id}/albums"
@@ -2727,7 +2736,12 @@ def _fetch_artist_albums(artist_id: str) -> "list[dict]":
         req = urllib.request.Request(api_url, headers={"User-Agent": "TGDownloader/6"})
         with urllib.request.urlopen(req, timeout=12) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-        for a in data.get("data", []):
+        if not isinstance(data, dict) or "error" in data \
+                or not isinstance(data.get("data"), list):
+            err = data.get("error") if isinstance(data, dict) else data
+            logger.warning("Deezer artist albums lookup failed for %s: %s", artist_id, err)
+            return None
+        for a in data["data"]:
             out.append({
                 "album_id":    str(a.get("id", "")),
                 "title":       a.get("title", ""),
@@ -2738,44 +2752,89 @@ def _fetch_artist_albums(artist_id: str) -> "list[dict]":
             })
     except Exception as exc:
         logger.warning("Deezer artist albums fetch failed for %s: %s", artist_id, exc)
+        return None
     return out
 
 
 def _watchlist_add(artist_id: str, name: str, cover_url: str) -> dict:
     """Add an artist; seed known_album_ids with their current discography so
     only future releases surface as 'new'."""
-    artist_id = str(artist_id).strip()
-    if not artist_id:
-        return {"error": "Missing artist_id"}
-    wl = _load_watchlist()
+    artist_id = str(artist_id or "").strip()
+    if not artist_id.isdigit():
+        return {"error": "Missing or invalid artist_id"}
     albums = _fetch_artist_albums(artist_id)
-    wl[artist_id] = {
-        "name":            name or "",
-        "cover_url":       cover_url or "",
-        "added":           int(time.time()),
-        "last_checked":    int(time.time()),
-        "known_album_ids": [a["album_id"] for a in albums],
-    }
-    _save_watchlist(wl)
-    return {"ok": True, "watching": True, "count": len(wl)}
+    if albums is None:
+        # An empty baseline would flag the artist's whole back catalogue as
+        # "new releases" on the next check.
+        return {"error": "Could not load this artist's releases from Deezer. "
+                         "Try again in a moment."}
+    with _watchlist_lock:
+        wl = _load_watchlist()
+        wl[artist_id] = {
+            "name":            name or "",
+            "cover_url":       cover_url or "",
+            "added":           int(time.time()),
+            "last_checked":    int(time.time()),
+            "known_album_ids": [a["album_id"] for a in albums],
+        }
+        _save_watchlist(wl)
+        return {"ok": True, "watching": True, "count": len(wl)}
+
+
+def _watchlist_remove(artist_id: str) -> dict:
+    with _watchlist_lock:
+        wl = _load_watchlist()
+        wl.pop(str(artist_id or ""), None)
+        _save_watchlist(wl)
+        return {"ok": True, "watching": False, "count": len(wl)}
+
+
+def _watchlist_mark_seen(artist_id: str, album_ids: list) -> dict:
+    with _watchlist_lock:
+        wl = _load_watchlist()
+        info = wl.get(str(artist_id or ""))
+        if info is not None:
+            known = set(info.get("known_album_ids") or [])
+            known.update(str(x) for x in (album_ids or []))
+            info["known_album_ids"] = sorted(known)
+            _save_watchlist(wl)
+    return {"ok": True}
 
 
 def _watchlist_check() -> dict:
     """Diff each watched artist's current discography against the seeded
-    baseline; return albums released since they were added."""
-    wl = _load_watchlist()
+    baseline; return albums released since they were added.
+
+    The lookups run on a snapshot, outside the lock. The result is then
+    applied to the watchlist as it is now: saving the snapshot back used to
+    undo any add, remove or "mark seen" made while the check was running.
+    An artist whose lookup failed is skipped, not reported as checked."""
+    fetched: "dict[str, list]" = {}
+    for artist_id in list(_load_watchlist()):
+        albums = _fetch_artist_albums(artist_id)
+        if albums is not None:
+            fetched[artist_id] = albums
+    now = int(time.time())
+    with _watchlist_lock:
+        wl = _load_watchlist()
+        for artist_id in fetched:
+            if artist_id in wl:
+                wl[artist_id]["last_checked"] = now
+        _save_watchlist(wl)
     new_releases: list = []
-    for artist_id, info in wl.items():
+    for artist_id, albums in fetched.items():
+        info = wl.get(artist_id)
+        if info is None:                    # removed while we were checking
+            continue
         known = set(info.get("known_album_ids") or [])
-        for a in _fetch_artist_albums(artist_id):
+        for a in albums:
             if a["album_id"] and a["album_id"] not in known:
                 new_releases.append({"artist_id": artist_id,
                                      "artist": info.get("name", ""), **a})
-        info["last_checked"] = int(time.time())
-    _save_watchlist(wl)
     # Newest first by release date
     new_releases.sort(key=lambda x: x.get("release_date", ""), reverse=True)
-    return {"new_releases": new_releases, "checked": len(wl)}
+    return {"new_releases": new_releases, "checked": len(fetched),
+            "failed": len([a for a in wl if a not in fetched])}
 
 
 # ══════════════════════════════════════════════
@@ -5831,20 +5890,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, _watchlist_add(
                     body.get("artist_id"), body.get("name"), body.get("cover_url")))
             elif action == "remove":
-                wl = _load_watchlist()
-                wl.pop(str(body.get("artist_id", "")), None)
-                _save_watchlist(wl)
-                self._send_json(200, {"ok": True, "watching": False, "count": len(wl)})
+                self._send_json(200, _watchlist_remove(body.get("artist_id")))
             elif action == "mark_seen":
-                wl  = _load_watchlist()
-                aid = str(body.get("artist_id", ""))
-                info = wl.get(aid)
-                if info is not None:
-                    known = set(info.get("known_album_ids") or [])
-                    known.update(str(x) for x in (body.get("album_ids") or []))
-                    info["known_album_ids"] = sorted(known)
-                    _save_watchlist(wl)
-                self._send_json(200, {"ok": True})
+                self._send_json(200, _watchlist_mark_seen(body.get("artist_id"),
+                                                          body.get("album_ids")))
             else:
                 self._send_json(400, {"error": f"unknown action: {action}"})
             return
