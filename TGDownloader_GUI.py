@@ -981,6 +981,13 @@ class ProcessManager:
         for c in dead:
             self.remove_client(c)
 
+    def send(self, conn, msg: dict) -> bool:
+        """Send to one client. Takes the same lock as broadcast(): two threads
+        writing frames to one socket at once can interleave their bytes,
+        which corrupts the stream and makes the browser drop the socket."""
+        with self._cl_lock:
+            return _ws_send(conn, json.dumps(msg))
+
     def is_running(self) -> bool:
         with self._lock:
             return self._proc is not None and self._proc.poll() is None
@@ -1550,6 +1557,11 @@ def _ffmpeg_exe() -> "str | None":
     return tgd_common.ffmpeg_exe()
 
 
+# One lock per cache key, so a track is only ever transcoded once at a time.
+_transcode_locks: "dict[str, threading.Lock]" = {}
+_transcode_locks_guard = threading.Lock()
+
+
 def _transcode_to_mp3(src: "Path") -> "Path | None":
     """Transcode an audio file to a browser-playable MP3 (cached on disk).
     Used as a fallback when the browser's <audio> can't decode the original
@@ -1564,6 +1576,24 @@ def _transcode_to_mp3(src: "Path") -> "Path | None":
         key = hashlib.sha1(f"{src.resolve()}|{st.st_mtime_ns}|{st.st_size}".encode("utf-8")).hexdigest()
         _TRANSCODE_DIR.mkdir(parents=True, exist_ok=True)
         out = _TRANSCODE_DIR / (key + ".mp3")
+        if out.exists() and out.stat().st_size > 0:
+            return out
+        # The browser can ask for the same track twice before the first
+        # transcode finishes (a retry, a seek). Two ffmpeg runs used to write
+        # the same ".part.mp3" together and could cache a corrupt MP3 for good;
+        # now the second request waits and reuses the first one's result.
+        with _transcode_locks_guard:
+            lock = _transcode_locks.setdefault(key, threading.Lock())
+        with lock:
+            return _transcode_locked(ff, src, out)
+    except Exception as exc:
+        logger.debug("Transcode failed for %s: %s", src, exc)
+    return None
+
+
+def _transcode_locked(ff: str, src: "Path", out: "Path") -> "Path | None":
+    """The ffmpeg run behind _transcode_to_mp3; caller holds out's lock."""
+    try:
         if out.exists() and out.stat().st_size > 0:
             return out
         tmp = out.with_name(out.stem + ".part.mp3")
@@ -2617,6 +2647,13 @@ def _save_liked(items: "list[dict]") -> None:
     tgd_store.set_json("liked_songs", items)
 
 
+# Held across each load-modify-save of liked songs / ratings: the server is
+# threaded, and two quick clicks could otherwise each save a copy missing the
+# other's change.
+_liked_lock   = threading.Lock()
+_ratings_lock = threading.Lock()
+
+
 def _toggle_liked(entry: dict) -> dict:
     """Add the song if absent, remove it if present (keyed by path_hash + name).
     Returns {liked: bool, count: int}."""
@@ -2625,29 +2662,30 @@ def _toggle_liked(entry: dict) -> dict:
     if not ph or not name:
         return {"error": "Missing path_hash or name"}
 
-    items = _load_liked()
-    key   = _liked_key(ph, name)
-    kept  = [it for it in items if _liked_key(it.get("path_hash", ""),
-                                              it.get("name", "")) != key]
+    with _liked_lock:
+        items = _load_liked()
+        key   = _liked_key(ph, name)
+        kept  = [it for it in items if _liked_key(it.get("path_hash", ""),
+                                                  it.get("name", "")) != key]
 
-    if len(kept) != len(items):
-        # Was present → unlike
+        if len(kept) != len(items):
+            # Was present → unlike
+            _save_liked(kept)
+            return {"liked": False, "count": len(kept)}
+
+        # Was absent → like (prepend so newest shows first)
+        new_item = {
+            "path_hash": ph,
+            "name":      name,
+            "title":     entry.get("title") or name,
+            "artist":    entry.get("artist") or "",
+            "album":     entry.get("album") or "",
+            "cover_url": entry.get("cover_url") or "",
+            "added":     int(time.time()),
+        }
+        kept.insert(0, new_item)
         _save_liked(kept)
-        return {"liked": False, "count": len(kept)}
-
-    # Was absent → like (prepend so newest shows first)
-    new_item = {
-        "path_hash": ph,
-        "name":      name,
-        "title":     entry.get("title") or name,
-        "artist":    entry.get("artist") or "",
-        "album":     entry.get("album") or "",
-        "cover_url": entry.get("cover_url") or "",
-        "added":     int(time.time()),
-    }
-    kept.insert(0, new_item)
-    _save_liked(kept)
-    return {"liked": True, "count": len(kept)}
+        return {"liked": True, "count": len(kept)}
 
 
 # ══════════════════════════════════════════════
@@ -2698,20 +2736,21 @@ def _set_rating(entry: dict, path: "Path | None" = None) -> dict:
     if not 0 <= rating <= 5:
         return {"error": "rating must be 0–5"}
 
-    items = _load_ratings(path)
-    key   = _liked_key(ph, name)
-    if rating == 0:
-        items.pop(key, None)
-    else:
-        items[key] = {
-            "rating":  rating,
-            "title":   entry.get("title") or name,
-            "artist":  entry.get("artist") or "",
-            "album":   entry.get("album") or "",
-            "updated": int(time.time()),
-        }
-    _save_ratings(items, path)
-    return {"ok": True, "rating": rating, "count": len(items)}
+    with _ratings_lock:
+        items = _load_ratings(path)
+        key   = _liked_key(ph, name)
+        if rating == 0:
+            items.pop(key, None)
+        else:
+            items[key] = {
+                "rating":  rating,
+                "title":   entry.get("title") or name,
+                "artist":  entry.get("artist") or "",
+                "album":   entry.get("album") or "",
+                "updated": int(time.time()),
+            }
+        _save_ratings(items, path)
+        return {"ok": True, "rating": rating, "count": len(items)}
 
 
 # ══════════════════════════════════════════════
@@ -2935,7 +2974,7 @@ def _scrobble_submit(cfg: dict, meta: dict, now_playing: bool) -> dict:
 def handle_ws(conn, key: str):
     _ws_handshake(conn, key)
     MANAGER.add_client(conn)
-    _ws_send(conn, json.dumps({"type": "status", "running": MANAGER.is_running()}))
+    MANAGER.send(conn, {"type": "status", "running": MANAGER.is_running()})
 
     try:
         while True:
@@ -2951,7 +2990,7 @@ def handle_ws(conn, key: str):
 
             if action == "start":
                 if MANAGER.is_running():
-                    _ws_send(conn, json.dumps({"type": "error", "text": "Already running"}))
+                    MANAGER.send(conn, {"type": "error", "text": "Already running"})
                     continue
                 entries = data.get("entries", [])
                 # Persist playlist cover + original track order for the worker
@@ -2978,7 +3017,7 @@ def handle_ws(conn, key: str):
                 MANAGER.broadcast({"type": "resumed"})
 
             elif action == "ping":
-                _ws_send(conn, json.dumps({"type": "pong"}))
+                MANAGER.send(conn, {"type": "pong"})
 
     finally:
         MANAGER.remove_client(conn)
