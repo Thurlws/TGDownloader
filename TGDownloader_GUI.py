@@ -4286,6 +4286,53 @@ def _art_repair(limit: int = 25) -> dict:
             "failed": failed, "remaining": max(0, len(targets) - attempted)}
 
 
+def _import_folder(m, home_path: Path, src_path: Path) -> dict:
+    """Copy every audio file under `src_path` into the library through the
+    same pipeline as a download: grouped by artist tag, then sort_by_album
+    fuzzy-matches artist/album folders and skips hash duplicates, so a
+    re-import is harmless. The source folder is never modified.
+
+    Each source folder is staged in its own numbered subfolder. Flattening
+    everything into one staging folder let two albums' "01 - Intro.flac"
+    overwrite each other, and the lost copy was still counted as imported."""
+    hash_index = m.build_library_hash_index(home_path)
+    by_artist: "dict[str, list[Path]]" = {}
+    for f in src_path.rglob("*"):
+        if f.is_file() and f.suffix.lower() in _AUDIO_EXT:
+            art = m._get_artist(f) if hasattr(m, "_get_artist") else ""
+            by_artist.setdefault(art or "Imported", []).append(f)
+
+    staged = home_path / ".tgimport_tmp"
+    imported = dupes = failed = 0
+    for art, files in by_artist.items():
+        artist_dir = (m._fuzzy_match_dir(art, m.artists_root(home_path))
+                      or m.artists_root(home_path) / m._sanitise_path(art))
+        shutil.rmtree(staged, ignore_errors=True)
+        staged.mkdir(parents=True, exist_ok=True)
+        folder_ids: "dict[Path, int]" = {}
+        copied = 0
+        for f in files:
+            sub = staged / str(folder_ids.setdefault(f.parent, len(folder_ids)))
+            try:
+                sub.mkdir(exist_ok=True)
+                shutil.copy2(str(f), str(sub / f.name))
+                copied += 1
+            except Exception as exc:
+                logger.warning("Import: could not copy %s: %s", f, exc)
+                failed += 1
+        d, _albums = m.sort_by_album(staged, artist_dir, hash_index)
+        # sort_by_album moves what it files and deletes the duplicates it
+        # skips; anything still staged failed to move.
+        stuck = sum(1 for p in staged.rglob("*")
+                    if p.is_file() and p.suffix.lower() in _AUDIO_EXT)
+        dupes    += d
+        failed   += stuck
+        imported += copied - d - stuck
+    shutil.rmtree(staged, ignore_errors=True)
+    return {"ok": True, "imported": imported, "dupes": dupes, "failed": failed,
+            "source": str(src_path)}
+
+
 # ══════════════════════════════════════════════
 #  HTTP HANDLER
 # ══════════════════════════════════════════════
@@ -6146,36 +6193,10 @@ class Handler(BaseHTTPRequestHandler):
                    src_path.resolve() == home_path.resolve():
                     self._send_json(400, {"error": "Choose a folder outside your library to import from."})
                     return
-                # Group the imported files by their album tag, exactly like a
-                # download: sort_by_album fuzzy-matches artist/album folders and
-                # applies the hash dedupe index so re-imports are skipped.
-                hash_index = m.build_library_hash_index(home_path)
-                by_artist: "dict[str, list]" = {}
-                for f in src_path.rglob("*"):
-                    if f.is_file() and f.suffix.lower() in _AUDIO_EXT:
-                        art = m._get_artist(f) if hasattr(m, "_get_artist") else ""
-                        by_artist.setdefault(art or "Imported", []).append(f)
-                imported = dupes = 0
-                for art, files in by_artist.items():
-                    artist_dir = (m._fuzzy_match_dir(art, m.artists_root(home_path))
-                                  or m.artists_root(home_path) / m._sanitise_path(art))
-                    # Stage into a temp dir so sort_by_album can move them out.
-                    staged = home_path / ".tgimport_tmp"
-                    staged.mkdir(parents=True, exist_ok=True)
-                    for f in files:
-                        try:
-                            dest = staged / f.name
-                            import shutil as _sh
-                            _sh.copy2(str(f), str(dest))
-                        except Exception:
-                            pass
-                    d, _albums = m.sort_by_album(staged, artist_dir, hash_index)
-                    dupes    += d
-                    imported += sum(1 for _ in files) - d
-                    import shutil as _sh
-                    _sh.rmtree(staged, ignore_errors=True)
-                self._send_json(200, {"ok": True, "imported": imported, "dupes": dupes,
-                                      "source": str(src_path)})
+                if src_path.resolve() in home_path.resolve().parents:
+                    self._send_json(400, {"error": "Choose a folder that does not contain your library."})
+                    return
+                self._send_json(200, _import_folder(m, home_path, src_path))
             except Exception as exc:
                 logger.exception("import-folder failed")
                 self._send_json(500, {"error": str(exc)})
