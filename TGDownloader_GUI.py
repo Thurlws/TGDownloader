@@ -4006,6 +4006,41 @@ def _quality_score(path: "Path") -> "tuple[int, int]":
     return rank, bitrate
 
 
+def _dupe_keep_plan(home_path: "Path", paths: "list[str]") -> "list[dict]":
+    """One duplicate group ordered best copy first, each member marked with
+    what "Keep best, trash the rest" does to it: [{path, playlist, keep}].
+    /duplicates (the UI's KEEP label) and /dedupe-auto both use this, so the
+    label always names the file that is actually kept.
+
+    Copies inside the Playlists folder are never auto-trashed: a playlist
+    holds its own copies on purpose, and trashing one silently removed a
+    track from it. Among the other copies the best-quality one is kept.
+    Members of a group are byte-identical, so scores usually tie; ties go to
+    the shortest path ("Album/x.flac" over "Album (1)/x.flac"), then
+    alphabetical, so the choice no longer depends on disk scan order."""
+    pl_root = (home_path / PLAYLISTS_DIRNAME).resolve()
+    members = []
+    for p in sorted(paths, key=lambda s: (len(s), s)):
+        pp = Path(p)
+        try:
+            in_playlist = pl_root in pp.resolve().parents
+        except OSError:
+            in_playlist = False
+        members.append({"path": p, "playlist": in_playlist,
+                        "_score": _quality_score(pp)})
+    members.sort(key=lambda m: m["_score"], reverse=True)   # stable: ties keep path order
+    kept = False
+    for m in members:
+        del m["_score"]
+        if m["playlist"]:
+            m["keep"] = True
+        else:
+            m["keep"], kept = not kept, True
+    # The kept library copy first, the rest still in rank order.
+    members.sort(key=lambda m: not (m["keep"] and not m["playlist"]))
+    return members
+
+
 _YEAR_LOOKUP_CAP = 25    # Deezer year lookups per janitor run (keeps runs bounded)
 
 
@@ -4732,34 +4767,33 @@ class Handler(BaseHTTPRequestHandler):
                 if not home:
                     self._send_json(200, {"error": "No home music folder configured."})
                     return
-                from pathlib import Path as _P
-                home_path = _P(home)
+                home_path = Path(home)
                 groups_raw = m.build_duplicate_groups(home_path)
                 groups = []
                 for paths in groups_raw:
                     members = []
-                    for p in paths:
-                        pp = _P(p)
+                    # Best copy first; "best" marks the copy auto-dedupe keeps.
+                    for plan in _dupe_keep_plan(home_path, paths):
+                        pp = Path(plan["path"])
                         try:
                             sz = pp.stat().st_size
                         except OSError:
                             sz = 0
-                        rank, bitrate = _quality_score(pp)
                         members.append({
-                            "path":     p,
+                            "path":     plan["path"],
                             "rel":      str(pp.relative_to(home_path)) if str(pp).startswith(str(home_path)) else pp.name,
                             "name":     pp.name,
                             "size":     sz,
                             "ext":      pp.suffix.lower().lstrip("."),
-                            "quality":  rank * 10_000_000 + bitrate,
+                            "best":     plan["keep"] and not plan["playlist"],
+                            "keep":     plan["keep"],
+                            "playlist": plan["playlist"],
                         })
-                    # Best copy first so the UI can mark it "keep".
-                    members.sort(key=lambda x: x["quality"], reverse=True)
-                    if members:
-                        members[0]["best"] = True
-                    groups.append({"size": members[0]["size"], "files": members})
-                groups.sort(key=lambda g: g["size"] * (len(g["files"]) - 1), reverse=True)
-                wasted = sum(g["size"] * (len(g["files"]) - 1) for g in groups)
+                    trashable = sum(1 for f in members if not f["keep"])
+                    groups.append({"size": members[0]["size"], "files": members,
+                                   "reclaimable": members[0]["size"] * trashable})
+                groups.sort(key=lambda g: g["reclaimable"], reverse=True)
+                wasted = sum(g["reclaimable"] for g in groups)
                 self._send_json(200, {"groups": groups, "wasted_bytes": wasted})
             except Exception as exc:
                 logger.exception("Error in /duplicates")
@@ -6500,7 +6534,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/dedupe-auto":
-            # Trash all but the best copy in every duplicate group.
+            # Trash every library copy except the best one in each duplicate
+            # group; playlist copies stay (see _dupe_keep_plan).
             try:
                 m    = _tgd_import()
                 cfg  = m.load_config()
@@ -6511,9 +6546,10 @@ class Handler(BaseHTTPRequestHandler):
                 home_path = Path(home).resolve()
                 trashed = 0
                 for paths in m.build_duplicate_groups(home_path):
-                    scored = sorted(paths, key=lambda p: _quality_score(Path(p)), reverse=True)
-                    for loser in scored[1:]:                 # keep scored[0]
-                        lp = Path(loser).resolve()
+                    for plan in _dupe_keep_plan(home_path, paths):
+                        if plan["keep"]:
+                            continue
+                        lp = Path(plan["path"]).resolve()
                         if home_path in lp.parents:
                             tgd_common.send_to_trash(lp)
                             trashed += 1
