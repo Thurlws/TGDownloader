@@ -1549,6 +1549,33 @@ class _BandwidthLimiter:
 _bw_limiter: "_BandwidthLimiter | None" = None
 
 
+# Minimum gap between successive per-file connect() calls, across all download
+# threads. Telegram rate-limits the ImportAuthorization handshake on non-home
+# DCs, so connects are spaced out; a wider gap prevents DC auth floods.
+_CONNECT_GAP_S = 4.0
+
+
+class _ConnectGate:
+    """Hands out connect slots at least `gap` seconds apart, shared by every
+    download thread. Only the connects are spaced: a worker whose turn comes
+    late (because the files before it took a while) waits for the next free
+    slot, not for a delay that grows with its position in the album."""
+
+    def __init__(self, gap: float, clock=time.monotonic):
+        self.gap    = float(gap)
+        self._clock = clock
+        self._lock  = threading.Lock()
+        self._next  = None          # clock time of the next free slot
+
+    def reserve(self) -> float:
+        """Claim the next slot; return the seconds to wait before using it."""
+        with self._lock:
+            now  = self._clock()
+            slot = now if self._next is None else max(now, self._next)
+            self._next = slot + self.gap
+            return slot - now
+
+
 async def download_all_async(
     client,
     pending_events: list,
@@ -1597,10 +1624,10 @@ async def download_all_async(
     # Responses arrive at different times, writes are staggered, next
     # requests are staggered → smooth, fully-overlapping throughput.
     #
-    # The 200 ms stagger on connect() spaces the ImportAuthorization
-    # handshakes on non-home DCs so Telegram does not reject them.
+    # The connect gate spaces the ImportAuthorization handshakes on non-home
+    # DCs so Telegram does not reject them.
     # ──────────────────────────────────────────────────────────────────────
-    _AUTH_STAGGER_S  = 4.0   # seconds between successive connect() calls; wider gap prevents DC auth floods
+    connect_gate     = _ConnectGate(_CONNECT_GAP_S)
     _MAX_AUTH_TRIES  = 8     # retries on auth failure
     _AUTH_RETRY_WAIT = 8.0   # seconds to wait between auth retries
     _MAX_FLOOD_WAIT  = 300   # honour flood waits up to 5 min; skip file only if longer than that
@@ -1615,16 +1642,13 @@ async def download_all_async(
             line = _render_progress(start_time, total, done_counter[0]).strip()
             print(f"##PROG##  {line}", flush=True)
 
-    def _dl_one_threaded(ev, stagger_idx: int):
+    def _dl_one_threaded(ev):
         """
         Blocking entry point run inside a ThreadPoolExecutor worker.
         Each call owns a private asyncio event loop so its TCP connection
         is completely independent of every other download thread.
         """
         async def _inner() -> Path:
-            if stagger_idx > 0:
-                await asyncio.sleep(stagger_idx * _AUTH_STAGGER_S)
-
             filename   = _sanitise_filename(_get_filename(ev.message))
             save_path  = tmp_dir / filename
             total_size = ev.message.document.size
@@ -1633,6 +1657,9 @@ async def download_all_async(
             for attempt in range(1, _MAX_AUTH_TRIES + 1):
                 received = 0
                 _progress[pkey] = (0, total_size)
+                _gate_wait = connect_gate.reserve()
+                if _gate_wait > 0:
+                    await asyncio.sleep(_gate_wait)
                 _api_id, _api_hash = _get_api_creds()
                 dl_client = TelegramClient(StringSession(session_string), _api_id, _api_hash)
                 try:
@@ -1721,8 +1748,8 @@ async def download_all_async(
     main_loop = asyncio.get_running_loop()
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(total, _max_parallel)) as executor:
         futures = [
-            main_loop.run_in_executor(executor, _dl_one_threaded, ev, i)
-            for i, ev in enumerate(pending_events)
+            main_loop.run_in_executor(executor, _dl_one_threaded, ev)
+            for ev in pending_events
         ]
         results = await asyncio.gather(*futures, return_exceptions=True)
 
