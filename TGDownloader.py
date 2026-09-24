@@ -578,6 +578,16 @@ def _sanitise_filename(name: str) -> str:
     return cleaned.strip(". ") or "audio"
 
 
+def _free_name(directory: Path, name: str) -> Path:
+    """`directory / name`, or "stem (1).ext", "stem (2).ext"… when taken."""
+    target  = directory / name
+    counter = 1
+    while target.exists():
+        target = directory / f"{Path(name).stem} ({counter}){Path(name).suffix}"
+        counter += 1
+    return target
+
+
 def _parse_total_tracks(text: str) -> int | None:
     for pattern in (_TOTAL_TRACKS_RE, _TRACK_PROGRESS_RE):
         m = pattern.search(text)
@@ -1648,9 +1658,13 @@ async def download_all_async(
         Each call owns a private asyncio event loop so its TCP connection
         is completely independent of every other download thread.
         """
+        # Bytes go to a per-message ".part" file that only gets its real name
+        # once complete. The sort step files every audio file it finds in
+        # tmp_dir, so a partial download must never carry an audio extension.
+        part_path = tmp_dir / f".dl-{ev.message.id}.part"
+
         async def _inner() -> Path:
             filename   = _sanitise_filename(_get_filename(ev.message))
-            save_path  = tmp_dir / filename
             total_size = ev.message.document.size
             pkey       = ev.message.id          # progress key (matches the seed loop)
 
@@ -1665,7 +1679,7 @@ async def download_all_async(
                 try:
                     await dl_client.connect()
 
-                    with open(save_path, "wb") as fh:
+                    with open(part_path, "wb") as fh:
                         async for chunk in dl_client.iter_download(
                             ev.message,
                             request_size=_CHUNK_SIZE,
@@ -1713,6 +1727,11 @@ async def download_all_async(
                     await dl_client.disconnect()
 
             with _done_lock:
+                # Two messages can carry the same filename (e.g. two "Intro"
+                # tracks in one playlist); give the later one a free name
+                # instead of overwriting the first.
+                save_path = _free_name(tmp_dir, filename)
+                part_path.replace(save_path)
                 done_counter[0] += 1
             _emit_progress_ts()
             return save_path
@@ -1721,6 +1740,9 @@ async def download_all_async(
         asyncio.set_event_loop(loop)
         try:
             return loop.run_until_complete(_inner())
+        except BaseException:
+            part_path.unlink(missing_ok=True)   # drop the partial file
+            raise
         finally:
             # Cancel every lingering Telethon background task before closing
             # the loop.  Without this step, MTProtoSender._send_loop/_recv_loop
@@ -2148,6 +2170,20 @@ def show_summary(results: list[URLResult]) -> None:
 #  MAIN
 # ═════════════════════════════════════════════
 
+def _fresh_url_tmp(index: int) -> Path:
+    """The empty per-entry download folder for queue entry `index`.
+
+    Anchored to _DATA_DIR, not the CWD: launched via a shortcut or at startup,
+    the frozen exe's working directory can be anywhere. Emptied first because a
+    run stopped mid-download (Stop terminates this process) never reaches the
+    cleanup after sorting, and its leftovers would otherwise be sorted into
+    whichever entry reuses this index next time."""
+    url_tmp = _DATA_DIR / "tg_tmp_downloads" / f"url_{index}"
+    shutil.rmtree(url_tmp, ignore_errors=True)
+    url_tmp.mkdir(parents=True, exist_ok=True)
+    return url_tmp
+
+
 async def main() -> None:
     # Clean up any leftover pause flag from crashed previous runs
     try:
@@ -2254,10 +2290,7 @@ async def main() -> None:
         # ── Pre-download duplicate warning ─────────────────────────────────
         check_pre_download(entry, home)
 
-        # Anchored to _DATA_DIR, not the CWD: launched via a shortcut or at
-        # startup, the frozen exe's working directory can be anywhere.
-        url_tmp = _DATA_DIR / "tg_tmp_downloads" / f"url_{i}"
-        url_tmp.mkdir(parents=True, exist_ok=True)
+        url_tmp = _fresh_url_tmp(i)
 
         # Try each bot profile in turn, fail over to the next when one errors
         # or returns nothing. With a single profile this runs exactly once, so
