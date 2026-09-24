@@ -73,9 +73,11 @@ from telethon.tl.types import DocumentAttributeFilename  # type: ignore
 from tgd_common import (                            # noqa: E402
     DATA_DIR as _DATA_DIR,
     DEFAULT_CONFIG,
+    atomic_write_text,
     ffmpeg_available as _check_ffmpeg,
     load_config,
     load_session_string as _load_kr_session,
+    preserve_unreadable,
     require_api_credentials as _get_api_creds,
     save_config,
     save_session_string as _save_kr_session,
@@ -254,6 +256,11 @@ def _manifest_path(home: Path) -> Path:
     return d / "manifest.json"
 
 
+# Serialises manifest load-modify-save cycles within a process (see
+# update_manifest). The GUI server's threads share it via this module.
+_manifest_lock = threading.Lock()
+
+
 def load_manifest(home: Path) -> dict:
     mp = _manifest_path(home)
     if mp.exists():
@@ -262,6 +269,7 @@ def load_manifest(home: Path) -> dict:
         except Exception as exc:
             _log(f"  WARNING: Could not parse manifest {mp} ({exc}) — "
                  "starting with an empty manifest; completed URLs may re-download.")
+            preserve_unreadable(mp)
 
     old = home / "tg_download_manifest.json"
     if old.exists():
@@ -279,12 +287,22 @@ def load_manifest(home: Path) -> dict:
 
 def save_manifest(home: Path, manifest: dict) -> None:
     try:
-        _manifest_path(home).write_text(
-            json.dumps(manifest, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        atomic_write_text(_manifest_path(home),
+                          json.dumps(manifest, indent=2, ensure_ascii=False))
     except Exception as e:
         _log(f"WARNING: Could not save manifest: {e}")
+
+
+def update_manifest(home: Path, change) -> dict:
+    """Apply `change(manifest)` to the manifest as it is on disk now and save
+    it, under a lock. Re-reading first means a writer never puts back a stale
+    copy over changes another thread or process made in the meantime (the
+    GUI's history removal while the backend is mid-run). Returns the result."""
+    with _manifest_lock:
+        manifest = load_manifest(home)
+        change(manifest)
+        save_manifest(home, manifest)
+        return manifest
 
 
 def mark_url_complete(
@@ -308,7 +326,9 @@ def mark_url_complete(
         if cover:
             entry["cover"] = cover     # remote Spotify/Deezer cover URL
     manifest[url] = entry
-    save_manifest(home, manifest)
+    # Merge into the file rather than saving our in-memory copy, which was
+    # loaded when the run started and would undo edits made since then.
+    update_manifest(home, lambda current: current.__setitem__(url, entry))
 
 
 def is_url_complete(
@@ -786,10 +806,9 @@ def build_library_hash_index(home: Path) -> set[str]:
 
     # Persist refreshed cache for next run
     try:
-        _HASH_CACHE_FILE.write_text(
-            json.dumps(new_cache, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        # Atomic: the GUI and the backend both rebuild this cache, and a torn
+        # file forces a full re-hash of the library.
+        atomic_write_text(_HASH_CACHE_FILE, json.dumps(new_cache, ensure_ascii=False))
     except Exception as e:
         _log(f"  WARNING: Could not save hash cache: {e}")
 
