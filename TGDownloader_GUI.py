@@ -6563,8 +6563,44 @@ async def _silent_auth_check() -> None:
     except Exception as exc:
         logger.debug("Silent auth check failed: %s", exc)
 
+def _acquire_instance_lock(port: int = LOCK_PORT):
+    """Bind the private lock port that marks the running instance. Returns the
+    socket, which must stay open for the life of the process, or None when
+    another instance already holds the port.
+
+    No SO_REUSEADDR here: with it Linux lets a second socket bind the same
+    port as long as nobody listens on it, and Windows lets any socket that
+    asks for it share the port, so the lock never held. On Windows the port
+    is also claimed with SO_EXCLUSIVEADDRUSE so nothing else can share it."""
+    import socket as _socket
+    sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    if hasattr(_socket, "SO_EXCLUSIVEADDRUSE"):
+        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_EXCLUSIVEADDRUSE, 1)
+    try:
+        sock.bind(("127.0.0.1", port))
+    except OSError:
+        sock.close()
+        return None
+    return sock
+
+
+_INSTANCE_LOCK = None     # the lock socket, held open while we run
+
+
 def main():
-    global SERVER
+    global SERVER, _INSTANCE_LOCK
+
+    # ── Single-instance guard ─────────────────────────────────────────────
+    # Checked before anything else touches shared state (update leftovers,
+    # migrations). If another instance holds the lock port, just focus its
+    # browser window and exit cleanly.
+    _INSTANCE_LOCK = _acquire_instance_lock()
+    if _INSTANCE_LOCK is None:
+        logger.info("Another instance already running — opening browser")
+        if not os.environ.get("TGD_NO_BROWSER"):
+            if not _open_app_window(f"http://127.0.0.1:{HTTP_PORT}/"):
+                webbrowser.open(f"http://127.0.0.1:{HTTP_PORT}/")
+        sys.exit(0)
 
     # If we're here, a previous self-update (if any) succeeded, clear its
     # rollback backups and staging folder.
@@ -6583,23 +6619,6 @@ def main():
         tgd_store.migrate()
     except Exception as exc:
         logger.warning("State-store migration skipped: %s", exc)
-
-    # ── Single-instance guard ─────────────────────────────────────────────
-    # We bind a private "lock" port.  If it's already taken, another instance
-    # is running, just focus its browser window and exit cleanly.
-    import socket as _socket
-    _lock_sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-    _lock_sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-    try:
-        _lock_sock.bind(("127.0.0.1", LOCK_PORT))
-        # Success: we are the first/only instance.  Keep _lock_sock open so
-        # the port stays bound for the lifetime of this process.
-    except OSError:
-        logger.info("Another instance already running — opening browser")
-        if not os.environ.get("TGD_NO_BROWSER"):
-            if not _open_app_window(f"http://127.0.0.1:{HTTP_PORT}/"):
-                webbrowser.open(f"http://127.0.0.1:{HTTP_PORT}/")
-        sys.exit(0)
 
     if not GUI_HTML.exists():
         print(f"ERROR: gui.html not found at {GUI_HTML}", file=sys.stderr)
