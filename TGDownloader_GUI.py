@@ -419,7 +419,12 @@ def _verify_update_checksum(zip_path: Path, sha256_url: str) -> None:
 
     Defensive by design: no URL (older releases ship none) → skip, so updates
     never break. Present but unfetchable/malformed/mismatched → raise, so a
-    corrupted or tampered download is rejected before the swap."""
+    corrupted or truncated download is rejected before the swap.
+
+    This is an integrity check, not an authenticity check: the checksum comes
+    from the same GitHub release as the zip, so anyone able to replace the zip
+    there can replace the checksum too. Only a signature made with a key kept
+    outside the release could catch that."""
     if not sha256_url:
         return
     try:
@@ -457,15 +462,24 @@ def _stage_update(zip_path: Path, staging: Path) -> Path:
     return exe.parent
 
 
-def _build_update_script(pid: int, app_dir: Path, new_root: Path) -> str:
+def _build_update_script(pid: int, app_dir: Path, new_root: Path,
+                         relaunch: bool = True) -> str:
     """Windows .bat: wait for our PID to exit, back up + swap _internal/ and the
     exe from new_root into app_dir, relaunch, then delete staging and itself.
-    On any move failure it rolls the .old backups back and relaunches."""
+
+    Every rename is checked, and MOVED_INT records whether the new _internal/
+    is already in place. On any failure the rollback moves a swapped-in
+    _internal/ back to staging before restoring the .old backups, so the old
+    version always runs as a whole: it used to keep the new _internal/ next to
+    the old exe when the exe swap failed. relaunch=False (tests only) skips
+    starting the app."""
+    start = 'start "" "%APP%\\TGDownloader.exe"' if relaunch else "rem relaunch skipped"
     return f"""@echo off
 setlocal
 set "PID={pid}"
 set "APP={app_dir}"
 set "NEW={new_root}"
+set "MOVED_INT="
 
 rem 1. Wait (up to ~60s) for TGDownloader to exit so its files unlock.
 set /a n=0
@@ -479,25 +493,33 @@ if not errorlevel 1 (
 )
 ping -n 3 127.0.0.1 >nul
 
-rem 2. Swap _internal/ (keep the old copy as a rollback backup).
+rem 2. Swap _internal/ (keep the old copy as a rollback backup). A rename that
+rem    fails (locked file) must stop here: moving onto an existing folder would
+rem    nest the new _internal/ inside the old one.
 if exist "%APP%\\_internal.old" rmdir /S /Q "%APP%\\_internal.old"
+if exist "%APP%\\_internal.old" goto rollback
 if exist "%APP%\\_internal" ren "%APP%\\_internal" "_internal.old"
+if exist "%APP%\\_internal" goto rollback
 move "%NEW%\\_internal" "%APP%\\_internal" >nul || goto rollback
+set "MOVED_INT=1"
 
 rem 3. Swap the exe (keep the old one too).
 if exist "%APP%\\TGDownloader.old.exe" del /Q "%APP%\\TGDownloader.old.exe"
 if exist "%APP%\\TGDownloader.exe" ren "%APP%\\TGDownloader.exe" "TGDownloader.old.exe"
+if exist "%APP%\\TGDownloader.exe" goto rollback
 move "%NEW%\\TGDownloader.exe" "%APP%\\TGDownloader.exe" >nul || goto rollback
 
 rem 4. Relaunch and clean up staging.
-start "" "%APP%\\TGDownloader.exe"
+{start}
 rmdir /S /Q "%NEW%" 2>nul
 goto done
 
 :rollback
-if exist "%APP%\\_internal.old" if not exist "%APP%\\_internal" ren "%APP%\\_internal.old" "_internal"
-if exist "%APP%\\TGDownloader.old.exe" if not exist "%APP%\\TGDownloader.exe" ren "%APP%\\TGDownloader.old.exe" "TGDownloader.exe"
-start "" "%APP%\\TGDownloader.exe"
+rem Undo only what was swapped, so the old version runs as a whole.
+if defined MOVED_INT move "%APP%\\_internal" "%NEW%\\_internal" >nul
+if not exist "%APP%\\_internal" if exist "%APP%\\_internal.old" ren "%APP%\\_internal.old" "_internal"
+if not exist "%APP%\\TGDownloader.exe" if exist "%APP%\\TGDownloader.old.exe" ren "%APP%\\TGDownloader.old.exe" "TGDownloader.exe"
+{start}
 
 :done
 :giveup
@@ -522,7 +544,8 @@ def _apply_update() -> dict:
         zip_path = _UPDATE_STAGING.parent / "_update.zip"
         _download_zip(info["download_url"], zip_path, info.get("download_size", 0))
         # Integrity check against the published .sha256 when the release ships one
-        # (no-op for older releases that don't). Rejects a corrupted/tampered zip.
+        # (no-op for older releases that don't). Rejects a corrupted or truncated
+        # zip; it does not prove who published it (see _verify_update_checksum).
         _verify_update_checksum(zip_path, info.get("sha256_url", ""))
         new_root = _stage_update(zip_path, _UPDATE_STAGING)
         zip_path.unlink(missing_ok=True)

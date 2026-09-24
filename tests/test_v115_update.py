@@ -7,6 +7,8 @@ Windows build and is not exercised here.
 """
 
 import pathlib
+import subprocess
+import sys
 import zipfile
 
 import pytest
@@ -95,6 +97,72 @@ def test_build_update_script_shape():
     assert 'del "%~f0"' in bat                                        # self-delete
 
 
+def test_update_script_checks_renames_and_undoes_a_partial_swap():
+    bat = gui._build_update_script(1, pathlib.Path(r"C:\App"),
+                                   pathlib.Path(r"C:\App\_update\bundle"))
+    # A failed rename stops the swap instead of nesting the new folder
+    # inside the old one.
+    assert 'if exist "%APP%\\_internal" goto rollback' in bat
+    assert 'if exist "%APP%\\TGDownloader.exe" goto rollback' in bat
+    # Rollback moves a swapped-in _internal back out before restoring the
+    # backup (it used to leave the new _internal next to the old exe).
+    rollback = bat.split(":rollback", 1)[1]
+    assert 'if defined MOVED_INT move "%APP%\\_internal" "%NEW%\\_internal"' in rollback
+    assert rollback.index("MOVED_INT") < rollback.index('ren "%APP%\\_internal.old"')
+
+
+def test_update_script_relaunch_can_be_skipped():
+    bat = gui._build_update_script(1, pathlib.Path("C:/App"), pathlib.Path("C:/New"),
+                                   relaunch=False)
+    assert "start " not in bat
+
+
+# ── Running the swap script (Windows only) ────────────────────────────────────
+
+def _fake_install(tmp_path, *, new_exe=True):
+    app = tmp_path / "App"
+    (app / "_internal").mkdir(parents=True)
+    (app / "_internal" / "old.txt").write_text("old")
+    (app / "TGDownloader.exe").write_text("old exe")
+    new = app / "_update" / "bundle"
+    (new / "_internal").mkdir(parents=True)
+    (new / "_internal" / "new.txt").write_text("new")
+    if new_exe:
+        (new / "TGDownloader.exe").write_text("new exe")
+    return app, new
+
+
+def _run_swap(app, new):
+    done = subprocess.Popen([sys.executable, "-c", "pass"])
+    done.wait()                                  # a PID that has already exited
+    bat = app / "_apply_update.bat"
+    bat.write_text(gui._build_update_script(done.pid, app, new, relaunch=False),
+                   encoding="utf-8")
+    subprocess.run(["cmd", "/c", str(bat)], timeout=120, capture_output=True)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="runs the Windows .bat")
+def test_swap_script_installs_the_new_version(tmp_path):
+    app, new = _fake_install(tmp_path)
+    _run_swap(app, new)
+    assert (app / "_internal" / "new.txt").exists()
+    assert (app / "TGDownloader.exe").read_text() == "new exe"
+    assert (app / "_internal.old" / "old.txt").exists()
+    assert (app / "TGDownloader.old.exe").read_text() == "old exe"
+    assert not new.exists()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="runs the Windows .bat")
+def test_swap_script_rolls_back_both_parts_when_the_exe_step_fails(tmp_path):
+    app, new = _fake_install(tmp_path, new_exe=False)     # exe move will fail
+    _run_swap(app, new)
+    assert (app / "_internal" / "old.txt").exists()       # old _internal restored
+    assert not (app / "_internal" / "new.txt").exists()
+    assert (app / "TGDownloader.exe").read_text() == "old exe"
+    assert not (app / "_internal.old").exists()
+    assert (new / "_internal" / "new.txt").exists()       # new one back in staging
+
+
 # ── Frozen-only gate ──────────────────────────────────────────────────────────
 
 def test_apply_update_refuses_when_not_frozen():
@@ -129,7 +197,7 @@ def test_verify_update_checksum_accepts_matching(tmp_path):
     gui._verify_update_checksum(zip_path, sha.resolve().as_uri())   # must not raise
 
 
-def test_verify_update_checksum_rejects_tampered(tmp_path):
+def test_verify_update_checksum_rejects_mismatch(tmp_path):
     zip_path = _make_bundle_zip(tmp_path / "rel.zip")
     sha = tmp_path / "rel.zip.sha256"
     sha.write_text(("b" * 64) + "  rel.zip\n", encoding="ascii")     # wrong hash
