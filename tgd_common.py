@@ -197,6 +197,10 @@ def atomic_write_text(path: "Path | str", text: str, encoding: str = "utf-8") ->
             fh.write(text)
             fh.flush()
             os.fsync(fh.fileno())
+        try:
+            shutil.copymode(path, tmp)      # keep the file's existing permissions
+        except OSError:
+            pass                            # new file: mkstemp's owner-only mode
         for attempt in range(10):
             try:
                 os.replace(tmp, path)

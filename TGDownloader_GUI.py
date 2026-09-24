@@ -2885,8 +2885,9 @@ def _watchlist_check() -> dict:
     applied to the watchlist as it is now: saving the snapshot back used to
     undo any add, remove or "mark seen" made while the check was running.
     An artist whose lookup failed is skipped, not reported as checked."""
+    snapshot = list(_load_watchlist())
     fetched: "dict[str, list]" = {}
-    for artist_id in list(_load_watchlist()):
+    for artist_id in snapshot:
         albums = _fetch_artist_albums(artist_id)
         if albums is not None:
             fetched[artist_id] = albums
@@ -2910,7 +2911,7 @@ def _watchlist_check() -> dict:
     # Newest first by release date
     new_releases.sort(key=lambda x: x.get("release_date", ""), reverse=True)
     return {"new_releases": new_releases, "checked": len(fetched),
-            "failed": len([a for a in wl if a not in fetched])}
+            "failed": len(snapshot) - len(fetched)}
 
 
 # ══════════════════════════════════════════════

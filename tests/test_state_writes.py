@@ -2,6 +2,8 @@
 overwriting data another writer changed or that failed to parse."""
 
 import json
+import os
+import stat
 import threading
 import time
 
@@ -131,3 +133,12 @@ def test_concurrent_session_saves_keep_every_session(tmp_path, monkeypatch, gui_
         t.join()
     assert all(status == 200 for status, _ in results)
     assert gui._load_sessions() == {f"s{i}": [i] for i in range(12)}
+
+
+def test_atomic_write_keeps_the_existing_file_mode(tmp_path):
+    target = tmp_path / "state.json"
+    target.write_text("old", encoding="utf-8")
+    os.chmod(target, 0o644)
+    before = stat.S_IMODE(target.stat().st_mode)
+    tgd_common.atomic_write_text(target, "new")
+    assert stat.S_IMODE(target.stat().st_mode) == before
