@@ -734,9 +734,7 @@ async def _tg_get_quality() -> dict:
 async def _tg_set_quality(target: str) -> dict:
     """Write quality setting to local config (no bot comms)."""
     try:
-        cfg = tgd_common.load_config()
-        cfg["target_quality"] = target
-        tgd_common.save_config(cfg)
+        tgd_common.update_config({"target_quality": target})
         return {"ok": True, "quality": target}
     except Exception as exc:
         return {"error": str(exc)}
@@ -849,20 +847,22 @@ def _ws_send(conn, text: str) -> bool:
 #  SESSIONS HELPERS
 # ══════════════════════════════════════════════
 
+# Serialises load-modify-save cycles on the saved queue sessions.
+_sessions_lock = threading.Lock()
+
+
 def _load_sessions() -> dict:
     if SESSIONS_FILE.exists():
         try:
             return json.loads(SESSIONS_FILE.read_text(encoding="utf-8"))
         except Exception:
-            pass
+            tgd_common.preserve_unreadable(SESSIONS_FILE)
     return {}
 
 
 def _save_sessions(data: dict) -> None:
-    SESSIONS_FILE.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    tgd_common.atomic_write_text(SESSIONS_FILE,
+                                 json.dumps(data, indent=2, ensure_ascii=False))
 
 
 # ══════════════════════════════════════════════
@@ -5779,11 +5779,8 @@ class Handler(BaseHTTPRequestHandler):
             # Through tgd_common so the keyring overlay (use_keyring) applies
             # to api_hash the same way it does for every other secret.
             try:
-                cfg = tgd_common.load_config()
-                cfg["api_id"]       = int(api_id)
-                cfg["api_hash"]     = api_hash
-                cfg["bot_username"] = bot_username
-                tgd_common.save_config(cfg)
+                tgd_common.update_config({"api_id": int(api_id), "api_hash": api_hash,
+                                          "bot_username": bot_username})
                 logger.info("Setup wizard complete: credentials and bot saved")
                 self._send_json(200, {"ok": True})
             except Exception as exc:
@@ -5792,10 +5789,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/config":
-            m   = _tgd_import()
-            cfg = m.load_config()
-            cfg.update(body)
-            m.save_config(cfg)
+            cfg = tgd_common.update_config(body)
             # Applying the library-watcher flag needs to (re)start/stop its thread,
             # not just persist the value, do it whenever the flag is in the patch.
             if "watch_library" in body:
@@ -5933,17 +5927,17 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/sessions":
-            sessions = _load_sessions()
-            if "delete" in body:
-                sessions.pop(body["delete"], None)
-                _save_sessions(sessions)
-                self._send_json(200, {"ok": True})
-            elif "name" in body and "entries" in body:
-                sessions[body["name"]] = body["entries"]
-                _save_sessions(sessions)
-                self._send_json(200, {"ok": True})
-            else:
+            if "delete" not in body and not ("name" in body and "entries" in body):
                 self._send_json(400, {"error": "Invalid body"})
+                return
+            with _sessions_lock:
+                sessions = _load_sessions()
+                if "delete" in body:
+                    sessions.pop(body["delete"], None)
+                else:
+                    sessions[body["name"]] = body["entries"]
+                _save_sessions(sessions)
+            self._send_json(200, {"ok": True})
             return
 
         if path == "/history-remove":
@@ -5954,10 +5948,8 @@ class Handler(BaseHTTPRequestHandler):
                     cfg  = m.load_config()
                     home = cfg.get("home_music_folder")
                     if home:
-                        from pathlib import Path as _P
-                        manifest = m.load_manifest(_P(home))
-                        manifest.pop(url_to_remove, None)
-                        m.save_manifest(_P(home), manifest)
+                        m.update_manifest(Path(home),
+                                          lambda mf: mf.pop(url_to_remove, None))
                 except Exception as exc:
                     logger.exception("Error in /history-remove")
                     self._send_json(500, {"error": str(exc)})
@@ -6384,9 +6376,7 @@ class Handler(BaseHTTPRequestHandler):
                         # /backup strips them, but a hand-edited zip might not.
                         for k in (*tgd_common.SECRET_KEYS, "api_id", "spotify_client_id"):
                             incoming.pop(k, None)
-                        cfg = tgd_common.load_config()
-                        cfg.update(incoming)
-                        tgd_common.save_config(cfg)
+                        tgd_common.update_config(incoming)
                     elif base in _restore_store_keys:
                         tgd_store.set_json(_restore_store_keys[base],
                                            json.loads(data_bytes.decode("utf-8")))
