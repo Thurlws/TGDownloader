@@ -105,6 +105,12 @@ function openSettings() {
     if (discordRp) discordRp.checked = !!cfg.discord_rich_presence;
     const discordId = document.getElementById('cfg-discord-client-id');
     if (discordId) discordId.value = cfg.discord_client_id || '';
+    // Natural-language smart playlists (Claude fallback; the local parser
+    // needs no key and is always on)
+    const nlLlm = document.getElementById('cfg-nl-playlist-llm');
+    if (nlLlm) nlLlm.checked = !!cfg.nl_playlist_llm;
+    const nlKey = document.getElementById('cfg-anthropic-key');
+    if (nlKey) nlKey.value = cfg.anthropic_api_key || '';
     // Download pipeline
     const botFailover = document.getElementById('cfg-bot-failover');
     if (botFailover) botFailover.value = Array.isArray(cfg.bot_failover)
@@ -213,6 +219,13 @@ function saveSettings() {
   if (discordRpEl) patch.discord_rich_presence = discordRpEl.checked;
   const discordIdEl = document.getElementById('cfg-discord-client-id');
   if (discordIdEl) patch.discord_client_id = discordIdEl.value.trim();
+
+  // Natural-language playlists: always sent so clearing the key or unticking
+  // the box drops back to the local-only parser straight away.
+  const nlLlmEl = document.getElementById('cfg-nl-playlist-llm');
+  if (nlLlmEl) patch.nl_playlist_llm = nlLlmEl.checked;
+  const nlKeyEl = document.getElementById('cfg-anthropic-key');
+  if (nlKeyEl) patch.anthropic_api_key = nlKeyEl.value.trim();
 
   // Download pipeline: always sent so clearing them takes effect.
   const botFailoverEl = document.getElementById('cfg-bot-failover');

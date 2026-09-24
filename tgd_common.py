@@ -55,7 +55,7 @@ import threading
 import time
 from pathlib import Path
 
-__version__ = "1.18.1"   # single source, bump this when you cut a new release
+__version__ = "1.19.0"   # single source, bump this when you cut a new release
 
 logger = logging.getLogger("tgd_common")
 
@@ -128,6 +128,13 @@ DEFAULT_CONFIG: dict = {
     # "off" = one folder (default) · "subfolders" = Disc N/ subfolders ·
     # "prefix" = prefix each filename with its disc number.
     "multidisc_mode":          "off",
+    # ── Natural-language smart playlists ──
+    # The "Describe it" box in the smart-playlist modal always runs the local
+    # parser (no key, no network).  Turning this on lets requests the local
+    # parser can't map fall through to Claude; needs `pip install anthropic`
+    # and an API key (kept in the keyring when use_keyring is on).
+    "nl_playlist_llm":         False,
+    "anthropic_api_key":       "",
     # ── UI preferences ──
     "theme":                   "dark",   # "dark" | "light"
     # ── Secrets storage: keep tokens in the OS keyring instead of the JSON
@@ -149,6 +156,7 @@ SECRET_KEYS = (
     "lastfm_session_key",
     "spotify_client_secret",
     "acoustid_api_key",
+    "anthropic_api_key",
 )
 
 # Config keys never written into a backup or debug bundle, and never taken
