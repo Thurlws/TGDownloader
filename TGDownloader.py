@@ -478,44 +478,102 @@ def _emit_result(
 #  POST-DOWNLOAD USER HOOK
 # ═════════════════════════════════════════════
 
-def _format_hook_command(cmd: str, dest: "Path | str", artist: str,
-                         status: str, url: str) -> str:
-    """Pure: substitute {folder}/{artist}/{status}/{url} placeholders, or
-    append the destination folder as a quoted argument when none is used."""
-    if any(tok in cmd for tok in ("{folder}", "{artist}", "{status}", "{url}")):
-        return (cmd.replace("{folder}", str(dest))
-                   .replace("{artist}", artist)
-                   .replace("{status}", status)
-                   .replace("{url}", url))
-    return f'{cmd} "{dest}"'
+_HOOK_VARS     = {"folder": "TGD_FOLDER", "artist": "TGD_ARTIST",
+                  "status": "TGD_STATUS", "url": "TGD_URL"}
+_HOOK_TOKEN_RE = re.compile(r"\{(folder|artist|status|url)\}")
+
+
+def _format_hook_command(cmd: str, windows: "bool | None" = None) -> str:
+    """Pure: turn the user's hook template into the shell command to run.
+
+    Each {folder}/{artist}/{status}/{url} placeholder becomes a reference to
+    the matching TGD_* environment variable, never the raw value. Artist
+    names, playlist titles and URLs come from third-party metadata, and
+    pasting them into the command text let "&", "$(...)" and backticks run as
+    shell syntax. An expanded variable is only ever data to the shell.
+
+    The reference is quoted to suit where the placeholder sits: bare, inside
+    "...", or (POSIX) inside '...'. With no placeholder the folder is appended
+    as one quoted argument. POSIX sh gets "${TGD_FOLDER}"; Windows cmd gets
+    "!TGD_FOLDER!", which the hook's cmd /v:on expands only after the line has
+    been parsed, so "&", "|" or "%" in a value stay literal."""
+    if windows is None:
+        windows = sys.platform == "win32"
+    if not _HOOK_TOKEN_RE.search(cmd):
+        cmd += " {folder}"
+    out: list[str] = []
+    quote = ""                  # the quote char we are currently inside, if any
+    i = 0
+    while i < len(cmd):
+        m = _HOOK_TOKEN_RE.match(cmd, i)
+        if m:
+            var = _HOOK_VARS[m.group(1)]
+            ref = f"!{var}!" if windows else f"${{{var}}}"
+            if quote == '"':
+                out.append(ref)
+            elif quote == "'":
+                out.append(f"'\"{ref}\"'")      # close '...', expand, reopen
+            else:
+                out.append(f'"{ref}"')
+            i = m.end()
+            continue
+        c = cmd[i]
+        # An escaped char never opens or closes a quote: backslash in sh
+        # (outside '...'), caret in cmd (outside "...").
+        if ((not windows and c == "\\" and quote != "'")
+                or (windows and c == "^" and not quote)):
+            out.append(cmd[i:i + 2])
+            i += 2
+            continue
+        if c == '"' and quote != "'":
+            quote = "" if quote else '"'
+        elif c == "'" and not windows and quote != '"':
+            quote = "" if quote else "'"
+        out.append(c)
+        i += 1
+    return "".join(out)
 
 
 def _run_post_download_hook(cfg: dict, dest: Path, url: str,
-                            artist: str, status: str) -> None:
+                            artist: str, status: str):
     """Fire-and-forget user command after a queue entry finishes.
 
-    Configured via "post_download_command" in the config.  "{folder}",
-    "{artist}", "{status}" and "{url}" placeholders are substituted; when no
-    placeholder is present the destination folder is appended as a quoted
-    argument.  The command also receives TGD_FOLDER / TGD_ARTIST / TGD_STATUS
-    / TGD_URL in its environment.  Runs detached through the shell (it is the
-    user's own machine and their own configured command); failures to launch
-    are logged, the download result is never affected."""
+    Configured via "post_download_command" in the config.  The command gets
+    TGD_FOLDER / TGD_ARTIST / TGD_STATUS / TGD_URL in its environment, and the
+    "{folder}", "{artist}", "{status}" and "{url}" placeholders expand to those
+    values (see _format_hook_command); when no placeholder is present the
+    destination folder is appended as a quoted argument.  Runs detached through
+    the shell (it is the user's own machine and their own configured command);
+    failures to launch are logged, the download result is never affected.
+    Returns the started process, or None."""
     import os
     import subprocess
     cmd = str(cfg.get("post_download_command") or "").strip()
     if not cmd:
-        return
+        return None
     try:
-        final = _format_hook_command(cmd, dest, artist, status, url)
+        final = _format_hook_command(cmd)
         env = os.environ.copy()
         env.update({"TGD_FOLDER": str(dest), "TGD_ARTIST": artist,
                     "TGD_STATUS": status, "TGD_URL": url})
-        subprocess.Popen(final, shell=True, env=env,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        _log(f"  Post-download hook started: {final}")
+        if sys.platform == "win32":
+            # What shell=True does, plus /v:on so the !TGD_*! references
+            # expand; /s makes cmd run the text inside the outer quotes as is.
+            comspec = os.environ.get("ComSpec") or "cmd.exe"
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            si.wShowWindow = subprocess.SW_HIDE
+            proc = subprocess.Popen(f'"{comspec}" /v:on /s /c "{final}"', env=env,
+                                    startupinfo=si, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL)
+        else:
+            proc = subprocess.Popen(final, shell=True, env=env,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _log(f"  Post-download hook started for {dest}: {cmd}")
+        return proc
     except Exception as exc:
         _log(f"  ⚠ Post-download hook failed to start: {exc}")
+        return None
 
 
 # ═════════════════════════════════════════════

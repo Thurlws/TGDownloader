@@ -109,8 +109,12 @@ DEFAULT_CONFIG: dict = {
     "watchlist_autocheck":     True,
     # ── Post-download user hook ──
     # Command run after each finished queue entry.  "{folder}" / "{artist}" /
-    # "{status}" / "{url}" placeholders are substituted; with no placeholder
-    # the destination folder is appended as a quoted argument.  Empty = off.
+    # "{status}" / "{url}" placeholders expand to quoted values, passed via the
+    # TGD_FOLDER / TGD_ARTIST / TGD_STATUS / TGD_URL environment variables so
+    # metadata is never parsed as shell syntax (on Windows the command runs
+    # under cmd /v:on, where "!" marks a variable, so avoid a literal "!").  With no
+    # placeholder the destination folder is appended as a quoted argument.
+    # Empty = off.
     "post_download_command":   "",
     # ── File / folder naming (applies to NEW downloads only) ──
     # file_naming_template renames tracks on sort from their tags.  Empty (the
