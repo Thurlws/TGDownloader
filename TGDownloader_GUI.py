@@ -1006,7 +1006,7 @@ class ProcessManager:
             env["TGD_BUNDLE_DIR"] = str(BUNDLE_DIR)
             env["TGD_LOG_FILE"]   = str(LOG_FILE)
 
-            self._proc = subprocess.Popen(
+            proc = subprocess.Popen(
                 _BACKEND_CMD,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -1018,13 +1018,17 @@ class ProcessManager:
                 env=env,
                 cwd=str(DATA_DIR),
             )
-            self._proc.stdin.write(stdin_data)
-            self._proc.stdin.close()
-            logger.info("Backend subprocess started (pid=%s)", self._proc.pid)
+            self._proc = proc
+            proc.stdin.write(stdin_data)
+            proc.stdin.close()
+            logger.info("Backend subprocess started (pid=%s)", proc.pid)
 
+        # The stream thread works on its own `proc`, never self._proc, which
+        # a later start() may already have replaced.
         def _stream():
+            rc = -1
             try:
-                for line in iter(self._proc.stdout.readline, ""):
+                for line in iter(proc.stdout.readline, ""):
                     msg = _parse_backend_line(line)
                     if msg is None:
                         # Not JSON: a legacy marker or stray stdout/stderr.
@@ -1047,16 +1051,26 @@ class ProcessManager:
                                         **{k: v for k, v in msg.items() if k != "type"}})
                     else:  # progress / paused / resumed pass straight through
                         self.broadcast(msg)
-                self._proc.wait()
-                rc = self._proc.returncode
+                proc.wait()
+                rc = proc.returncode
             except Exception as ex:
                 rc = -1
                 self.broadcast({"type": "log", "text": f"\nServer error: {ex}\n"})
             finally:
                 logger.info("Backend subprocess exited (rc=%s)", rc)
-                self.broadcast({"type": "done", "code": rc})
+                # Forget the process before announcing "done": the UI can
+                # answer "done" with a new start at once (Retry failed), and
+                # clearing self._proc after that orphaned the new backend, so
+                # Stop could no longer reach it.
                 with self._lock:
-                    self._proc = None
+                    current = self._proc is proc
+                    if current:
+                        self._proc = None
+                # If a newer run already started in the moment since this one
+                # exited, it has announced itself; a "done" now would show it
+                # as idle. Its own "done" follows when it finishes.
+                if current:
+                    self.broadcast({"type": "done", "code": rc})
 
         threading.Thread(target=_stream, daemon=True).start()
 
