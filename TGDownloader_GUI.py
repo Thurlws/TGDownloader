@@ -3774,6 +3774,19 @@ _RESTORABLE_STATE_FILES = {"liked_songs.json", "watchlist.json",
                            "ratings.json"}
 
 
+def _redacted_config_json() -> "str | None":
+    """The saved config as JSON with every secret and account id removed
+    (tgd_common.REDACTED_KEYS), for backups and debug bundles. None when there
+    is no readable config."""
+    try:
+        cfg = json.loads(tgd_common.CONFIG_FILE.read_text("utf-8"))
+    except Exception:
+        return None
+    for key in tgd_common.REDACTED_KEYS:
+        cfg.pop(key, None)
+    return json.dumps(cfg, indent=2)
+
+
 def _validate_backup_zip(data: bytes) -> "tuple[dict[str, bytes], list[str]]":
     """({basename: raw_bytes}, skipped_names).  Only allowlisted basenames
     containing valid JSON are accepted, so a crafted zip can neither traverse
@@ -4994,15 +5007,9 @@ class Handler(BaseHTTPRequestHandler):
                         except Exception:
                             pass
                 # Drop credentials from the archived config copy
-                try:
-                    cfg = json.loads((DATA_DIR / "tg_audio_config.json").read_text("utf-8"))
-                    for secret in ("api_id", "api_hash", "listenbrainz_token",
-                                   "lastfm_api_key", "lastfm_secret", "lastfm_session_key",
-                                   "spotify_client_id", "spotify_client_secret"):
-                        cfg.pop(secret, None)
-                    zf.writestr("tg_audio_config.json", json.dumps(cfg, indent=2))
-                except Exception:
-                    pass
+                red = _redacted_config_json()
+                if red is not None:
+                    zf.writestr("tg_audio_config.json", red)
             data = buf.getvalue()
             stamp = time.strftime("%Y%m%d-%H%M%S")
             self.send_response(200)
@@ -5130,16 +5137,10 @@ class Handler(BaseHTTPRequestHandler):
                         zf.writestr("tgdownloader_debug.log", raw[-2_000_000:])
                 except Exception:
                     pass
-                # Config with every secret stripped (same list as /backup)
-                try:
-                    cfg = json.loads((DATA_DIR / "tg_audio_config.json").read_text("utf-8"))
-                    for secret in ("api_id", "api_hash", "listenbrainz_token",
-                                   "lastfm_api_key", "lastfm_secret", "lastfm_session_key",
-                                   "spotify_client_id", "spotify_client_secret"):
-                        cfg.pop(secret, None)
-                    zf.writestr("tg_audio_config.json", json.dumps(cfg, indent=2))
-                except Exception:
-                    pass
+                # Config with every secret stripped (same as /backup)
+                red = _redacted_config_json()
+                if red is not None:
+                    zf.writestr("tg_audio_config.json", red)
                 # Environment snapshot
                 try:
                     info = [
@@ -6471,7 +6472,7 @@ class Handler(BaseHTTPRequestHandler):
                         incoming = json.loads(data_bytes.decode("utf-8"))
                         # Never let a backup overwrite live credentials,
                         # /backup strips them, but a hand-edited zip might not.
-                        for k in (*tgd_common.SECRET_KEYS, "api_id", "spotify_client_id"):
+                        for k in tgd_common.REDACTED_KEYS:
                             incoming.pop(k, None)
                         tgd_common.update_config(incoming)
                     elif base in _restore_store_keys:

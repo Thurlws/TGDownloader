@@ -148,7 +148,13 @@ SECRET_KEYS = (
     "lastfm_secret",
     "lastfm_session_key",
     "spotify_client_secret",
+    "acoustid_api_key",
 )
+
+# Config keys never written into a backup or debug bundle, and never taken
+# from a restored backup: every secret plus the account identifiers.
+REDACTED_KEYS = (*SECRET_KEYS, "api_id", "spotify_client_id")
+
 _KEYRING_SERVICE = "TGDownloader"
 _keyring_warned = False
 
