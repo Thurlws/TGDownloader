@@ -168,7 +168,7 @@ def configure_settings(cfg: dict) -> dict:
             try:
                 cfg[key] = cast(raw)
             except ValueError:
-                print(f"    Invalid value — keeping {current}")
+                print(f"    Invalid value - keeping {current}")
 
     hf = cfg.get("home_music_folder")
     print(f"\n  Home music folder: {hf or 'Not set'}")
@@ -267,7 +267,7 @@ def load_manifest(home: Path) -> dict:
         try:
             return json.loads(mp.read_text(encoding="utf-8"))
         except Exception as exc:
-            _log(f"  WARNING: Could not parse manifest {mp} ({exc}) — "
+            _log(f"  WARNING: Could not parse manifest {mp} ({exc}) - "
                  "starting with an empty manifest; completed URLs may re-download.")
             preserve_unreadable(mp)
 
@@ -354,7 +354,7 @@ def is_url_complete(
         pl_dir = home / PLAYLISTS_DIRNAME / _sanitise_path(entry.get("playlist", ""))
         if not pl_dir.exists():
             _log(
-                f"  Manifest: playlist folder '{pl_dir.name}' not found — "
+                f"  Manifest: playlist folder '{pl_dir.name}' not found - "
                 "treating URL as incomplete."
             )
             return False
@@ -362,7 +362,7 @@ def is_url_complete(
         if missing:
             _log(
                 f"  Manifest: {len(missing)}/{len(files)} track(s) missing on disk "
-                f"for playlist '{pl_dir.name}' — will re-download."
+                f"for playlist '{pl_dir.name}' - will re-download."
             )
             return False
         return True
@@ -370,7 +370,7 @@ def is_url_complete(
     artist_dir = artists_root(home) / _sanitise_path(artist)
     if not artist_dir.exists():
         _log(
-            f"  Manifest: artist folder '{artist_dir.name}' not found — "
+            f"  Manifest: artist folder '{artist_dir.name}' not found - "
             "treating URL as incomplete."
         )
         return False
@@ -379,7 +379,7 @@ def is_url_complete(
     if missing:
         _log(
             f"  Manifest: {len(missing)}/{len(files)} file(s) missing on disk "
-            f"for '{artist}' — will re-download."
+            f"for '{artist}' - will re-download."
         )
         return False
 
@@ -403,7 +403,7 @@ def pick_folder(title: str = "Select folder") -> Path:
     chosen = tkinter.filedialog.askdirectory(title=title)
     root.destroy()
     if not chosen:
-        sys.exit("No folder selected — exiting.")
+        sys.exit("No folder selected - exiting.")
     return Path(chosen)
 
 
@@ -417,7 +417,7 @@ def get_home_music_folder(cfg: dict) -> Path:
         _log(f"WARNING: Saved home folder no longer exists: {home}")
 
     _log("No home music folder configured.")
-    _log("A folder picker will open — select your HOME MUSIC folder.")
+    _log("A folder picker will open - select your HOME MUSIC folder.")
     home = pick_folder("Select your Home Music Folder")
     cfg["home_music_folder"] = str(home)
     save_config(cfg)
@@ -759,7 +759,7 @@ def build_library_hash_index(home: Path) -> set[str]:
         try:
             old_cache = json.loads(_HASH_CACHE_FILE.read_text(encoding="utf-8"))
         except Exception as exc:
-            _log(f"  WARNING: Hash cache unreadable ({exc}) — re-hashing the full library.")
+            _log(f"  WARNING: Hash cache unreadable ({exc}) - re-hashing the full library.")
             old_cache = {}
 
     hashes:    set[str] = set()
@@ -813,7 +813,7 @@ def build_library_hash_index(home: Path) -> set[str]:
         _log(f"  WARNING: Could not save hash cache: {e}")
 
     _log(
-        f"  Library index: {total} file(s) — "
+        f"  Library index: {total} file(s) - "
         f"{total - rehashed} from cache, {rehashed} re-hashed, "
         f"{len(hashes)} unique hash(es)."
     )
@@ -875,7 +875,7 @@ def check_pre_download(entry: "URLEntry", home: Path) -> None:
     if artist_dir.name != san:
         _log(
             f"  ⚠  Fuzzy artist match: '{entry.artist}' ≈ existing folder "
-            f"'{artist_dir.name}' — new files will be merged into it."
+            f"'{artist_dir.name}' - new files will be merged into it."
         )
 
     # Best-effort: extract album title slug from Deezer URL (e.g. /album/12345)
@@ -1325,7 +1325,7 @@ def _ffmpeg_convert(src: Path, target_quality: str) -> "Path | None":
                "-map_metadata", "0",
                str(dst)]
     else:
-        _log(f"  WARN  Unknown target quality '{target_quality}' — skipping conversion")
+        _log(f"  WARN  Unknown target quality '{target_quality}' - skipping conversion")
         return None
 
     # src and dst are the same path (e.g. mp3→mp3 same suffix), skip
@@ -1350,7 +1350,7 @@ def _ffmpeg_convert(src: Path, target_quality: str) -> "Path | None":
             src.unlink(missing_ok=True)
         return dst
     except FileNotFoundError:
-        _log("  ERROR  ffmpeg not found — install ffmpeg and ensure it is on your PATH")
+        _log("  ERROR  ffmpeg not found - install ffmpeg and ensure it is on your PATH")
         return None
     except _sp.TimeoutExpired:
         _log(f"  ERROR  ffmpeg timed out converting {src.name}")
@@ -1379,7 +1379,7 @@ def convert_directory_quality(directory: Path, target_quality: str) -> tuple[int
     No-ops when ffmpeg is unavailable or target_quality is already the source format.
     """
     if not _check_ffmpeg():
-        _log("  WARNING: ffmpeg not found — audio quality conversion skipped.")
+        _log("  WARNING: ffmpeg not found - audio quality conversion skipped.")
         _log("           Install ffmpeg and add it to PATH to enable conversion.")
         return 0, 0
 
@@ -1469,7 +1469,7 @@ async def _ensure_bot_initialized(client, cfg: dict, bot_username: "str | None" 
         _log(f"  ✓ Telegram bot ready to use ({BOT_USERNAME})")
         return
 
-    _log(f"\n  First-time setup — checking bot channel requirements ({BOT_USERNAME})…")
+    _log(f"\n  First-time setup - checking bot channel requirements ({BOT_USERNAME})…")
 
     try:
         bot_entity = await client.get_entity(BOT_USERNAME)
@@ -1537,7 +1537,7 @@ async def _ensure_bot_initialized(client, cfg: dict, bot_username: "str | None" 
                     err_str = str(join_exc).lower()
                     if "already" in err_str or "participant" in err_str:
                         # Already a member, still need to find the entity to mute
-                        _log("  Already a member of the channel — re-fetching entity …")
+                        _log("  Already a member of the channel - re-fetching entity …")
                         try:
                             # CheckChatInvite returns info about the invite without joining
                             from telethon.tl.functions.messages import CheckChatInviteRequest
@@ -1566,7 +1566,7 @@ async def _ensure_bot_initialized(client, cfg: dict, bot_username: "str | None" 
                         _log(f"  WARNING: Could not join channel: {join_exc}")
 
             else:
-                _log(f"  WARNING: Could not parse channel URL '{join_url}' — skipping join.")
+                _log(f"  WARNING: Could not parse channel URL '{join_url}' - skipping join.")
 
             # ── Mute whichever entity we managed to resolve ──────────────────
             if _joined_entity is not None:
@@ -1786,7 +1786,7 @@ async def download_all_async(
                         if wait_secs <= _MAX_FLOOD_WAIT and attempt < _MAX_AUTH_TRIES:
                             _log(
                                 f"  ⏳ Flood-wait {wait_secs}s for {filename} "
-                                f"(attempt {attempt}/{_MAX_AUTH_TRIES}) — waiting…"
+                                f"(attempt {attempt}/{_MAX_AUTH_TRIES}) - waiting…"
                             )
                             await asyncio.sleep(wait_secs + 1)
                         else:
@@ -1795,7 +1795,7 @@ async def download_all_async(
                             and attempt < _MAX_AUTH_TRIES:
                         _log(
                             f"  ⚠ Auth error for {filename} "
-                            f"(attempt {attempt}/{_MAX_AUTH_TRIES}) — retrying in {_AUTH_RETRY_WAIT}s…"
+                            f"(attempt {attempt}/{_MAX_AUTH_TRIES}) - retrying in {_AUTH_RETRY_WAIT}s…"
                         )
                         await asyncio.sleep(_AUTH_RETRY_WAIT)
                     else:
@@ -1859,7 +1859,7 @@ async def download_all_async(
         else:
             downloaded.append(result)
 
-    elapsed  = time.monotonic() - start_time
+    elapsed  = max(time.monotonic() - start_time, 0.001)
     total_mb = sum(ev.message.document.size for ev in pending_events) / 1_048_576
     _log(
         f"\n\n  {len(downloaded)}/{total} file(s) in {elapsed:.1f}s "
@@ -1934,7 +1934,7 @@ async def collect_files(
     try:
         await asyncio.wait_for(file_event.wait(), timeout=QUEUE_WAIT_TIMEOUT)
     except asyncio.TimeoutError:
-        _log(f"\n  No files received after {QUEUE_WAIT_TIMEOUT}s — giving up.")
+        _log(f"\n  No files received after {QUEUE_WAIT_TIMEOUT}s - giving up.")
         return []
 
     file_event.clear()
@@ -1956,7 +1956,7 @@ async def collect_files(
             if idle >= IDLE_TIMEOUT:
                 n   = len(pending_events)
                 exp = f"/{expected_total}" if expected_total else ""
-                _log(f"\n  No new file for {idle:.1f}s — stopping at {n}{exp} track(s).")
+                _log(f"\n  No new file for {idle:.1f}s - stopping at {n}{exp} track(s).")
                 break
 
         try:
@@ -2035,7 +2035,7 @@ async def process_url(
             file_event.clear()
         except asyncio.TimeoutError:
             await cleanup()
-            _log(f"  ERROR: No reply within {REPLY_TIMEOUT}s — skipping.")
+            _log(f"  ERROR: No reply within {REPLY_TIMEOUT}s - skipping.")
             return [], None
 
         bot_reply = None
@@ -2046,7 +2046,7 @@ async def process_url(
                 break
 
         if bot_reply is None:
-            _log("  ERROR: Queue empty after event fired — skipping.")
+            _log("  ERROR: Queue empty after event fired - skipping.")
             await cleanup()
             return [], None
 
@@ -2068,7 +2068,7 @@ async def process_url(
                 _log(f"  Waiting {BOT_BUSY_WAIT}s before retry ({attempt}/{BOT_BUSY_RETRIES})...")
                 await asyncio.sleep(BOT_BUSY_WAIT)
             else:
-                _log(f"  ERROR: Bot still busy after {BOT_BUSY_RETRIES} retries — skipping.")
+                _log(f"  ERROR: Bot still busy after {BOT_BUSY_RETRIES} retries - skipping.")
                 await cleanup()
                 return [], None
         else:
@@ -2104,7 +2104,7 @@ async def process_url(
         if not sys.stdin.isatty():
             # GUI mode: stdin is an exhausted pipe, prompting would raise
             # EOFError and surface as a confusing crash. Skip with a clear log.
-            _log("  Cannot prompt for a button in GUI mode — skipping this URL.")
+            _log("  Cannot prompt for a button in GUI mode - skipping this URL.")
             await cleanup()
             return [], None
         choice = input("  Enter button number to click (or Enter to skip): ").strip()
@@ -2165,7 +2165,7 @@ def collect_url_entries(max_queue: int) -> list[URLEntry]:
         url = input("" if _is_gui else f"\n  URL {i}/{count}: ").strip()
         if not url:
             if not _is_gui:
-                print("  Empty URL — skipped.")
+                print("  Empty URL - skipped.")
             continue
 
         if last_artist:
@@ -2197,7 +2197,7 @@ def collect_url_entries(max_queue: int) -> list[URLEntry]:
         ))
 
     if not entries:
-        sys.exit("No URLs provided — exiting.")
+        sys.exit("No URLs provided - exiting.")
     return entries
 
 
@@ -2216,7 +2216,7 @@ def show_summary(results: list[URLResult]) -> None:
         icon    = icons.get(r.status, "?")
         exp_str = str(r.expected) if r.expected is not None else "?"
         dup_str = f"  ({r.dupes_skipped} dupe(s) skipped)" if r.dupes_skipped else ""
-        dest_str = str(r.dest.resolve()) if r.dest else "—"
+        dest_str = str(r.dest.resolve()) if r.dest else "-"
 
         _log(f"  [{icon}] {r.url[:62]}")
         _log(f"       Artist  : {r.artist}")
@@ -2305,7 +2305,7 @@ async def main() -> None:
         _log(f"\n  {len(already_done)} URL(s) already in manifest (files verified):")
         for e in already_done:
             info = manifest[e.url]
-            _log(f"    {e.url[:60]}  —  {info.get('artist','')}  @  {info.get('timestamp','')}")
+            _log(f"    {e.url[:60]}  -  {info.get('artist','')}  @  {info.get('timestamp','')}")
         ans = input("" if _gui_mode else "\n  Skip these? (Y/n): ").strip().lower()
         skip_completed = ans != "n"
 
@@ -2327,7 +2327,7 @@ async def main() -> None:
         await main_client.disconnect()
         for entry in entries:
             _emit_result(entry.url, entry.artist, "error",
-                         error="Not logged in to Telegram — use the TG button in the GUI")
+                         error="Not logged in to Telegram - use the TG button in the GUI")
         return
     me = await main_client.get_me()
     _log(f"  Logged in as: {me.first_name}")
@@ -2392,7 +2392,7 @@ async def main() -> None:
                     _log(f"  ✓ Recovered via failover bot {_bot}")
                 break
             if _pi + 1 < len(_profiles):
-                _log(f"  ↻ No files from {_bot} — failing over to {_profiles[_pi + 1]}…")
+                _log(f"  ↻ No files from {_bot} - failing over to {_profiles[_pi + 1]}…")
 
         if _proc_error is not None and not downloaded:
             results.append(URLResult(

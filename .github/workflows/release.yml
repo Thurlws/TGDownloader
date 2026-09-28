@@ -33,7 +33,7 @@ jobs:
           $v = python -c "import tgd_common; print(tgd_common.__version__)"
           $tag = "${{ github.ref_name }}".TrimStart("v")
           if ($v -ne $tag) {
-            Write-Error "Tag ${{ github.ref_name }} does not match __version__ $v — bump tgd_common.py first."
+            Write-Error "Tag ${{ github.ref_name }} does not match __version__ $v - bump tgd_common.py first."
             exit 1
           }
 

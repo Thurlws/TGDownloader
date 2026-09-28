@@ -439,7 +439,7 @@ async function _checkForUpdate(force = false) {
   const instBtn = document.getElementById('btn-about-install');
   if (data.update_available) {
     if (badge)   { badge.style.display = 'inline-flex';
-                   badge.title = `Version ${data.latest} is available — you have ${data.current}. Click to view the release.`; }
+                   badge.title = `Version ${data.latest} is available - you have ${data.current}. Click to view the release.`; }
     if (badgeTx) badgeTx.textContent = 'Update to v' + (data.latest || '');
     if (status)  status.textContent = `Update available: v${data.latest} (you have v${data.current})`;
     if (aboutS)  { aboutS.innerHTML = `<a href="#" id="about-update-link" style="color:var(--accent)">Update available: v${data.latest} ↗</a>`;
@@ -639,7 +639,7 @@ async function openGenrePlaylistModal() {
     const resp = await fetch('/genres');
     const data = await resp.json();
     if (data.error) {
-      select.innerHTML = '<option value="">—</option>';
+      select.innerHTML = '<option value="">-</option>';
       status.textContent = data.error; status.className = 'error';
       return;
     }
@@ -653,7 +653,7 @@ async function openGenrePlaylistModal() {
       `<option value="${escHtml(g.genre)}">${escHtml(g.genre)} (${g.track_count} track${g.track_count !== 1 ? 's' : ''})</option>`
     ).join('');
   } catch (e) {
-    select.innerHTML = '<option value="">—</option>';
+    select.innerHTML = '<option value="">-</option>';
     status.textContent = `Error: ${e}`; status.className = 'error';
   }
 }
@@ -682,7 +682,7 @@ async function _createGenrePlaylist() {
       status.textContent = data.error || 'Failed to create playlist.'; status.className = 'error';
       return;
     }
-    status.textContent = `Created "${data.name}" — ${data.copied} of ${data.total} tracks.`;
+    status.textContent = `Created "${data.name}" - ${data.copied} of ${data.total} tracks.`;
     status.className = 'success';
     appendLog(`  Created genre playlist "${data.name}" (${data.copied} tracks)\n`, 'log-success');
     setTimeout(() => { closeGenrePlaylistModal(); if (activeTab === 'library') loadLibrary(); }, 900);
@@ -838,7 +838,7 @@ async function _createSmartPlaylist() {
     });
     const data = await resp.json();
     if (!data.ok) { status.textContent = data.error || 'Failed to create playlist.'; status.className = 'error'; return; }
-    status.textContent = `Created "${data.name}" — ${data.copied} track${data.copied !== 1 ? 's' : ''}.`;
+    status.textContent = `Created "${data.name}" - ${data.copied} track${data.copied !== 1 ? 's' : ''}.`;
     status.className = 'success';
     appendLog(`  Created smart playlist "${data.name}" (${data.copied} tracks)\n`, 'log-success');
     _libStatsCache = null;
@@ -882,7 +882,7 @@ document.getElementById('keybinds-overlay')?.addEventListener('click', (e) => {
 function openQuitDialog() {
   const msg = document.getElementById('quit-msg');
   if (running) {
-    msg.textContent = 'A download is in progress — it will be stopped.';
+    msg.textContent = 'A download is in progress - it will be stopped.';
     msg.style.color = 'var(--yellow)';
   } else {
     msg.textContent = 'The server will stop and the browser tab will close.';
@@ -1021,7 +1021,7 @@ function updateEtaIndicator() {
 
   const ind   = document.getElementById('eta-indicator');
   const title = document.getElementById('titlebar-eta');
-  if (ind)   ind.textContent = etaStr || (entries.length ? '— ETA unknown (run once to calibrate) —' : '');
+  if (ind)   ind.textContent = etaStr || (entries.length ? '- ETA unknown (run once to calibrate) -' : '');
   if (title) {
     title.textContent = etaStr;
     title.classList.toggle('visible', !!(etaStr && entries.length));

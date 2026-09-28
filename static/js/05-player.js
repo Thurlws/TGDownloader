@@ -157,7 +157,7 @@ function _npUpdate(track, alb) {
     img.onerror = () => { img.style.display = 'none'; ph.style.display = 'flex'; };
   } else { img.style.display = 'none'; ph.style.display = 'flex'; }
 
-  document.getElementById('np-track-title').textContent  = track.title || track.name || '—';
+  document.getElementById('np-track-title').textContent  = track.title || track.name || '-';
   const artistName = track.artist || alb?.artist || '';
   document.getElementById('np-track-artist').textContent = artistName;
   _npLoadArtist(artistName);
@@ -846,7 +846,7 @@ function _mpSkipAfterError(track, reason) {
   if (_mpErrorStreak > _mpQueue.length) {
     _mpErrorStreak = 0;
     _mpPlaying = false; _mpUpdatePlayBtn(); _mpHighlightRow(-1);
-    _toast("Couldn't play these tracks — the files may have moved or been removed.", 'error');
+    _toast("Couldn't play these tracks - the files may have moved or been removed.", 'error');
     return;
   }
   const next = _mpPickNext(true);

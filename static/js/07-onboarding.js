@@ -10,19 +10,19 @@
   // Each step spotlights one element. `placement` is the preferred tooltip side.
   const STEPS = [
     { sel: '#btn-tg-connect', title: 'Connect Telegram',
-      text: 'Start here. Click TG to sign in to Telegram and pick your music bot — nothing downloads until this is connected.',
+      text: 'Start here. Click TG to sign in to Telegram and pick your music bot - nothing downloads until this is connected.',
       placement: 'bottom' },
     { sel: '#home-input', title: 'Choose your music folder',
       text: 'Point this at where your library should live. Downloads are sorted into Artists/ and Playlists/ here.',
       placement: 'bottom' },
     { sel: '#url-input', title: 'Add music',
-      text: 'Paste a Deezer or Spotify album, track or playlist link and hit Add — or use Search to find one.',
+      text: 'Paste a Deezer or Spotify album, track or playlist link and hit Add - or use Search to find one.',
       placement: 'bottom' },
     { sel: '#btn-run', title: 'Download the queue',
       text: 'Press Run (or Ctrl+Enter) to start. Progress streams in the Log tab. You can also schedule a run for later.',
       placement: 'left' },
     { sel: '.tab[data-tab="library"]', title: 'Play your library',
-      text: 'Everything you download lands here — a full player with an equalizer, playlists, ratings and listening stats.',
+      text: 'Everything you download lands here - a full player with an equalizer, playlists, ratings and listening stats.',
       placement: 'bottom' },
   ];
 

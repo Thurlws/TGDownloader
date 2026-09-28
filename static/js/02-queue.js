@@ -861,7 +861,7 @@ function openSessionsModal() {
 
 function saveSession() {
   if (!entries.length) {
-    appendLog('Queue is empty — nothing to save.\n', 'log-warn');
+    appendLog('Queue is empty - nothing to save.\n', 'log-warn');
     return;
   }
   const nameEl = document.getElementById('save-session-name');
@@ -939,7 +939,7 @@ function renderHistoryList(data) {
     row.dataset.url = item.url;
 
     const ts   = item.timestamp ? new Date(item.timestamp) : null;
-    const date = ts ? ts.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : '—';
+    const date = ts ? ts.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : '-';
     const time = ts ? ts.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', hour12: false }) : '';
 
     const albumNames   = item.albums && item.albums.length ? item.albums : null;
@@ -1078,7 +1078,7 @@ function renderStats() {
   const totalEstimated = knownTracks + unknownCount * 10;
   const estimatedMB    = totalEstimated * 8;
 
-  let etaStr = '—';
+  let etaStr = '-';
   if (avgSpeedMBs && avgSpeedMBs > 0 && estimatedMB > 0) {
     const secs = estimatedMB / avgSpeedMBs;
     etaStr = secs < 60 ? `~${Math.round(secs)}s` : `~${Math.round(secs / 60)} min`;
@@ -1153,7 +1153,7 @@ function renderStats() {
 
     const avgTracksStr = ls.avg_tracks_per_album != null
       ? ls.avg_tracks_per_album.toFixed(1)
-      : '—';
+      : '-';
 
     libCard = `
       <div class="stat-card">
@@ -1251,7 +1251,7 @@ function renderStats() {
         <strong>${knownTracks > 0 ? knownTracks : ''}${unknownCount > 0 ? ` + ~${unknownCount * 10} est.` : ''}</strong>
       </div>
       <div class="stat-row"><span>Est. size</span><strong>~${estimatedMB} MB</strong></div>
-      <div class="stat-row"><span>Est. time</span><strong style="color:${etaStr !== '—' ? 'var(--accent)' : 'var(--fg3)'}">${etaStr}</strong></div>
+      <div class="stat-row"><span>Est. time</span><strong style="color:${etaStr !== '-' ? 'var(--accent)' : 'var(--fg3)'}">${etaStr}</strong></div>
       ${avgSpeedMBs ? '' : '<div class="stat-row"><span style="font-size:10px;color:var(--fg3)">Run a session to calibrate ETA</span></div>'}
     </div>` : ''}
     ${sessionCard}
@@ -1286,7 +1286,7 @@ function _renderWrapped(d) {
       `<option value="${y}"${y === d.year ? ' selected' : ''}>${y}</option>`).join('');
   }
   if (!d.total_plays) {
-    content.innerHTML = `<div class="stat-empty">No plays recorded in ${d.year} — play some music and come back.</div>`;
+    content.innerHTML = `<div class="stat-empty">No plays recorded in ${d.year} - play some music and come back.</div>`;
     return;
   }
   const monthMax  = Math.max(...d.by_month, 1);
@@ -1301,7 +1301,7 @@ function _renderWrapped(d) {
       <div class="wrapped-hero-cell"><div class="wrapped-hero-num">${d.unique_artists.toLocaleString()}</div><div class="wrapped-hero-lbl">artists</div></div>
       <div class="wrapped-hero-cell"><div class="wrapped-hero-num">${d.listening_days}</div><div class="wrapped-hero-lbl">listening days</div></div>
       <div class="wrapped-hero-cell"><div class="wrapped-hero-num">${d.longest_streak_days}</div><div class="wrapped-hero-lbl">longest day streak</div></div>
-      <div class="wrapped-hero-cell"><div class="wrapped-hero-num">${d.busiest_day ? d.busiest_day.plays : '—'}</div><div class="wrapped-hero-lbl">${d.busiest_day ? 'plays on ' + escHtml(d.busiest_day.date) : 'busiest day'}</div></div>
+      <div class="wrapped-hero-cell"><div class="wrapped-hero-num">${d.busiest_day ? d.busiest_day.plays : '-'}</div><div class="wrapped-hero-lbl">${d.busiest_day ? 'plays on ' + escHtml(d.busiest_day.date) : 'busiest day'}</div></div>
     </div>
     <div class="wrapped-sec-label">Plays by month</div>
     <div class="wrapped-months">${d.by_month.map(v =>
@@ -1575,7 +1575,7 @@ async function _refreshScheduleBanner() {
     const d = await (await fetch('/schedule-queue')).json();
     if (d.scheduled) {
       el.style.display = '';
-      el.innerHTML = `Scheduled: ${escHtml(d.at_str)} · ${d.entries} URL(s) —
+      el.innerHTML = `Scheduled: ${escHtml(d.at_str)} · ${d.entries} URL(s) -
         <a href="#" id="schedule-cancel-link" style="color:var(--red)">cancel</a>`;
       document.getElementById('schedule-cancel-link')?.addEventListener('click', async (ev) => {
         ev.preventDefault();
@@ -1599,7 +1599,7 @@ async function scheduleQueueRun() {
     return;
   }
   if (!entries.length) { appendLog('ERROR: Queue is empty.\n', 'log-error'); return; }
-  const when = await _prompt('Start time (HH:MM, 24-hour — next occurrence, so past times mean tomorrow)', {
+  const when = await _prompt('Start time (HH:MM, 24-hour - next occurrence, so past times mean tomorrow)', {
     title: 'Schedule queue run', placeholder: 'e.g. 03:30', confirmLabel: 'Schedule',
   });
   if (!when) return;
@@ -1618,7 +1618,7 @@ async function scheduleQueueRun() {
     })).json();
     if (d.error) { _toast(d.error, 'error'); return; }
     _toast(`Queue scheduled for ${d.at_str}.`, 'success');
-    appendLog(`Queue scheduled for ${d.at_str} — ${d.entries} URL(s). Keep the app running.\n`, 'log-success');
+    appendLog(`Queue scheduled for ${d.at_str} - ${d.entries} URL(s). Keep the app running.\n`, 'log-success');
   } catch (e) {
     _toast('Could not schedule: ' + e, 'error');
   }
@@ -1667,7 +1667,7 @@ async function exportM3U() {
         item.albums.forEach(album => {
           const albumSan = sanitizePath(album);
           item.files.forEach(file => {
-            lines.push(`#EXTINF:-1,${item.artist} — ${album}`);
+            lines.push(`#EXTINF:-1,${item.artist} - ${album}`);
             lines.push([home, artist, albumSan, file].join(sep));
           });
         });
@@ -1814,7 +1814,7 @@ async function doSearch(fromExplicit) {
     if (provider === 'spotify' && data.fellback_to_deezer) {
       _toast(data.spotify_unconfigured
         ? 'Add a Spotify Client ID + Secret in Settings → Connection to search Spotify. Showing Deezer results.'
-        : `Spotify error: ${data.spotify_error || 'unavailable'} — showing Deezer results.`, 'error');
+        : `Spotify error: ${data.spotify_error || 'unavailable'} - showing Deezer results.`, 'error');
     }
 
     const grid = document.createElement('div');
@@ -1865,7 +1865,7 @@ async function doSearch(fromExplicit) {
     results.innerHTML = '';
     results.appendChild(grid);
   } catch (_) {
-    results.innerHTML = '<div class="search-status">Network error — is the server running?</div>';
+    results.innerHTML = '<div class="search-status">Network error - is the server running?</div>';
   }
 }
 
@@ -1905,7 +1905,7 @@ function runOrStop() {
   switchTab('log');
   clearLog();
   appendLog('─'.repeat(52) + '\n', 'log-dim');
-  appendLog(`Session started — ${entries.length} URL(s)\n`);
+  appendLog(`Session started - ${entries.length} URL(s)\n`);
   appendLog('─'.repeat(52) + '\n', 'log-dim');
   wsSend({ action: 'start', entries, home });
 }

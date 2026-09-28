@@ -26,8 +26,8 @@
     <span id="status-text">Connecting…</span>
 
     <span class="spacer"></span>
-    <button id="update-badge" style="display:none" title="A new version is available — click to view the release"><span class="bi" data-icon="sparkle"></span><span id="update-badge-text">Update</span></button>
-    <button id="quality-badge" class="unknown" title="Audio quality — click to change"><span class="bi" data-icon="note"></span>?</button>
+    <button id="update-badge" style="display:none" title="A new version is available - click to view the release"><span class="bi" data-icon="sparkle"></span><span id="update-badge-text">Update</span></button>
+    <button id="quality-badge" class="unknown" title="Audio quality - click to change"><span class="bi" data-icon="note"></span>?</button>
     <span class="kbd-hint" id="kbd-hint" title="Ctrl+/: keyboard shortcuts" style="cursor:pointer" data-icon="keyboard"></span>
     <span id="titlebar-eta"></span>
     <button id="btn-tg-connect" title="Telegram: not checked">TG: <span id="tg-status-dot">○</span></button>
@@ -75,7 +75,7 @@
       <!-- Bulk paste mode -->
       <div id="add-bulk-mode" style="display:none;">
         <div class="field">
-          <label>Paste URLs — one per line (Deezer or Spotify; artist auto-detected)</label>
+          <label>Paste URLs - one per line (Deezer or Spotify; artist auto-detected)</label>
           <textarea id="bulk-url-input" rows="5" autocomplete="off" spellcheck="false"
             style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);
                    color:var(--fg);font-family:var(--mono);font-size:11px;padding:6px 8px;outline:none;
@@ -237,17 +237,17 @@
           </div>
           <div id="lib-hero-stats">
             <div class="lib-hero-stat" id="lib-stat-owned">
-              <div class="lib-hero-stat-num">—</div>
+              <div class="lib-hero-stat-num">-</div>
               <div class="lib-hero-stat-label">IN LIBRARY</div>
             </div>
             <div class="lib-hero-stat-sep"></div>
             <div class="lib-hero-stat" id="lib-stat-total">
-              <div class="lib-hero-stat-num">—</div>
+              <div class="lib-hero-stat-num">-</div>
               <div class="lib-hero-stat-label">TOTAL ALBUMS</div>
             </div>
             <div class="lib-hero-stat-sep"></div>
             <div class="lib-hero-stat" id="lib-stat-missing">
-              <div class="lib-hero-stat-num">—</div>
+              <div class="lib-hero-stat-num">-</div>
               <div class="lib-hero-stat-label">TO DOWNLOAD</div>
             </div>
           </div>
@@ -304,7 +304,7 @@
         <div id="mp-cover-ph" data-icon="note"></div>
       </div>
       <div id="mp-info">
-        <div id="mp-title">—</div>
+        <div id="mp-title">-</div>
         <div id="mp-artist-name"></div>
         <div id="mp-preview-note"></div>
       </div>
@@ -327,7 +327,7 @@
       </div>
     </div>
     <div id="mp-right">
-      <button class="mp-btn mp-btn-sm" id="mp-eq" title="Audio settings — EQ, crossfade, ReplayGain, visualizer" data-icon="sliders"></button>
+      <button class="mp-btn mp-btn-sm" id="mp-eq" title="Audio settings - EQ, crossfade, ReplayGain, visualizer" data-icon="sliders"></button>
       <button class="mp-btn mp-btn-sm" id="mp-sleep" title="Sleep timer: off" data-icon="moon"></button>
       <button class="mp-btn mp-btn-sm" id="mp-np-toggle" title="Now playing view" data-icon="panelRight"></button>
       <div id="mp-vol-wrap">
@@ -357,9 +357,9 @@
           <img id="np-cover" alt="">
           <div id="np-cover-ph" data-icon="note"></div>
         </div>
-        <div id="np-track-title">—</div>
+        <div id="np-track-title">-</div>
         <div id="np-track-artist"></div>
-        <canvas id="np-wave" width="640" height="56" title="Waveform — click to seek" style="display:none;width:100%;height:44px;cursor:pointer;border-radius:4px"></canvas>
+        <canvas id="np-wave" width="640" height="56" title="Waveform - click to seek" style="display:none;width:100%;height:44px;cursor:pointer;border-radius:4px"></canvas>
         <canvas id="np-vis" width="640" height="48" style="display:none;width:100%;height:36px;border-radius:4px"></canvas>
         <div id="np-lyrics"><div class="np-lyrics-status">Loading lyrics…</div></div>
         <div id="np-queue" style="display:none">
@@ -416,7 +416,7 @@
               <input type="text" id="cfg-bot" placeholder="@YourMusicBot">
             </div>
             <div class="modal-field">
-              <label>Backup Bots — failover <span style="color:var(--fg3);font-weight:400">(one @username per line; tried in order if the main bot is down or rate-limited)</span></label>
+              <label>Backup Bots - failover <span style="color:var(--fg3);font-weight:400">(one @username per line; tried in order if the main bot is down or rate-limited)</span></label>
               <textarea id="cfg-bot-failover" rows="2" placeholder="@BackupBot1&#10;@BackupBot2" autocomplete="off" spellcheck="false" style="width:100%;background:var(--bg3);color:var(--fg);border:1px solid var(--border2);border-radius:4px;padding:6px 8px;font-family:var(--mono);font-size:11px;resize:vertical;"></textarea>
             </div>
             <div class="modal-field">
@@ -445,7 +445,7 @@
             </div>
 
             <div class="settings-panel-title" style="margin-top:18px">Spotify Search</div>
-            <div class="settings-panel-desc">Optional — lets the queue search use Spotify. Create a free app at
+            <div class="settings-panel-desc">Optional - lets the queue search use Spotify. Create a free app at
               <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard ↗</a>
               and paste its Client ID + Secret. Without these, search falls back to Deezer.</div>
             <div class="modal-field">
@@ -458,7 +458,7 @@
             </div>
 
             <div class="settings-panel-title" style="margin-top:18px">Telegram Health</div>
-            <div class="settings-panel-desc">Flood-waits happen when Telegram rate-limits downloads — frequent ones mean the queue should slow down (lower Max Parallel Downloads).</div>
+            <div class="settings-panel-desc">Flood-waits happen when Telegram rate-limits downloads - frequent ones mean the queue should slow down (lower Max Parallel Downloads).</div>
             <div id="tg-health" style="font-size:11px;color:var(--fg3)">Loading…</div>
           </div>
 
@@ -475,7 +475,7 @@
               <input type="text" id="cfg-max-queue">
             </div>
             <div class="modal-field">
-              <label>Bandwidth Cap — KB/s <span style="color:var(--fg3);font-weight:400">(0 = unlimited; shared across all parallel downloads)</span></label>
+              <label>Bandwidth Cap - KB/s <span style="color:var(--fg3);font-weight:400">(0 = unlimited; shared across all parallel downloads)</span></label>
               <input type="text" id="cfg-bandwidth" placeholder="0" inputmode="numeric">
             </div>
             <div class="modal-field">
@@ -504,7 +504,7 @@
             <div class="settings-panel-title">Interface</div>
             <div class="settings-panel-desc">Appearance and notifications.</div>
             <div class="modal-field">
-              <label>UI Scale — drag or type (0.6–2.0)</label>
+              <label>UI Scale - drag or type (0.6–2.0)</label>
               <div style="display:flex;gap:8px;align-items:center;">
                 <input type="range" id="cfg-scale-range" min="0.6" max="2.0" step="0.05"
                        style="flex:1;accent-color:var(--accent);cursor:pointer;">
@@ -532,7 +532,7 @@
               <span>Show current track in Discord (Rich Presence)</span>
             </label>
             <div class="modal-field" id="cfg-discord-id-wrap" style="margin-top:8px">
-              <label>Discord Application ID <span style="color:var(--fg3);font-weight:400">— create a free app at discord.com/developers → New Application, paste its Application ID</span></label>
+              <label>Discord Application ID <span style="color:var(--fg3);font-weight:400">- create a free app at discord.com/developers → New Application, paste its Application ID</span></label>
               <input type="text" id="cfg-discord-client-id" placeholder="e.g. 1234567890123456789" autocomplete="off" spellcheck="false">
             </div>
             <label class="modal-toggle" style="margin-top:10px">
@@ -540,7 +540,7 @@
               <span>Use Claude for smart-playlist descriptions it can't read locally</span>
             </label>
             <div class="modal-field" id="cfg-anthropic-key-wrap" style="margin-top:8px">
-              <label>Anthropic API key <span style="color:var(--fg3);font-weight:400">— optional. The "Describe it" box always works without one; this only covers phrasings the built-in parser misses. Needs <span style="font-family:var(--mono)">pip install anthropic</span>. Key from console.anthropic.com</span></label>
+              <label>Anthropic API key <span style="color:var(--fg3);font-weight:400">- optional. The "Describe it" box always works without one; this only covers phrasings the built-in parser misses. Needs <span style="font-family:var(--mono)">pip install anthropic</span>. Key from console.anthropic.com</span></label>
               <input type="password" id="cfg-anthropic-key" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
             </div>
           </div>
@@ -561,7 +561,7 @@
               </select>
             </div>
             <div class="modal-field" id="cfg-lb-wrap">
-              <label>ListenBrainz Token <span style="color:var(--fg3);font-weight:400">— from listenbrainz.org/settings</span></label>
+              <label>ListenBrainz Token <span style="color:var(--fg3);font-weight:400">- from listenbrainz.org/settings</span></label>
               <input type="text" id="cfg-listenbrainz-token" placeholder="paste your user token" autocomplete="off">
             </div>
             <div id="cfg-lastfm-wrap" style="display:none">
@@ -586,7 +586,7 @@
             <div class="settings-panel-desc">Keep your library healthy and back up your data.</div>
             <div class="stat-card" style="margin-bottom:14px">
               <div class="stat-card-title">Auto-refresh Library</div>
-              <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Watch the music folder and update the Library view automatically when files are added, removed or moved by other tools — no manual Refresh needed.</div>
+              <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Watch the music folder and update the Library view automatically when files are added, removed or moved by other tools - no manual Refresh needed.</div>
               <label class="modal-toggle">
                 <input type="checkbox" id="cfg-watch-library">
                 <span>Auto-refresh the library when files change on disk</span>
@@ -637,7 +637,7 @@
                 <span>Debug Bundle</span>
                 <button class="btn-secondary" id="btn-debug-bundle" style="width:auto">Export debug bundle</button>
               </div>
-              <div style="font-size:11px;color:var(--fg3);margin:4px 0 0">Zips the debug log, settings (credentials stripped) and an environment snapshot — attach it to a bug report.</div>
+              <div style="font-size:11px;color:var(--fg3);margin:4px 0 0">Zips the debug log, settings (credentials stripped) and an environment snapshot - attach it to a bug report.</div>
             </div>
             <div class="stat-card" style="margin-bottom:14px">
               <div class="stat-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
@@ -660,7 +660,7 @@
                 <span>Tempo Analysis (BPM)</span>
                 <button class="btn-secondary" id="btn-bpm-scan" style="width:auto">Analyze tempo</button>
               </div>
-              <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Looks up each track's tempo from Deezer so you can build tempo-based smart playlists — e.g. 120–140&nbsp;BPM for a workout mix. Up to 40 tracks per run; re-run to continue. Then set a BPM range under <span style="font-family:var(--mono)">＋ Smart playlist</span> in the Library.</div>
+              <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Looks up each track's tempo from Deezer so you can build tempo-based smart playlists - e.g. 120–140&nbsp;BPM for a workout mix. Up to 40 tracks per run; re-run to continue. Then set a BPM range under <span style="font-family:var(--mono)">＋ Smart playlist</span> in the Library.</div>
               <div id="bpm-scan-results"></div>
             </div>
             <div class="stat-card" style="margin-bottom:14px">
@@ -684,7 +684,7 @@
                 <span>Import Folder</span>
                 <button class="btn-secondary" id="btn-import-folder" style="width:auto">Choose folder…</button>
               </div>
-              <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Import audio from any folder into your library — sorted into Artist/Album and de-duplicated, just like a download. You can also drop a folder onto this card.</div>
+              <div style="font-size:11px;color:var(--fg3);margin:4px 0 8px">Import audio from any folder into your library - sorted into Artist/Album and de-duplicated, just like a download. You can also drop a folder onto this card.</div>
               <div id="import-dropzone" style="border:1px dashed var(--border2);border-radius:6px;padding:14px;text-align:center;font-size:11px;color:var(--fg3)">Drop a folder here</div>
               <div id="import-results" style="margin-top:8px"></div>
             </div>
@@ -694,8 +694,8 @@
           <div class="settings-panel" data-spanel="about">
             <div class="settings-panel-title">About</div>
             <div class="settings-panel-desc">Version and update information.</div>
-            <div class="settings-about-row">TGDownloader <strong id="about-version">—</strong></div>
-            <div class="settings-about-row" id="about-update-row">Updates: <span id="about-update-status" style="color:var(--fg3)">—</span></div>
+            <div class="settings-about-row">TGDownloader <strong id="about-version">-</strong></div>
+            <div class="settings-about-row" id="about-update-row">Updates: <span id="about-update-status" style="color:var(--fg3)">-</span></div>
             <div class="settings-about-row"><a href="https://github.com/Thurlws/TGDownloader" target="_blank" rel="noopener">Project on GitHub ↗</a></div>
             <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
               <button class="btn-secondary" id="btn-about-check-update" style="width:auto">Check for updates</button>
@@ -747,7 +747,7 @@
     <div id="libsearch-modal">
       <div id="libsearch-bar">
         <span class="lib-search-icon" data-icon="search"></span>
-        <input id="libsearch-input" placeholder="Search your library — artists, albums, playlists…" autocomplete="off" spellcheck="false">
+        <input id="libsearch-input" placeholder="Search your library - artists, albums, playlists…" autocomplete="off" spellcheck="false">
         <span style="font-size:9px;color:var(--fg3);font-family:var(--mono);border:1px solid var(--border2);border-radius:3px;padding:1px 4px">esc</span>
       </div>
       <div id="libsearch-results"></div>
@@ -882,7 +882,7 @@
         </div>
         <div style="display:flex;gap:10px">
           <div style="flex:1">
-            <label class="genre-pl-label">Min BPM <span style="color:var(--fg3);font-weight:400">— run Tempo Analysis first</span></label>
+            <label class="genre-pl-label">Min BPM <span style="color:var(--fg3);font-weight:400">- run Tempo Analysis first</span></label>
             <input type="text" id="smart-pl-bpm-min" placeholder="any" autocomplete="off" inputmode="numeric">
           </div>
           <div style="flex:1">

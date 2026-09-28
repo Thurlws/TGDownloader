@@ -131,7 +131,7 @@ function openSettings() {
     // Version (head + About panel)
     const ver = (document.getElementById('app-ver')?.textContent || '').replace(/^v/, '') || '';
     const vEl = document.getElementById('settings-version'); if (vEl) vEl.textContent = ver ? 'v' + ver : '';
-    const aEl = document.getElementById('about-version');    if (aEl) aEl.textContent = ver ? 'v' + ver : '—';
+    const aEl = document.getElementById('about-version');    if (aEl) aEl.textContent = ver ? 'v' + ver : '-';
     _settingsShowPanel('connection');
     document.getElementById('modal-overlay').classList.add('open');
   });
@@ -149,7 +149,7 @@ async function _loadTgHealth() {
     }
     const recent = (d.recent || []).slice(0, 5).map(e =>
       `<div style="font-family:var(--mono);font-size:10px;padding:1px 0">
-         ${escHtml(e.ts)} — waited ${e.wait}s <span style="color:var(--fg3)">(${escHtml(e.file)})</span>
+         ${escHtml(e.ts)} - waited ${e.wait}s <span style="color:var(--fg3)">(${escHtml(e.file)})</span>
        </div>`).join('');
     el.innerHTML = `
       <div>Last hour: <strong${d.last_hour ? ' style="color:var(--yellow)"' : ''}>${d.last_hour}</strong>
@@ -507,7 +507,7 @@ function updateTgDot(data) {
     btn.title = `Telegram error: ${data.error || '?'}`;
   } else {
     dot.className = ''; dot.textContent = '○';
-    btn.title = 'Telegram: not connected — click to log in';
+    btn.title = 'Telegram: not connected - click to log in';
   }
 }
  
@@ -561,7 +561,7 @@ document.getElementById('btn-tg-auth-disconnect').addEventListener('click', () =
 document.getElementById('btn-tg-send-phone').addEventListener('click', async () => {
   const phone = document.getElementById('tg-phone-input').value.trim();
   if (!phone) { flash(document.getElementById('tg-phone-input')); return; }
-  _tgSetStep(null); _tgMsg('Sending code — this can take a few seconds…');
+  _tgSetStep(null); _tgMsg('Sending code - this can take a few seconds…');
   try { _tgHandleStep(await _tgPost('submit_phone', phone)); }
   catch(e) { _tgMsg(`Error: ${e}`, 'var(--red)'); _tgSetStep('tg-step-phone'); }
 });
@@ -794,7 +794,7 @@ document.getElementById('btn-art-repair')?.addEventListener('click', async () =>
     if (d.error) {
       out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(d.error)}</div>`;
     } else {
-      out.innerHTML = `<div style="font-size:11px">Checked <strong>${d.checked}</strong> folders · missing <strong>${d.missing}</strong> · fixed <strong style="color:var(--accent)">${d.fixed}</strong>${d.failed ? ` · failed <strong style="color:var(--red)">${d.failed}</strong>` : ''}${d.remaining > 0 ? ` · ${d.remaining} left — run again` : ''}</div>`;
+      out.innerHTML = `<div style="font-size:11px">Checked <strong>${d.checked}</strong> folders · missing <strong>${d.missing}</strong> · fixed <strong style="color:var(--accent)">${d.fixed}</strong>${d.failed ? ` · failed <strong style="color:var(--red)">${d.failed}</strong>` : ''}${d.remaining > 0 ? ` · ${d.remaining} left - run again` : ''}</div>`;
     }
   } catch (err) {
     out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(String(err))}</div>`;
@@ -805,7 +805,7 @@ document.getElementById('btn-loudness')?.addEventListener('click', async () => {
   const out = document.getElementById('loudness-results');
   const btn = document.getElementById('btn-loudness');
   btn.disabled = true;
-  out.innerHTML = '<div style="font-size:11px;color:var(--fg3)">Analyzing loudness — this decodes each file, please wait…</div>';
+  out.innerHTML = '<div style="font-size:11px;color:var(--fg3)">Analyzing loudness - this decodes each file, please wait…</div>';
   try {
     const d = await (await fetch('/loudness-scan', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
@@ -813,7 +813,7 @@ document.getElementById('btn-loudness')?.addEventListener('click', async () => {
     if (d.error) {
       out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(d.error)}</div>`;
     } else {
-      out.innerHTML = `<div style="font-size:11px">Checked <strong>${d.checked}</strong> tracks · untagged <strong>${d.missing}</strong> · tagged <strong style="color:var(--accent)">${d.tagged}</strong>${d.failed ? ` · failed <strong style="color:var(--red)">${d.failed}</strong>` : ''}${d.remaining > 0 ? ` · ${d.remaining} left — run again` : ''}</div>`;
+      out.innerHTML = `<div style="font-size:11px">Checked <strong>${d.checked}</strong> tracks · untagged <strong>${d.missing}</strong> · tagged <strong style="color:var(--accent)">${d.tagged}</strong>${d.failed ? ` · failed <strong style="color:var(--red)">${d.failed}</strong>` : ''}${d.remaining > 0 ? ` · ${d.remaining} left - run again` : ''}</div>`;
     }
   } catch (err) {
     out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(String(err))}</div>`;
@@ -825,7 +825,7 @@ document.getElementById('btn-bpm-scan')?.addEventListener('click', async () => {
   const out = document.getElementById('bpm-scan-results');
   const btn = document.getElementById('btn-bpm-scan');
   btn.disabled = true;
-  out.innerHTML = '<div style="font-size:11px;color:var(--fg3)">Looking up tempo from Deezer — please wait…</div>';
+  out.innerHTML = '<div style="font-size:11px;color:var(--fg3)">Looking up tempo from Deezer - please wait…</div>';
   try {
     const d = await (await fetch('/bpm-scan', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
@@ -833,7 +833,7 @@ document.getElementById('btn-bpm-scan')?.addEventListener('click', async () => {
     if (d.error) {
       out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(d.error)}</div>`;
     } else {
-      out.innerHTML = `<div style="font-size:11px">Analyzed <strong>${d.processed}</strong> this run · matched <strong style="color:var(--accent)">${d.matched}</strong> · tempo known for <strong>${d.with_bpm}</strong>/<strong>${d.total}</strong>${d.remaining > 0 ? ` · ${d.remaining} left — run again` : ''}</div>`;
+      out.innerHTML = `<div style="font-size:11px">Analyzed <strong>${d.processed}</strong> this run · matched <strong style="color:var(--accent)">${d.matched}</strong> · tempo known for <strong>${d.with_bpm}</strong>/<strong>${d.total}</strong>${d.remaining > 0 ? ` · ${d.remaining} left - run again` : ''}</div>`;
     }
   } catch (err) {
     out.innerHTML = `<div style="font-size:11px;color:var(--red)">${escHtml(String(err))}</div>`;
@@ -880,12 +880,12 @@ document.getElementById('btn-tag-preview')?.addEventListener('click', () =>
          ${Object.entries(c.fixes).map(([k, v]) => `${k}: <span style="color:var(--accent)">${escHtml(String(v))}</span>`).join(', ')}
        </div>`).join('');
     const yearNote = d.year_filled
-      ? ` (${d.year_filled} year${d.year_filled !== 1 ? 's' : ''} from Deezer${d.year_lookups_capped ? ' — capped, run again for more' : ''})` : '';
+      ? ` (${d.year_filled} year${d.year_filled !== 1 ? 's' : ''} from Deezer${d.year_lookups_capped ? ' - capped, run again for more' : ''})` : '';
     return `<div style="font-size:11px;margin-bottom:4px">${d.count} file(s) with fixable tags${yearNote} (showing up to 40). Click <strong>Apply fixes</strong> to write them.</div>${rows}`;
   }));
 document.getElementById('btn-tag-apply')?.addEventListener('click', async () => {
   const d = await _libIntelRun('btn-tag-apply', '/tag-janitor', { apply: true, fill_year: _tagFillYear() }, d =>
-    `<div style="font-size:11px;color:var(--accent)">Applied fixes to ${d.count} file(s)${d.year_filled ? ` — ${d.year_filled} release year(s) filled` : ''}.</div>`);
+    `<div style="font-size:11px;color:var(--accent)">Applied fixes to ${d.count} file(s)${d.year_filled ? ` - ${d.year_filled} release year(s) filled` : ''}.</div>`);
   if (d) document.getElementById('btn-tag-apply').style.display = 'none';
 });
 document.getElementById('btn-completeness')?.addEventListener('click', () =>
@@ -893,7 +893,7 @@ document.getElementById('btn-completeness')?.addEventListener('click', () =>
     if (!d.incomplete) return `<div style="font-size:11px;color:var(--accent)">✓ No incomplete albums found (checked ${d.checked}).</div>`;
     const rows = d.albums.slice(0, 40).map(a =>
       `<div style="font-size:10px;font-family:var(--mono);padding:2px 0">
-         ${escHtml(a.artist)} — ${escHtml(a.album)}
+         ${escHtml(a.artist)} - ${escHtml(a.album)}
          <strong style="color:var(--yellow)">${a.have}/${a.total}</strong></div>`).join('');
     return `<div style="font-size:11px;margin-bottom:4px">${d.incomplete} album(s) look incomplete vs Deezer:</div>${rows}`;
   }));
@@ -908,7 +908,7 @@ document.getElementById('btn-fingerprint')?.addEventListener('click', () =>
   _libIntelRun('btn-fingerprint', '/fingerprint-scan', {}, d =>
     `<div style="font-size:11px">Scanned <strong>${d.scanned}</strong> untagged · identified <strong style="color:var(--accent)">${d.identified}</strong>${d.failed ? ` · unresolved <strong>${d.failed}</strong>` : ''}</div>` +
     (d.updates || []).slice(0, 30).map(u =>
-      `<div style="font-size:10px;font-family:var(--mono);padding:1px 0">${escHtml(u.artist)} — ${escHtml(u.title)}</div>`).join('')));
+      `<div style="font-size:10px;font-family:var(--mono);padding:1px 0">${escHtml(u.artist)} - ${escHtml(u.title)}</div>`).join('')));
 
 // ── Import folder ─────────────────────────────────────────────────────────────
 async function _runImport(path) {
@@ -1174,11 +1174,11 @@ function _qualityUpdateBadge(q) {
     const label = q === 'FLAC' ? 'FLAC' : q === 'MP3 320' ? '320' : '128';
     badge.innerHTML = ICON.note + `<span>${label}</span>`;
     badge.classList.remove('unknown');
-    badge.title = `Audio quality: ${q} — click to change`;
+    badge.title = `Audio quality: ${q} - click to change`;
   } else {
     badge.innerHTML = ICON.note + '<span>?</span>';
     badge.classList.add('unknown');
-    badge.title = 'Audio quality unknown — click to check/change';
+    badge.title = 'Audio quality unknown - click to check/change';
   }
 }
 
@@ -1294,7 +1294,7 @@ function showWelcome() {
     { text: '\n' },
     { text: '  HOW TO USE\n',           cls: 'welcome-head' },
     { text: '  ─────────────────────────────────────────────────\n', cls: 'welcome-dim' },
-    { text: '  1. Connect Telegram — TG button, top-right (required)\n', cls: 'welcome-body' },
+    { text: '  1. Connect Telegram - TG button, top-right (required)\n', cls: 'welcome-body' },
     { text: '  2. Set your home music folder (left panel)\n', cls: 'welcome-body' },
     { text: '  3. Search or paste album URLs into the queue\n', cls: 'welcome-body' },
     { text: '  4. Press Run  (or Ctrl+Enter)\n', cls: 'welcome-body' },
