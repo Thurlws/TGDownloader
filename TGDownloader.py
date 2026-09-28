@@ -1859,7 +1859,7 @@ async def download_all_async(
         else:
             downloaded.append(result)
 
-    elapsed  = time.monotonic() - start_time
+    elapsed  = max(time.monotonic() - start_time, 0.001)
     total_mb = sum(ev.message.document.size for ev in pending_events) / 1_048_576
     _log(
         f"\n\n  {len(downloaded)}/{total} file(s) in {elapsed:.1f}s "
