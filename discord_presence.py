@@ -194,7 +194,7 @@ def build_activity(title: str, artist: str, album: str = "",
 
     state = artist
     if album:
-        state = f"{artist} — {album}" if artist else album
+        state = f"{artist} - {album}" if artist else album
     if paused:
         state = f"{state} (paused)" if state else "Paused"
 

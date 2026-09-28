@@ -101,6 +101,6 @@ def test_flood_health_empty():
 
 
 def test_flood_regex_matches_backend_log_line():
-    line = "  ⏳ Flood-wait 42s for 03 - Song Title.flac (attempt 2/8) — waiting…\n"
+    line = "  ⏳ Flood-wait 42s for 03 - Song Title.flac (attempt 2/8) - waiting…\n"
     m = gui._FLOOD_RE.search(line)
     assert m and m.group(1) == "42" and m.group(2) == "03 - Song Title.flac"

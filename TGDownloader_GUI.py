@@ -142,7 +142,7 @@ def _open_app_window(url: str) -> bool:
                 break
 
     if not exe:
-        logger.info("No Chromium-based browser found — falling back to default browser")
+        logger.info("No Chromium-based browser found - falling back to default browser")
         return False
 
     try:
@@ -445,7 +445,7 @@ def _verify_update_checksum(zip_path: Path, sha256_url: str) -> None:
     if published is None:
         raise ValueError("published update checksum is malformed")
     if _sha256_file(zip_path) != published:
-        raise ValueError("update checksum mismatch — download rejected")
+        raise ValueError("update checksum mismatch - download rejected")
 
 
 def _stage_update(zip_path: Path, staging: Path) -> Path:
@@ -541,7 +541,7 @@ def _apply_update() -> dict:
         return {"ok": False, "error": "In-place update is only available in the "
                 "packaged Windows app. Use Download and replace the folder manually."}
     if MANAGER.is_running():
-        return {"ok": False, "error": "A download is in progress — stop it first."}
+        return {"ok": False, "error": "A download is in progress - stop it first."}
     info = _check_for_update(force=True)
     if not info.get("update_available"):
         return {"ok": False, "error": "Already up to date."}
@@ -988,7 +988,7 @@ class ProcessManager:
             if self._clients:        # a client reconnected in the meantime
                 self._shutdown_timer = None
                 return
-        logger.info("All UI clients disconnected — shutting down app.")
+        logger.info("All UI clients disconnected - shutting down app.")
         try:
             self.stop()
         except Exception:
@@ -1183,9 +1183,9 @@ def _schedule_fire() -> None:
     if not job:
         return
     if MANAGER.is_running():
-        logger.warning("Scheduled run skipped — a download is already running")
+        logger.warning("Scheduled run skipped - a download is already running")
         MANAGER.broadcast({"type": "log",
-                           "text": "Scheduled run skipped — a download is already running.\n"})
+                           "text": "Scheduled run skipped - a download is already running.\n"})
         return
     entries = job["entries"]
     if any(e.get("isPlaylist") for e in entries):
@@ -1195,7 +1195,7 @@ def _schedule_fire() -> None:
             logger.exception("playlist meta prep failed (scheduled run)")
     logger.info("Scheduled run starting (%d entries)", len(entries))
     MANAGER.broadcast({"type": "log",
-                       "text": f"Scheduled run starting — {len(entries)} URL(s)\n"})
+                       "text": f"Scheduled run starting - {len(entries)} URL(s)\n"})
     MANAGER.start(_build_backend_stdin(entries))
     MANAGER.broadcast({"type": "status", "running": True})
 
@@ -1266,7 +1266,7 @@ def _lib_watcher_loop(home: str, stop: "threading.Event") -> None:
             continue
         if sig != last_sig:
             last_sig = sig
-            logger.info("Library change detected on disk — notifying clients")
+            logger.info("Library change detected on disk - notifying clients")
             MANAGER.broadcast({"type": "library-changed"})
     logger.info("Library watcher stopped")
 
@@ -1956,7 +1956,7 @@ def _get_album_tracks(album_dir: "Path", album_id: str = "") -> list:
             "album":        None,
             "track_num":    None,
             "duration":     0,
-            "duration_str": "—",
+            "duration_str": "-",
             "preview_url":  None,
             "deezer_id":    None,
             "date_added":   "",
@@ -2595,7 +2595,7 @@ def _remove_tracks_from_playlist(path_hash: str, names: list) -> dict:
     path_hash (path-traversal guarded). Also clears their sidecar entries."""
     pl_dir = _path_hash_map.get((path_hash or "").strip())
     if not pl_dir or not pl_dir.is_dir():
-        return {"error": "Playlist not found — try refreshing the library."}
+        return {"error": "Playlist not found - try refreshing the library."}
 
     base    = pl_dir.resolve()
     removed = 0
@@ -2638,7 +2638,7 @@ def _reorder_playlist_tracks(path_hash: str, names: list) -> dict:
     listing already sorts by track number, so this fixes the order on disk."""
     pl_dir = _path_hash_map.get((path_hash or "").strip())
     if not pl_dir or not pl_dir.is_dir():
-        return {"error": "Playlist not found — try refreshing the library."}
+        return {"error": "Playlist not found - try refreshing the library."}
 
     base = pl_dir.resolve()
     ordered = 0
@@ -3154,10 +3154,10 @@ def _spotify_search(raw_query: str) -> dict:
         body = getattr(exc, "read", None)
         if callable(body):
             try:
-                detail = f"{detail} — {body().decode('utf-8', 'replace')[:300]}"
+                detail = f"{detail} - {body().decode('utf-8', 'replace')[:300]}"
             except Exception:
                 pass
-        logger.warning("Spotify search failed (%s) — falling back to Deezer", detail)
+        logger.warning("Spotify search failed (%s) - falling back to Deezer", detail)
         fb = _deezer_search(raw_query)
         fb["fellback_to_deezer"] = True       # these are Deezer links, not Spotify
         fb["spotify_unconfigured"] = unconfigured  # creds missing vs. request failed
@@ -3433,7 +3433,7 @@ def _deezer_album(album_id: str) -> dict:
             return data
         logger.debug("Direct album API returned error payload for id=%s: %s", album_id, data.get("error"))
     except urllib.error.HTTPError as exc:
-        logger.debug("Direct album API HTTP %s for id=%s — trying search fallback", exc.code, album_id)
+        logger.debug("Direct album API HTTP %s for id=%s - trying search fallback", exc.code, album_id)
     except Exception as exc:
         logger.debug("Direct album API error for id=%s: %s", album_id, exc)
 
@@ -3939,7 +3939,7 @@ def _loudness_scan(limit: int = 25) -> dict:
     """Tag up to *limit* untagged files with REPLAYGAIN_TRACK_GAIN.  Counts the
     full backlog so the UI can say how many remain."""
     if not tgd_common.ffmpeg_available():
-        return {"error": "ffmpeg not found — install it to analyze loudness"}
+        return {"error": "ffmpeg not found - install it to analyze loudness"}
     m    = _tgd_import()
     cfg  = m.load_config()
     home = cfg.get("home_music_folder")
@@ -4029,7 +4029,7 @@ def _deezer_bpm_lookup(artist: str, title: str) -> dict:
         return {"bpm":  float(bpm) if bpm else None,
                 "gain": float(gain) if gain is not None else None}
     except Exception as exc:
-        logger.debug("BPM lookup failed for %s — %s: %s", artist, title, exc)
+        logger.debug("BPM lookup failed for %s - %s: %s", artist, title, exc)
         return {}
 
 
@@ -4156,7 +4156,7 @@ def _deezer_album_year(artist: str, album: str) -> "str | None":
         rd = str(data.get("release_date") or "")
         return rd[:4] if len(rd) >= 4 and rd[:4].isdigit() else None
     except Exception as exc:
-        logger.debug("Deezer year lookup failed for %s — %s: %s", artist, album, exc)
+        logger.debug("Deezer year lookup failed for %s - %s: %s", artist, album, exc)
         return None
 
 
@@ -4249,7 +4249,7 @@ def _corruption_scan(limit: int = 400) -> dict:
     that fails to decode is genuinely damaged.  Returns the bad files."""
     ff = tgd_common.ffmpeg_exe()
     if not ff:
-        return {"error": "ffmpeg not found — install it to decode-test files"}
+        return {"error": "ffmpeg not found - install it to decode-test files"}
     m    = _tgd_import()
     cfg  = m.load_config()
     home = cfg.get("home_music_folder")
@@ -4325,7 +4325,7 @@ def _fingerprint_scan(limit: int = 50) -> dict:
     artist/title/album from the AcoustID/MusicBrainz match."""
     fp = tgd_common.fpcalc_exe()
     if not fp:
-        return {"error": "fpcalc (Chromaprint) not found — install it to enable fingerprinting"}
+        return {"error": "fpcalc (Chromaprint) not found - install it to enable fingerprinting"}
     m    = _tgd_import()
     cfg  = m.load_config()
     api_key = (cfg.get("acoustid_api_key") or "").strip()
@@ -4910,7 +4910,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 ff = _ffmpeg_exe()
                 _add(bool(ff), "ffmpeg",
-                     ff if ff else "Not found — hi-res/exotic tracks can't play in-app")
+                     ff if ff else "Not found - hi-res/exotic tracks can't play in-app")
             except Exception as exc:
                 _add(False, "ffmpeg", str(exc))
 
@@ -4918,7 +4918,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 _has_sess = tgd_common.has_session()
                 _add(_has_sess, "Telegram session",
-                     "Connected" if _has_sess else "Not connected — use the TG button")
+                     "Connected" if _has_sess else "Not connected - use the TG button")
             except Exception as exc:
                 _add(False, "Telegram session", str(exc))
 
@@ -4948,7 +4948,7 @@ class Handler(BaseHTTPRequestHandler):
                 usage  = _sh.disk_usage(str(target))
                 gb_free = usage.free / 1_073_741_824
                 _add(gb_free >= 1.0, "Free disk space",
-                     f"{gb_free:.1f} GB free" + ("" if gb_free >= 1.0 else " — running low"))
+                     f"{gb_free:.1f} GB free" + ("" if gb_free >= 1.0 else " - running low"))
             except Exception as exc:
                 _add(False, "Free disk space", str(exc))
 
@@ -5845,7 +5845,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             album_dir = _path_hash_map.get(ph)
             if not album_dir:
-                self._send_json(404, {"error": "Album not found — try refreshing the library."})
+                self._send_json(404, {"error": "Album not found - try refreshing the library."})
                 return
             try:
                 tracks = _get_album_tracks(album_dir, album_id or "")
@@ -6798,7 +6798,7 @@ def main():
     # browser window and exit cleanly.
     _INSTANCE_LOCK = _acquire_instance_lock()
     if _INSTANCE_LOCK is None:
-        logger.info("Another instance already running — opening browser")
+        logger.info("Another instance already running - opening browser")
         if not os.environ.get("TGD_NO_BROWSER"):
             if not _open_app_window(f"http://127.0.0.1:{HTTP_PORT}/"):
                 webbrowser.open(f"http://127.0.0.1:{HTTP_PORT}/")
@@ -6864,7 +6864,7 @@ def main():
         threading.Event().wait()
     except KeyboardInterrupt:
         print("\nShutting down.")
-        logger.info("KeyboardInterrupt — shutting down")
+        logger.info("KeyboardInterrupt - shutting down")
         MANAGER.stop()
         SERVER.shutdown()
         os._exit(0)

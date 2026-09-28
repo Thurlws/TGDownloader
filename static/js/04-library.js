@@ -45,7 +45,7 @@ function _syncLibQueuedState() {
         if (addBtn) {
           addBtn.innerHTML = ICON.check;
           addBtn.classList.add('queued');
-          addBtn.title = 'In queue — click to remove';
+          addBtn.title = 'In queue - click to remove';
           addBtn.style.opacity = '1';
           addBtn.style.pointerEvents = '';   // stay clickable so it can be deselected
         }
@@ -370,7 +370,7 @@ function _togglePin(kind, name) {
 function _openPinnedPlaylist(plName) {
   const plAlb = (_libAllAlbums || []).find(a => a.is_playlist && a.album === plName);
   const group = _libArtistList.find(a => a.is_playlist_group);
-  if (!plAlb || !group) { _toast('Playlist not found — it may have been removed.', 'error'); return; }
+  if (!plAlb || !group) { _toast('Playlist not found - it may have been removed.', 'error'); return; }
   Promise.resolve(_selectLibArtist(group, true)).then(() => _openLibAlbum(plAlb));
 }
 
@@ -1186,8 +1186,8 @@ function renderDupes(d) {
         <div style="font-size:10px;color:var(--fg3);margin-bottom:4px">${g.files.length} copies · ${_fmtBytes(g.size)} each</div>
         ${g.files.map((f, fi) => `
           <div style="display:flex;align-items:center;gap:8px;padding:2px 0">
-            ${f.best ? '<span title="Best quality — kept" style="flex-shrink:0;width:44px;color:var(--accent);font-size:9px;font-weight:600">KEEP</span>'
-              : f.playlist ? '<span title="Playlist copy — never trashed automatically" style="flex-shrink:0;width:44px;color:var(--fg3);font-size:9px;font-weight:600">PLAYLIST</span>'
+            ${f.best ? '<span title="Best quality - kept" style="flex-shrink:0;width:44px;color:var(--accent);font-size:9px;font-weight:600">KEEP</span>'
+              : f.playlist ? '<span title="Playlist copy - never trashed automatically" style="flex-shrink:0;width:44px;color:var(--fg3);font-size:9px;font-weight:600">PLAYLIST</span>'
               : '<span style="flex-shrink:0;width:44px"></span>'}
             <span style="flex:1;min-width:0;font-family:var(--mono);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(f.rel)}">${escHtml(f.rel)}</span>
             <span style="flex-shrink:0;font-size:9px;color:var(--fg3);text-transform:uppercase">${escHtml(f.ext || '')}</span>
@@ -1335,8 +1335,8 @@ function _renderLibHero(artist) {
     if (lbl) lbl.textContent = 'IN LIBRARY';
   }
   if (statOwned)   statOwned.querySelector('.lib-hero-stat-num').textContent   = localAlbs;
-  if (statTotal)   statTotal.querySelector('.lib-hero-stat-num').textContent   = totalNum || '—';
-  if (statMissing) statMissing.querySelector('.lib-hero-stat-num').textContent = artist._discog ? notOwned : '—';
+  if (statTotal)   statTotal.querySelector('.lib-hero-stat-num').textContent   = totalNum || '-';
+  if (statMissing) statMissing.querySelector('.lib-hero-stat-num').textContent = artist._discog ? notOwned : '-';
 }
 
 // ── Breadcrumb ─────────────────────────────────────────────────────────────
@@ -1456,7 +1456,7 @@ function _wireAddButton(card, addBtn, alb, opts = {}) {
     addBtn.classList.toggle('queued', on);
     if (!on) addBtn.classList.remove('just-added');
     addBtn.innerHTML = on ? ICON.check : ICON.plus;
-    addBtn.title     = on ? 'In queue — click to remove' : 'Add to queue';
+    addBtn.title     = on ? 'In queue - click to remove' : 'Add to queue';
     addBtn.style.opacity = on ? '1' : '';
     addBtn.style.pointerEvents = '';
   };
@@ -1809,7 +1809,7 @@ async function _renderHomeView() {
   const recent = [];
   for (const item of history) {
     const isPl = !!item.is_playlist;
-    const name = (item.albums && item.albums[0]) || item.artist || '—';
+    const name = (item.albums && item.albums[0]) || item.artist || '-';
     const key  = (isPl ? 'p:' : 'a:') + norm(item.artist) + '|' + norm(name);
     if (seen.has(key)) continue;
     seen.add(key);
@@ -1914,7 +1914,7 @@ async function _renderHomeView() {
     ${recent.length ? `
       <div class="home-section-label">Recently downloaded</div>
       <div class="lib-album-grid home-recent-grid">${recent.map((r, i) => card(r, i)).join('')}</div>
-    ` : '<div class="stat-empty">No downloads yet — add some music from the Log tab.</div>'}
+    ` : '<div class="stat-empty">No downloads yet - add some music from the Log tab.</div>'}
   `;
 
   // Releases section: always shown. Render cached results, refresh the watchlist
@@ -2467,7 +2467,7 @@ function _renderLibTracks(tracks, alb, opts) {
     const albumCell = opts.showAlbum
       ? `<span class="lib-track-album${albName ? ' clickable' : ''}"
               data-album="${escHtml(albName)}" data-artist="${escHtml(albArt)}"
-              title="${albName ? escHtml(albName) + ' — click to add to queue' : ''}">${escHtml(albName)}</span>` : '';
+              title="${albName ? escHtml(albName) + ' - click to add to queue' : ''}">${escHtml(albName)}</span>` : '';
     const dateCell  = opts.showAlbum
       ? `<span class="lib-track-date">${opts.showDate ? escHtml(_fmtDateAdded(track.date_added)) : ''}</span>` : '';
 
@@ -2487,7 +2487,7 @@ function _renderLibTracks(tracks, alb, opts) {
       ${albumCell}
       ${dateCell}
       ${likeBtn}
-      <span class="lib-track-dur">${track.duration_str || '—'}</span>
+      <span class="lib-track-dur">${track.duration_str || '-'}</span>
     `;
 
     // Like button (always available)

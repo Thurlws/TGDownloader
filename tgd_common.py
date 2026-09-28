@@ -182,7 +182,7 @@ def _warn_keyring_missing() -> None:
         _keyring_warned = True
         logger.warning(
             "use_keyring is enabled but the 'keyring' package is not available "
-            "— secrets remain in tg_audio_config.json. Fix: pip install keyring"
+            "- secrets remain in tg_audio_config.json. Fix: pip install keyring"
         )
 
 
@@ -263,7 +263,7 @@ def load_config(path: "Path | None" = None) -> dict:
             cfg.update(saved)
         except Exception as exc:
             logger.warning(
-                "Could not parse %s (%s) — falling back to defaults. "
+                "Could not parse %s (%s) - falling back to defaults. "
                 "Fix or delete the file to silence this warning.",
                 cfg_path.name, exc,
             )
@@ -466,7 +466,7 @@ def migrate_session_to_keyring() -> bool:
     if not s:
         return False
     if not save_session_string(s) or load_session_string() != s:
-        logger.warning("Session keyring migration failed verification — keeping the file")
+        logger.warning("Session keyring migration failed verification - keeping the file")
         return False
     remove_session_file()
     logger.info("Telegram session moved to the OS keyring; plaintext file removed")
@@ -656,7 +656,7 @@ def send_to_trash(path: "Path | str") -> str:
     except ImportError:
         pass
     except Exception as exc:
-        logger.warning("send2trash failed for %s (%s) — trying fallback", p, exc)
+        logger.warning("send2trash failed for %s (%s) - trying fallback", p, exc)
 
     if sys.platform == "win32":
         try:
@@ -691,11 +691,11 @@ def send_to_trash(path: "Path | str") -> str:
             res = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op))
             if res == 0 and not op.fAnyOperationsAborted:
                 return "winapi"
-            logger.warning("SHFileOperationW returned %s for %s — deleting permanently", res, p)
+            logger.warning("SHFileOperationW returned %s for %s - deleting permanently", res, p)
         except Exception as exc:
-            logger.warning("Recycle-bin fallback failed for %s (%s) — deleting permanently", p, exc)
+            logger.warning("Recycle-bin fallback failed for %s (%s) - deleting permanently", p, exc)
     else:
-        logger.warning("No trash backend available for %s — deleting permanently "
+        logger.warning("No trash backend available for %s - deleting permanently "
                        "(pip install send2trash to enable the trash)", p)
 
     if p.is_dir():
